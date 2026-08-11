@@ -173,6 +173,8 @@ CC_WEB_PORT=3000 CC_API_PORT=8080 CC_GRPC_PORT=9090 \
 ## Generated files
 
 - `.env`: config and secrets (mode `600`, git-ignored). Source of truth for the stack.
+  Edit it directly to change config; see `.env.example` at the repo root for every
+  supported key. Restart afterwards (`./croncompose-ctl.sh restart` or `make pm2-restart`).
 - `croncompose-ctl.sh` / `croncompose-ctl.ps1`: process manager (git-ignored).
 - `.run/`: logs, pids, TLS material, and agent data (git-ignored).
 - `control-plane/bin/`, `cli/bin/`, `agent/bin/`: compiled binaries (git-ignored).

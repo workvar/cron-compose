@@ -54,8 +54,19 @@ port (see [TLS and PKI](#tls-and-pki)); the gRPC port carries mTLS end to end.
 
 ## Configuration
 
-The control plane reads its configuration from the environment. The most important
-variables:
+The control plane reads its configuration from the environment. On a from-source host
+that environment is a `0600` `.env` at the repo root, written by `./install/install.sh`
+and read by both `croncompose-ctl.sh` and `ecosystem.config.js`. For a manual install,
+or to look up a key, start from the annotated template:
+
+```sh
+cp .env.example .env && chmod 600 .env
+```
+
+Edit `.env` in place afterwards; it is the source of truth for the stack, and both
+process managers cache the environment, so restart after any change. Under Docker
+Compose the same values come from `docker-compose.prod.yml`'s `x-env` block or a `.env`
+beside it. The most important variables:
 
 | Variable             | Purpose                                                                 |
 |----------------------|-------------------------------------------------------------------------|
@@ -180,6 +191,7 @@ Only building, not installing? The config needs three things: `.env` at the repo
 `control-plane/bin/control-plane`, and `web/.next/standalone/server.js`.
 
 ```sh
+cp .env.example .env && chmod 600 .env   # then fill in the secrets and DATABASE_URL
 make control-plane migrate-tool
 cd web && npm ci && API_BASE=http://127.0.0.1:8080/api/v1 npm run build && cd ..
 cp -r web/.next/static web/.next/standalone/.next/static
