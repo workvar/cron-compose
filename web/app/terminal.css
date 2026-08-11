@@ -1,0 +1,64 @@
+/* Web terminal: setup controls + the live xterm surface. Loaded globally by
+   app/layout.tsx, alongside the other modular stylesheets. */
+
+.term-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: flex-start;
+  max-width: 560px;
+}
+
+/* Segmented shell/command toggle */
+.seg {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.seg-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: calc(var(--radius-md) - 4px);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.seg-btn:hover { color: var(--text); }
+.seg-btn.on { background: var(--green); color: var(--green-contrast); }
+
+.term-cmd {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Live terminal */
+.term-wrap {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  background: #0b1220;
+}
+.term-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-strong);
+}
+.term-holder {
+  height: min(64vh, 640px);
+  padding: 10px 12px;
+  background: #0b1220;
+}
+/* xterm sizes itself to the holder via the fit addon. */
+.term-holder .xterm,
+.term-holder .xterm-viewport { height: 100% !important; background: transparent !important; }

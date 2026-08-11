@@ -112,6 +112,11 @@ func (s *service) handleAgentMessage(ctx context.Context, serverID string, msg *
 		return s.onLogChunk(ctx, serverID, body.LogChunk)
 	case *agentv1.AgentMessage_RunFinished:
 		return s.onRunFinished(ctx, serverID, body.RunFinished)
+	case *agentv1.AgentMessage_ConnectorEvent:
+		return s.onConnectorEvent(ctx, serverID, body.ConnectorEvent)
+	case *agentv1.AgentMessage_TerminalOutput:
+		s.terminals.Deliver(body.TerminalOutput)
+		return nil
 	}
 	return nil
 }

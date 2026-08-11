@@ -17,19 +17,12 @@ configure_ports() {
   # Thread the ports chosen so far so no two services are offered (or accept) the same
   # one, even when a default is occupied by a leftover daemon from a previous install.
   local taken=""
-  if [ "${ENABLE_PROXY:-1}" = "1" ]; then
-    info "With the single-entry proxy on, only the proxy port is public; web/API/gRPC are internal."
-    PROXY_PORT="$(prompt_port "Public proxy port (the one URL agents and browsers use)" "${CC_PROXY_PORT:-8000}" "$taken")"
-    taken="$taken $PROXY_PORT"
-  fi
+  info "The control plane is the single public entry: its HTTP port serves the UI (/app)"
+  info "and the REST API (/api); agents reach it on the gRPC port. The web UI port is internal."
+  API_PORT="$(prompt_port "HTTP port (public: UI + REST API)" "${CC_API_PORT:-8080}" "$taken")"; taken="$taken $API_PORT"
+  GRPC_PORT="$(prompt_port "Agent gRPC port (public)" "${CC_GRPC_PORT:-9090}" "$taken")"; taken="$taken $GRPC_PORT"
   WEB_PORT="$(prompt_port "Web UI port (internal)" "${CC_WEB_PORT:-3000}" "$taken")";  taken="$taken $WEB_PORT"
-  API_PORT="$(prompt_port "REST API port (internal)" "${CC_API_PORT:-8080}" "$taken")"; taken="$taken $API_PORT"
-  GRPC_PORT="$(prompt_port "Agent gRPC port (internal)" "${CC_GRPC_PORT:-9090}" "$taken")"; taken="$taken $GRPC_PORT"
-  if [ "${ENABLE_PROXY:-1}" = "1" ]; then
-    ok "proxy=$PROXY_PORT  web=$WEB_PORT  api=$API_PORT  grpc=$GRPC_PORT"
-  else
-    ok "web=$WEB_PORT  api=$API_PORT  grpc=$GRPC_PORT"
-  fi
+  ok "http=$API_PORT  grpc=$GRPC_PORT  web=$WEB_PORT (internal)"
 }
 
 configure_admin() {
@@ -142,14 +135,10 @@ write_env_file() {
   step "Writing configuration"
   ENV_FILE="$REPO_ROOT/.env"
   API_BASE="http://127.0.0.1:$API_PORT/api/v1"
-  # Externally-reachable address. With the single-entry proxy on, the UI, REST, and
-  # agent gRPC are all reached on the proxy port, so advertise that; the control plane
-  # derives PUBLIC_HTTP_URL / PUBLIC_GRPC_ADDR / OIDC redirect / TLS SAN from it.
-  if [ "${ENABLE_PROXY:-1}" = "1" ]; then
-    PUBLIC_BASE_URL="${CC_PUBLIC_BASE_URL:-http://$ADVERTISE_HOST:$PROXY_PORT}"
-  else
-    PUBLIC_BASE_URL="${CC_PUBLIC_BASE_URL:-http://$ADVERTISE_HOST:$API_PORT}"
-  fi
+  # Externally-reachable address: the control plane's public HTTP port fronts the UI
+  # (/app) and REST (/api). The control plane derives PUBLIC_HTTP_URL / the OIDC
+  # redirect / TLS SAN from it, and PUBLIC_GRPC_ADDR from this host + the gRPC port.
+  PUBLIC_BASE_URL="${CC_PUBLIC_BASE_URL:-http://$ADVERTISE_HOST:$API_PORT}"
 
   umask 077
   {
@@ -169,22 +158,11 @@ write_env_file() {
     echo "# line (e.g. https://cron.example.com) and restart; it derives the public REST"
     echo "# URL, the OIDC redirect, and the TLS SAN."
     echo "PUBLIC_BASE_URL=$PUBLIC_BASE_URL"
-    if [ "${ENABLE_PROXY:-1}" = "1" ]; then
-      echo "# Behind the proxy, agents reach gRPC on the proxy port (TLS passed through),"
-      echo "# not the internal gRPC listener, so pin the advertised gRPC address. Update"
-      echo "# this alongside PUBLIC_BASE_URL if you change the host/port."
-      echo "PUBLIC_GRPC_ADDR=$ADVERTISE_HOST:$PROXY_PORT"
-    fi
-    echo "# web UI"
+    echo "# web UI (internal; the control plane reverse-proxies /app to it)"
     echo "PORT=$WEB_PORT"
     echo "API_BASE=$API_BASE"
-    if [ "${ENABLE_PROXY:-1}" = "1" ]; then
-      echo "# single-entry reverse proxy (the only public listener)"
-      echo "PROXY_LISTEN_ADDR=:$PROXY_PORT"
+    if [ "${ENABLE_WEB:-1}" = "1" ]; then
       echo "WEB_UPSTREAM=http://127.0.0.1:$WEB_PORT"
-      echo "API_UPSTREAM=http://127.0.0.1:$API_PORT"
-      echo "GRPC_UPSTREAM=127.0.0.1:$GRPC_PORT"
-      echo "WEB_PREFIX=/app"
     fi
     if [ -n "${OIDC_ISSUER_URL:-}" ]; then
       echo "# OIDC SSO"
@@ -205,12 +183,10 @@ write_env_file() {
     echo "CC_WEB_PORT=$WEB_PORT"
     echo "CC_API_PORT=$API_PORT"
     echo "CC_GRPC_PORT=$GRPC_PORT"
-    echo "CC_PROXY_PORT=${PROXY_PORT:-}"
     echo "CC_RUNTIME_DIR=$RUNTIME_DIR"
     echo "CC_ADVERTISE_HOST=$ADVERTISE_HOST"
     echo "CC_ENABLE_AGENT=${ENABLE_AGENT:-0}"
     echo "CC_ENABLE_WEB=${ENABLE_WEB:-1}"
-    echo "CC_ENABLE_PROXY=${ENABLE_PROXY:-1}"
     if [ -n "$EXTRA_ENV_LINES" ]; then
       echo "# extra vars"
       printf '%s' "$EXTRA_ENV_LINES"

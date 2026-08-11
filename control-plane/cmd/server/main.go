@@ -45,6 +45,17 @@ func run() error {
 	}
 	defer pool.Close()
 
+	// db.Open doesn't ping, so check now purely to log a clear signal at boot. A
+	// failed ping here is not fatal: the server still starts, /healthz reports
+	// "degraded" until Postgres is reachable, and the UI shows a setup banner.
+	pingCtx, pingCancel := context.WithTimeout(ctx, 3*time.Second)
+	if err := pool.Ping(pingCtx); err != nil {
+		log.Warn("postgres not reachable; control plane is starting in a degraded state", "err", err)
+	} else {
+		log.Info("postgres reachable")
+	}
+	pingCancel()
+
 	auth.SeedAdmin(ctx, log, auth.NewStore(pool), cfg.SeedAdminEmail, cfg.SeedAdminPassword)
 
 	oidcCfg := auth.OIDCConfig{
@@ -89,6 +100,7 @@ func run() error {
 		PublicHTTPURL:    cfg.PublicHTTPURL,
 		PublicGRPCAddr:   cfg.PublicGRPCAddr,
 		InstallScriptURL: cfg.InstallScriptURL,
+		WebUpstream:      cfg.WebUpstream,
 		Crypto:           box,
 		OIDC:             oidc,
 		OIDCPostPath:     "/",

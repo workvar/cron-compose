@@ -5,6 +5,7 @@ go 1.25
 replace github.com/croncompose/croncompose/proto => ../proto
 
 require (
+	github.com/creack/pty v1.1.21
 	github.com/croncompose/croncompose/proto v0.0.0-00010101000000-000000000000
 	github.com/oklog/ulid/v2 v2.1.0
 	github.com/robfig/cron/v3 v3.0.1

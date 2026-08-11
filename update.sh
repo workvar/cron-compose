@@ -4,8 +4,7 @@
 # Pulls the latest source, rebuilds, applies database migrations, and restarts
 # the stack. The run mode is auto-detected:
 #   source   the installer's croncompose-ctl.sh is present -> rebuild Go binaries
-#            and the web UI from source, migrate, `croncompose-ctl.sh restart`,
-#            and (re)start the Go proxy, which this script supervises directly.
+#            and the web UI from source, migrate, `croncompose-ctl.sh restart`.
 #   compose  docker-compose.prod.yml is present -> `docker compose build`, run
 #            migrations in a one-off container, then `docker compose up -d`.
 #
@@ -16,7 +15,6 @@
 #   --no-migrate            skip database migrations
 #   --no-restart            skip (re)starting services
 #   --no-web                source mode: skip the web UI build
-#   --no-proxy              source mode: do not build or run the proxy
 #   -h, --help              show this help
 #
 # The whole script is wrapped in a brace group so bash reads it fully before
@@ -47,13 +45,12 @@ Usage: ./update.sh [options]
   --no-migrate            skip database migrations
   --no-restart            skip (re)starting services
   --no-web                source mode: skip the web UI build
-  --no-proxy              source mode: do not build or run the proxy
   -h, --help              show this help
 EOF
   exit "${1:-0}"
 }
 
-MODE=auto; DO_PULL=1; DO_BUILD=1; DO_MIGRATE=1; DO_RESTART=1; DO_WEB=1; DO_PROXY=1
+MODE=auto; DO_PULL=1; DO_BUILD=1; DO_MIGRATE=1; DO_RESTART=1; DO_WEB=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --mode)       MODE="${2:?--mode needs a value}"; shift 2 ;;
@@ -63,7 +60,6 @@ while [ $# -gt 0 ]; do
     --no-migrate) DO_MIGRATE=0; shift ;;
     --no-restart) DO_RESTART=0; shift ;;
     --no-web)     DO_WEB=0; shift ;;
-    --no-proxy)   DO_PROXY=0; shift ;;
     -h|--help)    usage 0 ;;
     *)            die "unknown option: $1 (try --help)" ;;
   esac
@@ -112,9 +108,6 @@ build_go_source() {
   ( cd control-plane && go build -o bin/control-plane ./cmd/server ) || die "control-plane build failed"; ok "control-plane"
   ( cd control-plane && go build -o bin/migrate       ./cmd/migrate ) || die "migrate build failed";       ok "migrate"
   ( cd cli           && go build -o bin/cc            ./cmd/cc      ) || die "cli build failed";           ok "cc"
-  if [ "$DO_PROXY" = 1 ] && [ "${CC_ENABLE_PROXY:-1}" = 1 ] && [ -d proxy ]; then
-    ( cd proxy && go build -o bin/proxy ./cmd/proxy ) || die "proxy build failed"; ok "proxy"
-  fi
   if [ "${CC_ENABLE_AGENT:-0}" = 1 ] && [ -d agent ]; then
     ( cd agent && go build -o bin/agent ./cmd/agent ) || die "agent build failed"; ok "agent"
   fi
@@ -146,38 +139,11 @@ migrate_source() {
   ok "schema is up to date"
 }
 
-# The proxy is not part of the generated croncompose-ctl.sh, so this script owns
-# its lifecycle, reusing the same runtime dir / pidfile conventions.
-restart_proxy_source() {
-  [ "$DO_PROXY" = 1 ] && [ "${CC_ENABLE_PROXY:-1}" = 1 ] || { warn "proxy disabled; skipping"; return 0; }
-  local bin="$REPO_ROOT/proxy/bin/proxy"
-  [ -x "$bin" ] || { warn "proxy binary missing ($bin); skipping"; return 0; }
-
-  local rt logs run pf
-  rt="${CC_RUNTIME_DIR:-$REPO_ROOT/.run}"; logs="$rt/logs"; run="$rt/run"; pf="$run/proxy.pid"
-  mkdir -p "$logs" "$run"
-
-  if [ -f "$pf" ] && kill -0 "$(cat "$pf" 2>/dev/null)" 2>/dev/null; then
-    kill "$(cat "$pf")" 2>/dev/null && ok "stopped old proxy (pid $(cat "$pf"))"
-    rm -f "$pf"; sleep 1
-  fi
-
-  local listen=":${CC_PROXY_PORT:-8000}"
-  ( cd "$REPO_ROOT" && \
-    PROXY_LISTEN_ADDR="$listen" \
-    WEB_UPSTREAM="http://127.0.0.1:${CC_WEB_PORT:-3000}" \
-    API_UPSTREAM="http://127.0.0.1:${CC_API_PORT:-8080}" \
-    GRPC_UPSTREAM="127.0.0.1:${CC_GRPC_PORT:-9090}" \
-    nohup "$bin" >"$logs/proxy.log" 2>&1 </dev/null & echo $! >"$pf" )
-  ok "started proxy (pid $(cat "$pf")) on $listen -> web:${CC_WEB_PORT:-3000} api:${CC_API_PORT:-8080} grpc:${CC_GRPC_PORT:-9090}"
-}
-
 restart_source() {
   [ "$DO_RESTART" = 1 ] || { warn "skipping restart (--no-restart)"; return 0; }
   step "Restarting services (croncompose-ctl.sh restart)"
   [ -x "$REPO_ROOT/croncompose-ctl.sh" ] || die "croncompose-ctl.sh not found or not executable"
   "$REPO_ROOT/croncompose-ctl.sh" restart || die "croncompose-ctl.sh restart failed"
-  restart_proxy_source
 }
 
 run_source() {
@@ -223,7 +189,7 @@ run_compose() {
   if [ "$DO_RESTART" = 1 ]; then
     step "Starting / restarting services ($DC up -d)"
     $DC -f "$COMPOSE_FILE" up -d || die "compose up failed"
-    ok "stack is up; the proxy is the published entry point"
+    ok "stack is up; the control plane is the published entry point"
   else warn "skipping restart (--no-restart)"; fi
 }
 

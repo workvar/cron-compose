@@ -59,6 +59,14 @@ survives a control-plane restart, and shows correct logs and history.
 - Larger log handling: object storage or file backend beyond the Postgres cap.
 - Possibly job dependencies / simple DAGs (run B after A succeeds).
 
+## Phase 5 — Connectors
+
+Manage the service managers already running on a target server (nginx, Apache, Caddy,
+Traefik, HAProxy, pm2, systemd, Docker, system cron, ufw) from the portal: discover what
+is installed, view live status and current config, and safely edit config and drive
+lifecycle actions. Reuses the agent channel, audit log, and RBAC; the agent stays
+unprivileged by default. Full design and phasing in [connectors.md](connectors.md).
+
 ## Open questions
 
 These need a decision before or during the relevant phase:

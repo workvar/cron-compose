@@ -17,11 +17,6 @@ build_go() {
     ( cd "$REPO_ROOT/agent" && go build -o bin/agent ./cmd/agent ) || die "agent build failed"
     ok "agent"
   fi
-  if [ "${ENABLE_PROXY:-1}" = "1" ]; then
-    # The proxy is its own (dependency-free) Go module.
-    ( cd "$REPO_ROOT/proxy" && go build -o bin/proxy ./cmd/proxy ) || die "proxy build failed"
-    ok "proxy"
-  fi
 }
 
 build_web() {

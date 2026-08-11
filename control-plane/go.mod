@@ -7,6 +7,7 @@ replace github.com/croncompose/croncompose/proto => ../proto
 require (
 	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/croncompose/croncompose/proto v0.0.0-00010101000000-000000000000
+	github.com/fasthttp/websocket v1.5.12
 	github.com/gofiber/fiber/v3 v3.0.0
 	github.com/jackc/pgx/v5 v5.7.1
 	github.com/oklog/ulid/v2 v2.1.0

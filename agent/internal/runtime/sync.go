@@ -17,6 +17,8 @@ func (r *Runtime) handleServerMessage(ctx context.Context, msg *agentv1.ServerMe
 		go r.executeRun(ctx, body.RunNow.GetJobId(), body.RunNow.GetRunId(), "manual")
 	case *agentv1.ServerMessage_CancelRun:
 		r.cancelRun(body.CancelRun.GetRunId())
+	case *agentv1.ServerMessage_TerminalInput:
+		r.terminals.Handle(body.TerminalInput)
 	}
 }
 

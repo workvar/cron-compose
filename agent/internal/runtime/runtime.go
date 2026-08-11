@@ -14,10 +14,12 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/croncompose/croncompose/agent/internal/config"
+	"github.com/croncompose/croncompose/agent/internal/connectors"
 	"github.com/croncompose/croncompose/agent/internal/identity"
 	"github.com/croncompose/croncompose/agent/internal/outbox"
 	"github.com/croncompose/croncompose/agent/internal/scheduler"
 	"github.com/croncompose/croncompose/agent/internal/store"
+	"github.com/croncompose/croncompose/agent/internal/terminal"
 	"github.com/croncompose/croncompose/agent/internal/transport"
 	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
 )
@@ -32,6 +34,13 @@ type Runtime struct {
 	outbox *outbox.Outbox
 
 	wake chan struct{}
+
+	// direct carries EPHEMERAL messages (terminal output) the drain loop sends on the
+	// stream without persisting to the outbox. The drain loop stays the sole sender.
+	direct chan *agentv1.AgentMessage
+
+	conns     *connectors.Registry
+	terminals *terminal.Manager
 
 	sched *scheduler.Scheduler
 
@@ -58,11 +67,14 @@ func New(cfg config.Config, log *slog.Logger, st *store.Store, ident identity.Id
 		tlsCfg:     tlsCfg,
 		outbox:     ob,
 		wake:       make(chan struct{}, 1),
+		direct:     make(chan *agentv1.AgentMessage, 256),
+		conns:      connectors.NewRegistry(log),
 		jobs:     map[string]store.JobDef{},
 		runIndex: map[string]activeRun{},
 		jobBusy:  map[string]int{},
 	}
 	r.sched = scheduler.New(r.onSchedulerFire)
+	r.initTerminals()
 	return r
 }
 
@@ -116,15 +128,21 @@ func (r *Runtime) connectAndServe(ctx context.Context, addr string) error {
 	}
 	r.log.Info("stream open")
 
+	// Terminal sessions are tied to the connection: when this cycle ends, kill any live
+	// shells so none linger across a reconnect.
+	defer r.terminals.CloseAll()
+
 	// Enqueue Hello and a periodic heartbeat. The drain loop is the sole sender.
 	r.queue(&agentv1.AgentMessage{
 		Body: &agentv1.AgentMessage_Hello{Hello: &agentv1.Hello{
 			AgentVersion: r.cfg.AgentVersion,
 			Os:           "linux",
+			Capabilities: []string{"terminal"},
 		}},
 	})
 
 	go r.heartbeatLoop(connCtx)
+	go r.connectorLoop(connCtx)
 	go r.drainLoop(connCtx, stream)
 
 	// Recv loop on this goroutine. When it returns, the cycle is over.
@@ -168,6 +186,13 @@ func (r *Runtime) drainLoop(ctx context.Context, stream agentv1.AgentService_Age
 		select {
 		case <-ctx.Done():
 			return
+		case m := <-r.direct:
+			// Ephemeral terminal output: send immediately, never persisted.
+			if err := stream.Send(m); err != nil {
+				r.log.Warn("direct send ended", "err", err)
+				return
+			}
+			continue
 		case <-r.wake:
 		case <-time.After(2 * time.Second):
 			// Safety tick in case a wake signal was dropped.

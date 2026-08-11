@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { apiGet } from "@/lib/api";
-import type { Job, ListResponse, Server } from "@/lib/types";
+import type { Job, ListResponse, Me, Server } from "@/lib/types";
 import { JobRow } from "@/components/JobRow";
-import { IconChevronLeft, IconPlus } from "@/components/icons";
+import { IconChevronLeft, IconPlus, IconTerminal } from "@/components/icons";
 
 const tone: Record<Server["status"], string> = { online: "ok", offline: "danger", pending: "neutral" };
 
@@ -12,6 +12,7 @@ export default async function ServerDetailPage({ params }: Props) {
   const { id } = await params;
   let server: Server | null = null;
   let jobs: Job[] = [];
+  let me: Me | null = null;
   let error: string | null = null;
   try {
     server = await apiGet<Server>(`/servers/${id}`);
@@ -19,6 +20,12 @@ export default async function ServerDetailPage({ params }: Props) {
   } catch (e) {
     error = (e as Error).message;
   }
+  try {
+    me = await apiGet<Me>("/me");
+  } catch {
+    me = null;
+  }
+  const canTerminal = me?.role === "admin" || me?.role === "owner";
 
   if (error || !server) {
     return (
@@ -43,6 +50,9 @@ export default async function ServerDetailPage({ params }: Props) {
           </div>
         </div>
         <div className="page-head-actions">
+          {canTerminal && (
+            <Link href={`/servers/${server.id}/terminal`} className="button secondary"><IconTerminal /> Terminal</Link>
+          )}
           <Link href={`/servers/${server.id}/jobs/new`} className="button"><IconPlus /> New job</Link>
         </div>
       </div>

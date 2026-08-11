@@ -46,6 +46,9 @@ message AgentMessage {
     RunStarted  run_started  = 4;
     LogChunk    log_chunk    = 5;
     RunFinished run_finished = 6;
+    ConnectorEvent  connector_event  = 7; // unsolicited connector discovery push
+    ConnectorResult connector_result = 8; // reply to a ConnectorCommand
+    TerminalOutput  terminal_output  = 9; // web terminal: pty / command output
   }
 }
 
@@ -55,6 +58,8 @@ message ServerMessage {
     RunNow      run_now      = 2;
     CancelRun   cancel_run   = 3;
     UpdateAgent update_agent = 4;
+    ConnectorCommand connector_command = 5; // targeted connector op (read/validate/apply/lifecycle)
+    TerminalInput    terminal_input    = 6; // web terminal: open / stdin / resize / close
   }
 }
 
@@ -150,4 +155,104 @@ message CancelRun {
 message UpdateAgent {
   string target_version = 1;
   string download_url   = 2;
+}
+
+// ---- Connectors ----
+//
+// Manage the service managers already running on the server (nginx, systemd, docker,
+// pm2, and so on). See docs/connectors.md. ConnectorEvent is the unsolicited discovery
+// push (Phase A). ConnectorCommand / ConnectorResult are the request/response pair used
+// by targeted reads and writes (Phase B/C) and are defined here so the contract is
+// stable, even though Phase A only sends ConnectorEvent.
+
+message DiscoveredConnector {
+  string kind     = 1;  // nginx|apache|caddy|traefik|haproxy|pm2|systemd|docker|cron|ufw
+  string instance = 2;  // e.g. pm2 user; empty for singletons
+  string version  = 3;
+  string status   = 4;  // running|stopped|degraded|unknown
+  bool   manageable = 5; // agent has privilege to act, not just read
+  repeated string config_paths = 6;
+  int32  object_count = 7;
+  // Capabilities the agent can actually perform on this host.
+  bool   manages_config  = 8;
+  bool   manages_objects = 9;
+  bool   can_validate    = 10;
+  bool   can_reload      = 11;
+  bool   can_lifecycle   = 12;
+  bool   can_edit        = 13;
+  map<string, string> detail = 14;
+  repeated ConnectorResource resources = 15;
+}
+
+message ConnectorResource {
+  string type  = 1;  // config_file|object
+  string ref   = 2;  // path | unit | container id | pm2 id | rule number
+  string name  = 3;
+  string state = 4;  // objects: active|running|stopped|enabled; empty for files
+  string checksum = 5;
+  int64  size_bytes = 6;
+  map<string, string> attributes = 7;
+}
+
+message ConnectorEvent {
+  google.protobuf.Timestamp ts = 1;
+  repeated DiscoveredConnector connectors = 2;
+}
+
+message ConnectorCommand {
+  string request_id     = 1;  // ULID, correlates the reply
+  string op             = 2;  // discover|status|list|read|validate|apply|lifecycle|rollback
+  string connector_kind = 3;
+  string connector_id   = 4;
+  string ref            = 5;  // path | unit | container | pm2 id | rule number
+  string action         = 6;  // lifecycle: start|stop|restart|reload|enable|disable
+  bytes  content        = 7;  // apply: proposed config bytes
+  string base_checksum  = 8;  // optimistic concurrency
+  bool   dry_run        = 9;
+}
+
+message ConnectorStep {
+  string name      = 1;
+  bool   ok        = 2;
+  string output    = 3;
+  int32  exit_code = 4;
+}
+
+message ConnectorResult {
+  string request_id = 1;
+  string status     = 2;  // succeeded|failed|invalid|unauthorized|unsupported
+  string message    = 3;  // validator output / human-readable detail
+  bytes  content    = 4;  // read: config bytes
+  string checksum   = 5;
+  repeated ConnectorStep steps = 6;
+  bytes  payload_json = 7;
+}
+
+// ---- Web terminal ----
+//
+// An interactive shell or one-shot command, driven from the browser. The browser opens
+// a WebSocket to the control plane, which relays bytes over this stream to the agent.
+// The agent runs the request inside a pseudo-terminal and streams output back. The
+// session_id (ULID, minted by the control plane) correlates one terminal session;
+// many can run concurrently per server. These messages are EPHEMERAL: the agent sends
+// TerminalOutput directly on the stream, never through its durable outbox, so terminal
+// bytes are never persisted or replayed.
+
+message TerminalInput {
+  string session_id = 1;
+  string op         = 2;  // open | data | resize | close | signal
+  string kind       = 3;  // open: shell (interactive pty) | command (one-shot)
+  bytes  data       = 4;  // data: stdin bytes
+  uint32 cols       = 5;  // open/resize: terminal width
+  uint32 rows       = 6;  // open/resize: terminal height
+  string command    = 7;  // open+command: the one-shot command line to run
+  string signal     = 8;  // signal: INT | TERM | QUIT | KILL
+}
+
+message TerminalOutput {
+  string session_id = 1;
+  string kind       = 2;  // data | started | exit | error
+  bytes  data       = 3;  // data: pty output bytes
+  int32  exit_code  = 4;  // exit: process exit code
+  string message    = 5;  // error / exit: human-readable detail
 }

@@ -11,7 +11,6 @@
 #   --non-interactive   accept defaults / CC_* env vars without prompting
 #   --no-agent          do not enroll/run a local agent (control plane only)
 #   --no-web            do not build or run the web UI (API-only install)
-#   --no-proxy          do not build or run the single-entry reverse proxy
 #   --runtime-dir DIR   where to keep logs, pids, TLS, and agent data
 #   -h, --help          show this help
 #
@@ -27,7 +26,6 @@ LIB_DIR="$SCRIPT_DIR/lib"
 NONINTERACTIVE=0
 ENABLE_AGENT=1
 ENABLE_WEB=1
-ENABLE_PROXY=1   # front everything with the single-entry reverse proxy
 
 usage() { awk 'NR>1{ if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"; exit 0; }
 
@@ -36,14 +34,13 @@ while [ $# -gt 0 ]; do
     --non-interactive) NONINTERACTIVE=1 ;;
     --no-agent)        ENABLE_AGENT=0 ;;
     --no-web)          ENABLE_WEB=0 ;;
-    --no-proxy)        ENABLE_PROXY=0 ;;
     --runtime-dir)     shift; CC_RUNTIME_DIR="${1:-}" ;;
     -h|--help)         usage ;;
     *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
   esac
   shift
 done
-export NONINTERACTIVE ENABLE_AGENT ENABLE_WEB ENABLE_PROXY
+export NONINTERACTIVE ENABLE_AGENT ENABLE_WEB
 
 # shellcheck source=lib/common.sh
 . "$LIB_DIR/common.sh"
@@ -69,7 +66,8 @@ banner() {
 ART
   printf '%s' "$C_RESET" >&2
   dim "Builds and runs the CronCompose control plane from source."
-  [ "$ENABLE_PROXY" = "1" ] && dim "Single entry point: one public port fronts the UI (/app), API (/api), and agent gRPC."
+  dim "Single entry point: the control plane serves the UI (/app) and REST (/api) on one"
+  dim "HTTP port; agents connect on the gRPC port."
   [ "$ENABLE_AGENT" = "1" ] && dim "Scope: control plane + a local agent on this machine."
   [ "$NONINTERACTIVE" = "1" ] && dim "Mode: non-interactive (using defaults / CC_* env)."
   return 0  # never let a false test above abort the script under `set -e`

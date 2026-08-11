@@ -22,12 +22,11 @@ source of truth for *definitions*, not a runtime dependency for *execution*.
 
 ## Single entry point
 
-The web UI, the REST API, and the agent gRPC channel all sit behind one URL via a
-small in-repo Go reverse proxy ([proxy/](proxy/)). It path-routes `/api/*` to the
-control plane and everything else to the web UI, and passes agent mTLS gRPC straight
-through (never decrypted). Point a single domain at the proxy; nothing else is exposed.
-See [proxy/README.md](proxy/README.md). In production it is the only published service
-in [docker-compose.prod.yml](docker-compose.prod.yml).
+The control plane is the single entry point for browsers: its HTTP port serves the
+REST API under `/api` and reverse-proxies `/app` to the web UI (Next.js, `basePath:
+/app`), redirecting the bare URL to `/app`. Agents connect to the control plane's
+mTLS gRPC port directly. In production only those two ports are published in
+[docker-compose.prod.yml](docker-compose.prod.yml); the web container stays internal.
 
 ## Documentation
 

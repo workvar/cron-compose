@@ -102,3 +102,33 @@ export type NotificationTarget = {
   enabled: boolean;
   created_at: string;
 };
+
+export type Connector = {
+  id: string;
+  server_id: string;
+  server_name?: string;
+  kind: string;
+  instance: string;
+  version?: string;
+  status: "running" | "stopped" | "degraded" | "unknown";
+  manageable: boolean;
+  capabilities: Record<string, boolean>;
+  config_paths: string[];
+  object_count: number;
+  detail?: Record<string, string>;
+  last_seen_at?: string | null;
+  created_at: string;
+};
+
+export type ConnectorResource = {
+  id: string;
+  connector_id: string;
+  type: "config_file" | "object";
+  ref: string;
+  name: string;
+  state?: string;
+  checksum?: string;
+  size_bytes?: number;
+  attributes?: Record<string, string>;
+  updated_at: string;
+};

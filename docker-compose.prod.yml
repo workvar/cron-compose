@@ -1,6 +1,7 @@
-# Production-shaped docker-compose. Brings up Postgres, the control plane, the web
-# UI, and a single-entry reverse proxy on a shared network. Only the proxy is
-# published; everything else stays internal and is reached through one URL.
+# Production-shaped docker-compose. Brings up Postgres, the control plane, and the
+# web UI on a shared network. The control plane is the single entry point: it serves
+# the UI under /app, the REST API under /api, and the agent mTLS gRPC endpoint. The
+# web container stays internal and is reached through the control plane.
 # Override defaults by exporting env vars or copying the block under x-env into a
 # `.env` file.
 
@@ -9,16 +10,20 @@ x-env: &cp-env
   HTTP_ADDR: ":8080"
   GRPC_ADDR: ":9090"
   TLS_DIR: /home/ccompose/tls
-  # TLS_HOSTS must include the public hostname agents dial (the proxy's host),
-  # because agent mTLS is passed through to the control plane untouched.
+  # TLS_HOSTS must include the public hostname agents dial (the control plane's host),
+  # since agents terminate mTLS against the control plane directly.
   TLS_HOSTS: ${TLS_HOSTS:-localhost,control-plane}
   SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+  # 32-byte hex (openssl rand -hex 32). Wraps stored secrets; back it up offline.
+  SECRETS_MASTER_KEY: ${SECRETS_MASTER_KEY:?set SECRETS_MASTER_KEY in .env}
   SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:?set SEED_ADMIN_EMAIL in .env}
   SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?set SEED_ADMIN_PASSWORD in .env}
-  # Addresses advertised to agents at enrollment. Point them at the proxy so the
-  # whole system has a single entry point. Defaults assume local plain-mode.
-  PUBLIC_HTTP_URL: ${PUBLIC_HTTP_URL:-http://localhost:8000/api/v1}
-  PUBLIC_GRPC_ADDR: ${PUBLIC_GRPC_ADDR:-localhost:8000}
+  # Internal Next.js UI address the control plane reverse-proxies /app to.
+  WEB_UPSTREAM: http://web:3000
+  # Addresses advertised to agents at enrollment. Point them at the control plane's
+  # published HTTP and gRPC ports. Defaults assume local plain-mode.
+  PUBLIC_HTTP_URL: ${PUBLIC_HTTP_URL:-http://localhost:8080/api/v1}
+  PUBLIC_GRPC_ADDR: ${PUBLIC_GRPC_ADDR:-localhost:9090}
   LOG_LEVEL: info
 
 services:
@@ -36,6 +41,8 @@ services:
       timeout: 3s
       retries: 10
 
+  # Single entry point. Publishes the HTTP port (UI at /app, REST at /api) and the
+  # agent mTLS gRPC port. Reverse-proxies /app to the internal web container.
   control-plane:
     build:
       context: .
@@ -44,10 +51,9 @@ services:
       <<: *cp-env
     volumes:
       - cp-tls:/home/ccompose/tls
-    # Internal only — reached via the proxy. No published ports.
-    expose:
-      - "8080"  # REST
-      - "9090"  # mTLS gRPC for agents
+    ports:
+      - "${PUBLIC_PORT:-8080}:8080"       # HTTP: UI (/app) + REST (/api)
+      - "${PUBLIC_GRPC_PORT:-9090}:9090"  # mTLS gRPC for agents
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,30 +65,10 @@ services:
     environment:
       API_BASE: http://control-plane:8080/api/v1
       PORT: 3000
-    # Internal only — reached via the proxy.
+    # Internal only — reached via the control plane's /app reverse proxy.
     expose:
       - "3000"
     depends_on:
-      - control-plane
-
-  # Single entry point. Publishes one port; routes UI, REST, and agent gRPC.
-  proxy:
-    build:
-      context: .
-      dockerfile: proxy/Dockerfile
-    environment:
-      PROXY_LISTEN_ADDR: ":8000"
-      WEB_UPSTREAM: http://web:3000
-      API_UPSTREAM: http://control-plane:8080
-      GRPC_UPSTREAM: control-plane:9090
-      # For browser HTTPS termination at the proxy, also set (and mount certs):
-      #   TLS_CERT_FILE / TLS_KEY_FILE / AGENT_SNI, and use PROXY_LISTEN_ADDR=":443".
-    ports:
-      - "${PUBLIC_PORT:-8000}:8000"
-    # The proxy answers GET /__health with 200. The image is distroless (no
-    # shell), so probe that endpoint from your load balancer / orchestrator.
-    depends_on:
-      - web
       - control-plane
 
 volumes:

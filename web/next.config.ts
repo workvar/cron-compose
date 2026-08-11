@@ -8,21 +8,20 @@ const config: NextConfig = {
   // Standalone output for tiny production Docker images.
   output: "standalone",
 
-  // The whole UI lives under /app, so the single entry point can give /api to
-  // the Go control plane and /app to this app. next/link, next/router and
-  // redirect() pick this prefix up automatically; raw fetch() does not (see the
+  // The whole UI lives under /app, so the control plane (the single entry point)
+  // serves /api itself and reverse-proxies /app to this app. next/link, next/router
+  // and redirect() pick this prefix up automatically; raw fetch() does not (see the
   // rewrite below), and next/image src would need it added by hand (none used).
   basePath: "/app",
 
   env: { API_BASE: apiBase },
 
-  // Browser calls to /api/* are proxied to the control plane, mapping the public
-  // /api prefix onto the control plane's /api/v1. In production the in-repo Go
-  // proxy fronts /api before it ever reaches Next; this rewrite is the
-  // standalone/dev path that keeps the UI self-contained (e.g. `next dev`).
-  // basePath: false keeps the source at the real root (/api/*, not /app/api/*)
-  // so the client's fetch("/api/..") still matches; allowed here because the
-  // destination is an absolute (external) URL.
+  // Browser calls to /api/* map onto the control plane's /api/v1. In production the
+  // control plane fronts /api directly (it serves the bare /api prefix and the UI);
+  // this rewrite is the standalone/dev path that keeps the UI self-contained when
+  // Next is hit directly (e.g. `next dev`). basePath: false keeps the source at the
+  // real root (/api/*, not /app/api/*) so the client's fetch("/api/..") still
+  // matches; allowed here because the destination is an absolute (external) URL.
   async rewrites() {
     return [
       { source: "/api/:path*", destination: `${apiBase}/:path*`, basePath: false },

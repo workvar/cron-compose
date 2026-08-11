@@ -25,10 +25,10 @@ migrate:
 	done
 
 proto:
-	cd proto && protoc --go_out=../control-plane/internal/pb --go_opt=paths=source_relative \
-		--go-grpc_out=../control-plane/internal/pb --go-grpc_opt=paths=source_relative agent.proto
-	cd proto && protoc --go_out=../agent/internal/pb --go_opt=paths=source_relative \
-		--go-grpc_out=../agent/internal/pb --go-grpc_opt=paths=source_relative agent.proto
+	cd proto && protoc \
+		--go_out=. --go_opt=module=github.com/croncompose/croncompose/proto \
+		--go-grpc_out=. --go-grpc_opt=module=github.com/croncompose/croncompose/proto \
+		agent.proto
 
 control-plane:
 	cd control-plane && go build -o bin/control-plane ./cmd/server

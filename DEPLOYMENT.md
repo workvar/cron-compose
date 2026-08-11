@@ -1,0 +1,267 @@
+# Deployment
+
+How to deploy the CronCompose control plane and agents to production. Two paths are
+supported:
+
+- **Docker Compose** ([docker-compose.prod.yml](docker-compose.prod.yml)): the
+  recommended way to run the control plane, web UI, and Postgres on one host or
+  orchestrator.
+- **From source** ([install/install.sh](install/install.sh)): an interactive installer
+  that builds everything and supervises it with a generated `croncompose-ctl.sh`. See
+  [install/README.md](install/README.md) for the full reference.
+
+For deeper operational topics this guide links out rather than repeating:
+[operations.md](docs/operations.md) (metrics, OIDC, agent packaging),
+[upgrades.md](docs/upgrades.md) (per-migration detail), and
+[security.md](docs/security.md) (auth, mTLS, secrets, sandbox).
+
+## Topology
+
+The **control plane is the single entry point**. It exposes two ports:
+
+```
+                       :8080  (HTTP, public)        :9090  (gRPC mTLS, public)
+  browsers / REST ───────────►┐                          ▲
+                              │  control plane            │
+                  /app  ──────┼──► web UI (Next.js, internal :3000)
+                  /api  ──────┘    REST API (/api -> /api/v1)
+                                                          │
+  agents ─────────────────────────────────────────────────┘  (dial out only)
+
+                          control plane ──► Postgres (internal)
+```
+
+- **HTTP port** (`HTTP_ADDR`, default `:8080`) serves the REST API under `/api` and
+  reverse-proxies `/app` to the internal Next.js server; the bare `/` redirects to
+  `/app`. The control plane reaches the UI via `WEB_UPSTREAM`.
+- **gRPC port** (`GRPC_ADDR`, default `:9090`) is the agent mTLS endpoint. Agents dial
+  it directly; they never accept inbound connections.
+- **Web UI** runs internally and is only reachable through the control plane, so it
+  binds loopback (source install) or stays on the internal network (Compose).
+- **Postgres** is the only stateful dependency.
+
+There is no separate single-port proxy. Browser TLS is terminated in front of the HTTP
+port (see [TLS and PKI](#tls-and-pki)); the gRPC port carries mTLS end to end.
+
+## Prerequisites
+
+- A **public DNS name** that both browsers and agents use to reach the host (for
+  example `cc.example.com`).
+- **PostgreSQL 16** (managed, or via Compose).
+- A **TLS certificate** for the public name, terminated by a reverse proxy or load
+  balancer in front of the HTTP port.
+- Docker + Compose v2 (Compose path), or Go 1.25+, Node 20+, and npm (source path).
+
+## Configuration
+
+The control plane reads its configuration from the environment. The most important
+variables:
+
+| Variable             | Purpose                                                                 |
+|----------------------|-------------------------------------------------------------------------|
+| `DATABASE_URL`       | Postgres DSN. Required.                                                  |
+| `HTTP_ADDR`          | HTTP listener. Default `:8080`. Serves `/app` and `/api`.               |
+| `GRPC_ADDR`          | Agent mTLS gRPC listener. Default `:9090`.                              |
+| `WEB_UPSTREAM`       | Internal Next.js address the control plane proxies `/app` to. Empty disables the UI proxy (API-only). |
+| `PUBLIC_BASE_URL`    | Single source of truth for the external address. Derives the public REST URL, the advertised gRPC address, the OIDC redirect, and a TLS SAN. |
+| `SESSION_SECRET`     | HMAC key for session cookies. Required, 16+ chars. Generate with `openssl rand -hex 32`. |
+| `SECRETS_MASTER_KEY` | 32-byte hex key (64 hex chars) wrapping stored secrets. **Set this in prod**; the default is a clearly marked dev key. |
+| `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Bootstrap admin, upserted on every boot (see the hardening note). |
+| `TLS_DIR`            | Where the agent-facing CA and server cert live. Persist this.            |
+| `TLS_HOSTS`          | SANs the server cert covers. Must include the public name agents dial.   |
+| `LOG_LEVEL`          | `debug` \| `info` \| `warn` \| `error`. Default `info`.                  |
+| `OIDC_*`             | Optional SSO. See [operations.md](docs/operations.md).                  |
+
+`PUBLIC_BASE_URL` is the easiest knob: set it once (for example
+`https://cc.example.com`) and the control plane derives `PUBLIC_HTTP_URL`
+(`<base>/api/v1`), `PUBLIC_GRPC_ADDR` (`<host>:<gRPC port>`), the OIDC redirect, and
+adds the host to `TLS_HOSTS`. The Compose file instead sets `PUBLIC_HTTP_URL` and
+`PUBLIC_GRPC_ADDR` explicitly; either approach works.
+
+Generate the two secrets before first boot:
+
+```sh
+openssl rand -hex 32   # SESSION_SECRET
+openssl rand -hex 32   # SECRETS_MASTER_KEY
+```
+
+Back up `SECRETS_MASTER_KEY` somewhere safe. Losing it makes every stored secret
+unrecoverable.
+
+## Path A: Docker Compose
+
+[docker-compose.prod.yml](docker-compose.prod.yml) runs Postgres, the control plane,
+and the internal web UI. The control plane publishes the two public ports; the web
+container has no published ports.
+
+1. **Create `.env`** next to the compose file. The required keys fail fast if unset:
+
+   ```sh
+   SESSION_SECRET=<openssl rand -hex 32>
+   SECRETS_MASTER_KEY=<openssl rand -hex 32>
+   SEED_ADMIN_EMAIL=you@example.com
+   SEED_ADMIN_PASSWORD=<strong password>
+
+   # Public address (used in the agent install command and advertised to agents).
+   PUBLIC_HTTP_URL=https://cc.example.com/api/v1
+   PUBLIC_GRPC_ADDR=cc.example.com:9090
+   TLS_HOSTS=localhost,control-plane,cc.example.com
+
+   # Published host ports (optional; these are the defaults).
+   PUBLIC_PORT=8080
+   PUBLIC_GRPC_PORT=9090
+   ```
+
+2. **Build and run migrations** (the control-plane image bundles the migrate tool and
+   the SQL files):
+
+   ```sh
+   docker compose -f docker-compose.prod.yml build
+   docker compose -f docker-compose.prod.yml up -d postgres
+   docker compose -f docker-compose.prod.yml run --rm --no-deps \
+     --entrypoint /usr/local/bin/migrate control-plane -dir /migrations
+   ```
+
+3. **Start the stack:**
+
+   ```sh
+   docker compose -f docker-compose.prod.yml up -d
+   ```
+
+The UI is then at `https://cc.example.com/app` (behind your TLS terminator, see below),
+the REST API at `/api`, and agents enroll against `cc.example.com:9090`.
+
+`./update.sh` automates rebuild, migrate, and restart in Compose mode (it auto-detects
+the compose file).
+
+## Path B: From source on a single host
+
+Use this for a Raspberry Pi, a VM, or any single box without containers.
+
+```sh
+git clone <repo> && cd croncompose
+./install/install.sh
+```
+
+The installer prompts for the public HTTP port (serves `/app` and `/api`), the public
+gRPC port, and the internal web UI port, then generates secrets, builds the binaries
+and the UI, applies migrations, and writes a `0600` `.env`. It starts everything with a
+generated control script:
+
+```sh
+./croncompose-ctl.sh status     # what's running
+./croncompose-ctl.sh logs web   # tail a log (control-plane | web | agent)
+./croncompose-ctl.sh restart
+```
+
+Pull updates and roll forward with `./update.sh` (source mode). Full flag and
+environment reference: [install/README.md](install/README.md).
+
+To survive reboots, wrap the control script in a `systemd` service or a `launchd` agent.
+
+## TLS and PKI
+
+There are two distinct TLS surfaces; treat them differently.
+
+**Browser and REST (HTTP port).** The control plane speaks cleartext HTTP on
+`HTTP_ADDR`. For production, put a TLS-terminating reverse proxy or load balancer
+(nginx, Caddy, a cloud LB) in front and forward to the control plane's HTTP port. A
+minimal nginx example:
+
+```nginx
+server {
+  listen 443 ssl;
+  server_name cc.example.com;
+  ssl_certificate     /etc/ssl/cc.example.com.crt;
+  ssl_certificate_key /etc/ssl/cc.example.com.key;
+
+  location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+```
+
+**Agents (gRPC port).** The control plane runs its own CA, auto-created under `TLS_DIR`,
+and presents a server certificate whose SAN must include the public name agents dial
+(`TLS_HOSTS`, or the `PUBLIC_BASE_URL` host). Agent mTLS is end to end, so **do not
+terminate TLS on the gRPC port**. If a load balancer sits in front, use L4/TCP
+passthrough, not HTTP termination.
+
+Operational notes:
+
+- **Persist `TLS_DIR`** (a Docker volume `cp-tls` in Compose). If the CA is regenerated,
+  enrolled agents no longer trust the server and must re-enroll.
+- **Changing the public name:** update `PUBLIC_BASE_URL` (or `PUBLIC_HTTP_URL` +
+  `PUBLIC_GRPC_ADDR`) and `TLS_HOSTS`, then delete the contents of `TLS_DIR` to
+  regenerate a cert whose SAN covers the new name, and restart.
+
+See [security.md](docs/security.md) for the trust model, enrollment, and secret
+handling in full.
+
+## Database and migrations
+
+Provide a reachable `DATABASE_URL` (PostgreSQL 16). Migrations live in
+[migrations/](migrations) and are applied by the bundled `migrate` tool, which records
+applied files in a `schema_migrations` table and is safe to re-run.
+
+- **Compose:** `docker compose -f docker-compose.prod.yml run --rm --no-deps
+  --entrypoint /usr/local/bin/migrate control-plane -dir /migrations`.
+- **Source:** `control-plane/bin/migrate -dir migrations` (reads `$DATABASE_URL`).
+
+Always **migrate before** starting or upgrading the control plane: it reads columns that
+older schemas do not have. Take a `pg_dump -Fc` backup first. Per-migration detail and
+the roll-forward sequence are in [upgrades.md](docs/upgrades.md).
+
+## Agents
+
+Agents run jobs on your servers and only ever dial out, so target hosts need no inbound
+ports for CronCompose. Install on Linux/macOS via the `.deb` / `.apk` packages or
+`scripts/install-agent.sh` (see [operations.md](docs/operations.md)), then configure
+`/etc/croncompose/agent.env`:
+
+```sh
+CONTROL_PLANE_ADDR=cc.example.com:9090        # mTLS gRPC endpoint
+CONTROL_PLANE_HTTP=https://cc.example.com/api/v1   # one-time enroll call
+CONTROL_PLANE_SNI=cc.example.com              # server name verified in TLS
+DATA_DIR=/var/lib/croncompose                 # identity, certs, job cache, outbox
+```
+
+Enrollment: create a server in the UI to mint a one-time token, run `agent enroll
+--token=...`, and the agent exchanges it once for a client certificate and switches to
+mTLS. Run the agent as a dedicated unprivileged user, never root, unless a specific
+job's `run_as_user` requires it.
+
+## Production hardening checklist
+
+- [ ] **Secrets set and backed up.** `SESSION_SECRET` and `SECRETS_MASTER_KEY` are real
+  random 32-byte hex values, not the dev defaults. `SECRETS_MASTER_KEY` is backed up
+  offline.
+- [ ] **TLS in front of HTTP**, with the gRPC port on TCP passthrough (never HTTP
+  terminated).
+- [ ] **Admin credential strategy.** `SEED_ADMIN_*` re-applies the admin password and
+  `owner` role on every boot, so a password changed in the UI is overwritten on restart.
+  Either keep `SEED_ADMIN_*` as the managed source of truth (rotate by editing env and
+  restarting) or unset them after first login so UI-managed credentials persist.
+- [ ] **`/metrics` is unauthenticated.** Firewall it to your monitoring network.
+- [ ] **Persistent volumes** for Postgres and `TLS_DIR`, both backed up.
+- [ ] **Agents run as a non-root system user**, with the hardened systemd unit from the
+  packages.
+- [ ] **`LOG_LEVEL=info`** (or `warn`) in production.
+
+## Health and observability
+
+- `GET /healthz` returns liveness plus a Postgres ping (use it for container and LB
+  health checks).
+- `GET /metrics` exposes Prometheus metrics (request counts and latency, connected
+  agents, run totals, log subscribers). Scrape config and the full metric list are in
+  [operations.md](docs/operations.md).
+
+## Upgrades
+
+The safe sequence is: back up the database, apply migrations, roll the control plane
+forward, then the web UI; agents reconnect on their own. `./update.sh` performs this for
+both Compose and source installs (it auto-detects the mode). See
+[upgrades.md](docs/upgrades.md).

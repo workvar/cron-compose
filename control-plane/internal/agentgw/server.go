@@ -33,12 +33,13 @@ type Gateway struct {
 	log      *slog.Logger
 	pool     *pgxpool.Pool
 	bundle   *pki.Bundle
-	registry *Registry
-	broker   *LogBroker
-	resolver SecretResolver
-	onFailed FailedRunHook
-	grpc     *grpc.Server
-	lis      net.Listener
+	registry  *Registry
+	broker    *LogBroker
+	terminals *TerminalBus
+	resolver  SecretResolver
+	onFailed  FailedRunHook
+	grpc      *grpc.Server
+	lis       net.Listener
 }
 
 // New constructs a Gateway.
@@ -48,9 +49,10 @@ func New(addr string, log *slog.Logger, pool *pgxpool.Pool, bundle *pki.Bundle, 
 		log:      log,
 		pool:     pool,
 		bundle:   bundle,
-		registry: NewRegistry(),
-		broker:   NewLogBroker(),
-		resolver: resolver,
+		registry:  NewRegistry(),
+		broker:    NewLogBroker(),
+		terminals: NewTerminalBus(),
+		resolver:  resolver,
 	}
 }
 
@@ -64,6 +66,10 @@ func (g *Gateway) Registry() *Registry { return g.registry }
 
 // Broker exposes the log broker so the REST SSE endpoint can subscribe.
 func (g *Gateway) Broker() *LogBroker { return g.broker }
+
+// Terminals exposes the terminal bus so the REST WebSocket endpoint can route a
+// session's output back to the browser.
+func (g *Gateway) Terminals() *TerminalBus { return g.terminals }
 
 // Start binds and serves over mTLS.
 func (g *Gateway) Start(_ context.Context) error {
@@ -91,7 +97,7 @@ func (g *Gateway) Start(_ context.Context) error {
 
 	creds := credentials.NewTLS(tlsCfg)
 	g.grpc = grpc.NewServer(grpc.Creds(creds))
-	agentv1.RegisterAgentServiceServer(g.grpc, newService(g.log, g.pool, g.registry, g.broker, g.resolver, g.onFailed))
+	agentv1.RegisterAgentServiceServer(g.grpc, newService(g.log, g.pool, g.registry, g.broker, g.terminals, g.resolver, g.onFailed))
 
 	go func() {
 		g.log.Info("grpc listening (mTLS)", "addr", g.addr)

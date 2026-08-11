@@ -17,14 +17,15 @@ import (
 // to any agent that still calls the gRPC Enroll RPC.
 type service struct {
 	agentv1.UnimplementedAgentServiceServer
-	log      *slog.Logger
-	pool     *pgxpool.Pool
-	registry *Registry
-	broker   *LogBroker
-	resolver SecretResolver
-	onFailed FailedRunHook
+	log       *slog.Logger
+	pool      *pgxpool.Pool
+	registry  *Registry
+	broker    *LogBroker
+	terminals *TerminalBus
+	resolver  SecretResolver
+	onFailed  FailedRunHook
 }
 
-func newService(log *slog.Logger, pool *pgxpool.Pool, reg *Registry, broker *LogBroker, resolver SecretResolver, onFailed FailedRunHook) *service {
-	return &service{log: log, pool: pool, registry: reg, broker: broker, resolver: resolver, onFailed: onFailed}
+func newService(log *slog.Logger, pool *pgxpool.Pool, reg *Registry, broker *LogBroker, terminals *TerminalBus, resolver SecretResolver, onFailed FailedRunHook) *service {
+	return &service{log: log, pool: pool, registry: reg, broker: broker, terminals: terminals, resolver: resolver, onFailed: onFailed}
 }

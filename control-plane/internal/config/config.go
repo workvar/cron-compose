@@ -14,6 +14,7 @@ import (
 type Config struct {
 	HTTPAddr       string   // Fiber REST listener, e.g. :8080
 	GRPCAddr       string   // gRPC agent listener, e.g. :9090
+	WebUpstream    string   // internal Next.js UI address to reverse-proxy /app to; empty disables
 	DatabaseURL    string   // Postgres connection string
 	Env            string   // dev | prod
 	LogLevel       string   // debug | info | warn | error
@@ -54,6 +55,7 @@ func Load() (Config, error) {
 	c := Config{
 		HTTPAddr:       env("HTTP_ADDR", ":8080"),
 		GRPCAddr:       env("GRPC_ADDR", ":9090"),
+		WebUpstream:    env("WEB_UPSTREAM", ""),
 		DatabaseURL:    env("DATABASE_URL", "postgres://croncompose:croncompose@localhost:5432/croncompose?sslmode=disable"),
 		Env:            env("APP_ENV", "dev"),
 		LogLevel:       env("LOG_LEVEL", "info"),

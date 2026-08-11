@@ -41,7 +41,7 @@ make agent
 End-to-end flow:
 
 1. Open <http://localhost:3000/app>. The UI lives under `/app` (Next.js `basePath`); bare
-   `/` is only redirected there by the Go proxy in prod, so in `next dev` go to `/app`
+   `/` is only redirected there by the control plane in prod, so in `next dev` go to `/app`
    directly. You'll be bounced to `/app/login` (the middleware sees no session). Sign in
    with the seeded admin.
 2. **Add server**, copy the install command (with a one-time token).

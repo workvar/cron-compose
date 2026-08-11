@@ -4,7 +4,7 @@ import { NavLink } from "./NavLink";
 import { LogoutButton } from "./LogoutButton";
 import {
   IconDashboard, IconServer, IconJobs, IconKey, IconShield,
-  IconSettings, IconZap, IconPlus,
+  IconSettings, IconZap, IconPlus, IconPlug,
 } from "./icons";
 
 export function Sidebar({ me }: { me: Me }) {
@@ -22,6 +22,7 @@ export function Sidebar({ me }: { me: Me }) {
         <NavLink href="/" icon={<IconDashboard />}>Dashboard</NavLink>
         <NavLink href="/servers" icon={<IconServer />}>Servers</NavLink>
         <NavLink href="/jobs" icon={<IconJobs />}>Jobs</NavLink>
+        <NavLink href="/connectors" icon={<IconPlug />}>Connectors</NavLink>
         {isAdmin && <NavLink href="/secrets" icon={<IconKey />}>Secrets</NavLink>}
         {isAdmin && <NavLink href="/audit" icon={<IconShield />}>Audit</NavLink>}
       </div>

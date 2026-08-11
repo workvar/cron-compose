@@ -83,3 +83,6 @@ export const IconZap = (p: P) => (
 export const IconUser = (p: P) => (
   <svg {...base(p)}><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6" /></svg>
 );
+export const IconPlug = (p: P) => (
+  <svg {...base(p)}><path d="M12 22v-5M9 7V2M15 7V2M6 13V8h12v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4Z" /></svg>
+);

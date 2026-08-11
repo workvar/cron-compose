@@ -33,9 +33,7 @@ LOGS="$RUNTIME_DIR/logs"; RUNDIR="$RUNTIME_DIR/run"
 mkdir -p "$LOGS" "$RUNDIR" "$RUNTIME_DIR/tls" "$RUNTIME_DIR/agent"
 CP_BIN="$HERE/control-plane/bin/control-plane"
 AGENT_BIN="$HERE/agent/bin/agent"
-PROXY_BIN="$HERE/proxy/bin/proxy"
 API_PORT="${CC_API_PORT:-8080}"; WEB_PORT="${CC_WEB_PORT:-3000}"
-PROXY_PORT="${CC_PROXY_PORT:-8000}"; ENABLE_PROXY="${CC_ENABLE_PROXY:-0}"
 
 alive()  { [ -f "$1" ] && kill -0 "$(cat "$1" 2>/dev/null)" 2>/dev/null; }
 listen() { # port -> 0 if bound
@@ -60,27 +58,16 @@ do_start(){
   wait_http "http://127.0.0.1:$API_PORT/healthz" && echo "  control-plane healthy on :$API_PORT" || echo "  ! control-plane health check timed out (see $LOGS/control-plane.log)"
   if [ "${CC_ENABLE_WEB:-1}" = "1" ]; then
     web_pf="$RUNDIR/web.pid"; std="$HERE/web/.next/standalone"
-    # Behind the proxy the UI is internal, so bind loopback; otherwise expose it.
-    web_host=0.0.0.0; [ "$ENABLE_PROXY" = "1" ] && web_host=127.0.0.1
+    # The control plane reverse-proxies /app to the UI, so the UI only needs loopback.
     if alive "$web_pf"; then echo "  web already running (pid $(cat "$web_pf"))"
     elif [ -f "$std/server.js" ]; then
       # Next.js standalone server: cwd must be the standalone dir; reads PORT/HOSTNAME.
-      ( cd "$std" && PORT="$WEB_PORT" HOSTNAME="$web_host" API_BASE="${API_BASE:-}" \
+      ( cd "$std" && PORT="$WEB_PORT" HOSTNAME="127.0.0.1" API_BASE="${API_BASE:-}" \
           nohup node server.js >"$LOGS/web.log" 2>&1 </dev/null & echo $! >"$web_pf" )
       echo "  started web (pid $(cat "$web_pf"))"
-      wait_listen "$WEB_PORT" && echo "  web listening on :$WEB_PORT" || echo "  ! web did not bind :$WEB_PORT (see $LOGS/web.log)"
+      wait_listen "$WEB_PORT" && echo "  web listening on :$WEB_PORT (internal)" || echo "  ! web did not bind :$WEB_PORT (see $LOGS/web.log)"
     else
       echo "  ! web build missing ($std/server.js); re-run the installer with web enabled"
-    fi
-  fi
-  if [ "$ENABLE_PROXY" = "1" ]; then
-    # Single entry point: reads PROXY_LISTEN_ADDR / WEB_UPSTREAM / API_UPSTREAM /
-    # GRPC_UPSTREAM / WEB_PREFIX from the environment loaded out of .env above.
-    if [ -f "$PROXY_BIN" ]; then
-      start_proc proxy "$RUNDIR/proxy.pid" "$PROXY_BIN"
-      wait_listen "$PROXY_PORT" && echo "  proxy listening on :$PROXY_PORT" || echo "  ! proxy did not bind :$PROXY_PORT (see $LOGS/proxy.log)"
-    else
-      echo "  ! proxy build missing ($PROXY_BIN); re-run the installer without --no-proxy"
     fi
   fi
   if [ "${CC_ENABLE_AGENT:-0}" = "1" ] && [ -f "$RUNTIME_DIR/agent/identity.json" ]; then
@@ -89,16 +76,15 @@ do_start(){
 }
 
 stop_one(){ name="$1"; pf="$RUNDIR/$name.pid"; if alive "$pf"; then kill "$(cat "$pf")" 2>/dev/null && echo "  stopped $name"; rm -f "$pf"; else echo "  $name not running"; fi; }
-do_stop(){ echo "Stopping CronCompose..."; stop_one agent; stop_one proxy; stop_one web; stop_one control-plane; }
+do_stop(){ echo "Stopping CronCompose..."; stop_one agent; stop_one web; stop_one control-plane; }
 
 do_status(){
-  for s in control-plane web proxy agent; do
+  for s in control-plane web agent; do
     pf="$RUNDIR/$s.pid"
     if alive "$pf"; then echo "  $s: running (pid $(cat "$pf"))"; else echo "  $s: stopped"; fi
   done
-  listen "$API_PORT" && echo "  api   :$API_PORT bound" || echo "  api   :$API_PORT free"
-  listen "$WEB_PORT" && echo "  web   :$WEB_PORT bound" || echo "  web   :$WEB_PORT free"
-  [ "$ENABLE_PROXY" = "1" ] && { listen "$PROXY_PORT" && echo "  proxy :$PROXY_PORT bound" || echo "  proxy :$PROXY_PORT free"; }
+  listen "$API_PORT" && echo "  http :$API_PORT bound (public)" || echo "  http :$API_PORT free"
+  listen "$WEB_PORT" && echo "  web  :$WEB_PORT bound (internal)" || echo "  web  :$WEB_PORT free"
 }
 
 case "${1:-}" in
@@ -107,7 +93,7 @@ case "${1:-}" in
   restart) do_stop; sleep 1; do_start ;;
   status)  do_status ;;
   logs)    svc="${2:-control-plane}"; tail -n 100 -f "$LOGS/$svc.log" ;;
-  *) echo "usage: $0 {start|stop|restart|status|logs [control-plane|web|proxy|agent]}"; exit 1 ;;
+  *) echo "usage: $0 {start|stop|restart|status|logs [control-plane|web|agent]}"; exit 1 ;;
 esac
 CTL_EOF
   chmod +x "$CTL"
@@ -159,21 +145,15 @@ enroll_local_agent() {
 }
 
 print_summary() {
-  local ui_url rest_url grpc_addr
-  if [ "${ENABLE_PROXY:-1}" = "1" ]; then
-    # One public port fronts the UI (/app), REST (/api), and agent gRPC.
-    ui_url="http://$ADVERTISE_HOST:$PROXY_PORT/app"
-    rest_url="http://$ADVERTISE_HOST:$PROXY_PORT/api/v1"
-    grpc_addr="$ADVERTISE_HOST:$PROXY_PORT"
-  else
-    ui_url="http://$ADVERTISE_HOST:$WEB_PORT/app"
-    rest_url="http://$ADVERTISE_HOST:$API_PORT/api/v1"
-    grpc_addr="$ADVERTISE_HOST:$GRPC_PORT"
-  fi
+  # The control plane's HTTP port fronts the UI (/app) and REST (/api); agents use
+  # the gRPC port directly.
+  local ui_url="http://$ADVERTISE_HOST:$API_PORT/app"
+  local rest_url="http://$ADVERTISE_HOST:$API_PORT/api/v1"
+  local grpc_addr="$ADVERTISE_HOST:$GRPC_PORT"
   printf '\n%s%s CronCompose is installed and running %s\n' "$C_GREEN" "============" "$C_RESET" >&2
   info ""
   info "Web UI:        $ui_url"
-  [ "${ENABLE_PROXY:-1}" = "1" ] && dim "(the bare host:port redirects here; one port fronts UI, API, and agents)"
+  dim "(the bare host:port redirects to /app)"
   info "REST API:      $rest_url   (health: /healthz)"
   info "Agent gRPC:    $grpc_addr"
   info ""
