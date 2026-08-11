@@ -157,7 +157,62 @@ generated control script:
 Pull updates and roll forward with `./update.sh` (source mode). Full flag and
 environment reference: [install/README.md](install/README.md).
 
-To survive reboots, wrap the control script in a `systemd` service or a `launchd` agent.
+To survive reboots, wrap the control script in a `systemd` service or a `launchd` agent,
+or use pm2 (below).
+
+## Path C: pm2 on a single host
+
+`ecosystem.config.js` runs the same processes as `croncompose-ctl.sh` under pm2, adding
+restart policies, log rotation and boot persistence. It reads the repo-root `.env`, so
+run the installer first.
+
+```sh
+./install/install.sh            # builds binaries + standalone web, writes .env
+./croncompose-ctl.sh stop       # free the ports the installer's script grabbed
+npm install -g pm2
+
+make pm2-start                  # start control-plane (+ web, + agent if enrolled)
+make pm2-save                   # persist the process list
+pm2 startup                     # print the boot command; run it once as instructed
+```
+
+Only building, not installing? The config needs three things: `.env` at the repo root,
+`control-plane/bin/control-plane`, and `web/.next/standalone/server.js`.
+
+```sh
+make control-plane migrate-tool
+cd web && npm ci && API_BASE=http://127.0.0.1:8080/api/v1 npm run build && cd ..
+cp -r web/.next/static web/.next/standalone/.next/static
+```
+
+`API_BASE` is inlined at build time by `next.config.ts`, so it must be set for the build,
+not just at runtime.
+
+### Which processes start
+
+| Process | Condition |
+| --- | --- |
+| `croncompose-control-plane` | always |
+| `croncompose-web` | `CC_ENABLE_WEB != 0` and the standalone bundle exists |
+| `croncompose-agent` | `CC_ENABLE_AGENT=1` and `$CC_RUNTIME_DIR/agent/identity.json` exists |
+
+Enroll the local agent first (the installer does this, or use the UI plus
+`agent enroll --token=...`), then `make pm2-restart` to pick it up.
+
+### Day two
+
+```sh
+make pm2-status
+make pm2-logs                   # or: pm2 logs croncompose-control-plane
+make pm2-restart                # re-reads .env (--update-env)
+make pm2-delete                 # remove from pm2
+```
+
+Logs go to `$CC_RUNTIME_DIR/logs/<process>.{out,err}.log` (default `.run/logs`). Add
+rotation with `pm2 install pm2-logrotate`.
+
+After `./update.sh` or a manual rebuild, run `make pm2-restart`. Changing a value in
+`.env` also requires a restart, since pm2 caches the environment.
 
 ## TLS and PKI
 
