@@ -6,6 +6,25 @@ on:
   pull_request:
 
 jobs:
+  # Guards the two things that break a clean clone but not a dirty dev machine:
+  # generated protobuf code drifting behind agent.proto, and go.sum missing an entry
+  # for a newly imported module.
+  codegen:
+    name: Generated code is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: proto/agent/v1 matches agent.proto
+        run: make proto-check
+      - name: go.sum is complete
+        run: |
+          for m in proto control-plane agent cli; do
+            (cd "$m" && go mod download all) || { echo "$m: run go mod tidy"; exit 1; }
+          done
+
   go:
     name: Go (${{ matrix.module }})
     runs-on: ubuntu-latest

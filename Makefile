@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down migrate migrate-tool proto control-plane agent cli web dev tidy install \
+.PHONY: help db-up db-down migrate migrate-tool proto proto-check control-plane agent cli web dev tidy install \
         pm2-start pm2-stop pm2-restart pm2-reload pm2-status pm2-logs pm2-save pm2-delete
 
 help:
@@ -7,6 +7,7 @@ help:
 	@echo "  db-down         Stop Postgres"
 	@echo "  migrate         Apply SQL migrations to local Postgres"
 	@echo "  proto           Regenerate Go code from proto/agent.proto"
+	@echo "  proto-check     Fail if the checked-in .pb.go is stale (CI guard)"
 	@echo "  control-plane   Build the control-plane binary"
 	@echo "  agent           Build the agent binary"
 	@echo "  web             Install web deps and run Next.js dev server"
@@ -29,6 +30,18 @@ migrate:
 		echo "applying $$f"; \
 		PGPASSWORD=croncompose psql -h localhost -U croncompose -d croncompose -f $$f || exit 1; \
 	done
+
+# Fails if the checked-in .pb.go is missing a message the schema defines. Same check
+# install.sh runs; wire it into CI so drift never reaches a user's machine.
+proto-check:
+	@missing=""; \
+	for m in $$(awk '/^message [A-Za-z0-9_]+ \{/ { print $$2 }' proto/agent.proto); do \
+		grep -q "^type $$m struct" proto/agent/v1/agent.pb.go || missing="$$missing $$m"; \
+	done; \
+	if [ -n "$$missing" ]; then \
+		echo "stale proto/agent/v1: missing$$missing"; echo "run: make proto"; exit 1; \
+	fi; \
+	echo "proto/agent/v1 is current"
 
 proto:
 	cd proto && protoc \

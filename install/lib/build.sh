@@ -3,6 +3,10 @@
 # (Linux/macOS only), the cc CLI, and the Next.js web UI.
 
 build_go() {
+  # Repair checked-in codegen before compiling: a stale .pb.go or an incomplete go.sum
+  # otherwise surfaces as an opaque compiler error mid-install.
+  ensure_go_sums
+  ensure_proto
   step "Building Go binaries"
   # Use only the locally installed Go; never let `go build` download a different Go
   # toolchain onto the system (preflight already verified the local version is new enough).

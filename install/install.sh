@@ -50,6 +50,8 @@ export NONINTERACTIVE ENABLE_AGENT ENABLE_WEB
 . "$LIB_DIR/configure.sh"
 # shellcheck source=lib/database.sh
 . "$LIB_DIR/database.sh"
+# shellcheck source=lib/codegen.sh
+. "$LIB_DIR/codegen.sh"   # needs need_root/db_run from database.sh, PKG_MGR from preflight
 # shellcheck source=lib/build.sh
 . "$LIB_DIR/build.sh"
 # shellcheck source=lib/services.sh
