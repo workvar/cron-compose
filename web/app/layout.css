@@ -1,9 +1,14 @@
 /* App shell: left sidebar + content column with a topbar. */
 
+/* Fills the viewport: the sidebar column is fixed, the content column takes the rest
+   of the width, and .content grows to the bottom so short pages still paint a
+   full-height canvas instead of a band of background under the last card. */
 .app-shell {
   display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
 }
 
 /* ---------- Sidebar ---------- */
@@ -95,7 +100,7 @@
 .promo .button:hover { background: #eafff2; }
 
 /* ---------- Content column ---------- */
-.app-main { min-width: 0; display: flex; flex-direction: column; }
+.app-main { min-width: 0; width: 100%; display: flex; flex-direction: column; }
 
 .topbar {
   display: flex;
@@ -138,7 +143,7 @@
 .profile .who .name { font-weight: 700; color: var(--text); font-size: 13px; }
 .profile .who .mail { font-size: 12px; color: var(--muted); }
 
-.content { padding: 6px 28px 56px; }
+.content { flex: 1; min-width: 0; width: 100%; padding: 6px 28px 56px; }
 
 /* ---------- Setup banner (Postgres / control plane not reachable) ---------- */
 .setup-banner {

@@ -54,7 +54,10 @@ chose (open `http://<host>:<http port>`; it redirects to `/app`).
 1. **Runtime directory**: where logs, pids, TLS material, and agent data live
    (default `./.run`).
 2. **Advertise host**: the hostname or IP that browsers and agents use to reach this
-   box (default `localhost`).
+   box (default `localhost`). A full URL is accepted too: `https://cron.example.com`
+   is parsed into scheme + host, and when a scheme is given the printed URLs omit the
+   local listener port, on the assumption that a TLS terminator fronts it. Add an
+   explicit port (`https://cron.example.com:8443`) to keep one.
 3. **Ports**: the public HTTP port (8080, serves the UI at `/app` and REST at `/api`),
    the public agent gRPC port (9090), and the internal web UI port (3000). For each, the
    installer probes for a free port and offers it; press Enter to accept or type your own.
@@ -93,21 +96,24 @@ applied files in a `schema_migrations` table, so re-running the installer is saf
 
 ## Managing the stack
 
-The installer generates a control script next to `.env` and uses it to start things, so
-there is one command you keep using afterwards:
+Services run under [pm2](https://pm2.keymetrics.io/), defined by `ecosystem.config.js`
+at the repo root. The installer installs pm2 if it is missing and generates
+`croncompose-ctl.sh` next to `.env` as a thin wrapper, so there is one command you keep
+using afterwards:
 
 ```sh
 ./croncompose-ctl.sh status       # what's running
 ./croncompose-ctl.sh logs web     # tail a service log (control-plane | web | agent)
-./croncompose-ctl.sh restart      # restart everything
+./croncompose-ctl.sh restart      # restart everything, re-reading .env
 ./croncompose-ctl.sh stop         # stop everything
 ./croncompose-ctl.sh start        # start (or resume) everything
+./croncompose-ctl.sh boot         # pm2 startup + save, so it comes back after a reboot
 ```
 
-On Windows the equivalent is `./croncompose-ctl.ps1 <action>`.
+pm2's own commands work unchanged: `pm2 status`, `pm2 monit`, `pm2 logs croncompose-web`.
 
-Services run as background processes. To survive reboots, wrap the control script in a
-`systemd` service (Linux), a `launchd` agent (macOS), or a scheduled task (Windows).
+On Windows the equivalent is `./croncompose-ctl.ps1 <action>` (Windows still uses the
+built-in process management, not pm2).
 
 ## Changing the external address (single point of change)
 

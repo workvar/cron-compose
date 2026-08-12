@@ -78,6 +78,32 @@ function New-HexSecret([int]$Bytes = 32) {
   ($b | ForEach-Object { $_.ToString('x2') }) -join ''
 }
 
+# Splits whatever the user typed at the advertise prompt (bare host, host:port, or a
+# full URL) into its parts, so nothing downstream builds "http://https://host:port".
+# Mirrors install/lib/url.sh. Returns @{ Host; Scheme; Port; Proxied }.
+function Split-AdvertiseHost($raw) {
+  $v = "$raw".Trim()
+  $scheme = ''; $port = ''
+  if ($v -match '^(https?)://(.*)$') { $scheme = $Matches[1]; $v = $Matches[2] }
+  elseif ($v -match '^[a-zA-Z][a-zA-Z0-9+.-]*://(.*)$') { $v = $Matches[1] }
+  $v = ($v -split '[/?#]')[0]
+  if ($v -match '@') { $v = ($v -split '@')[-1] }
+  if ($v -match '^\[(.+)\](?::(\d+))?$') { $v = $Matches[1]; $port = $Matches[2] }
+  elseif ($v -match '^([^:]+):(\d+)$')   { $port = $Matches[2]; $v = $Matches[1] }
+  if (-not $v) { $v = 'localhost' }
+  @{ Host = $v; Scheme = $(if ($scheme) { $scheme } else { 'http' }); Port = $port; Proxied = [bool]$scheme }
+}
+
+# Browser-facing origin. A value that arrived with a scheme is assumed to sit behind
+# a proxy on the default port, so the local listener port is not appended.
+function Get-PublicBaseUrl($adv, [int]$LocalPort) {
+  $port = $adv.Port
+  if (-not $port -and -not $adv.Proxied) { $port = "$LocalPort" }
+  if (($adv.Scheme -eq 'http' -and $port -eq '80') -or ($adv.Scheme -eq 'https' -and $port -eq '443')) { $port = '' }
+  $h = $(if ($adv.Host -match ':') { "[$($adv.Host)]" } else { $adv.Host })
+  if ($port) { "$($adv.Scheme)://${h}:$port" } else { "$($adv.Scheme)://$h" }
+}
+
 function Get-HostIp {
   try {
     $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |

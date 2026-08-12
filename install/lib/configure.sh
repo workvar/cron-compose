@@ -9,7 +9,13 @@ EXTRA_ENV_LINES=""
 configure_runtime() {
   step "Where to keep runtime state"
   RUNTIME_DIR="$(prompt "Runtime directory (logs, pids, TLS, agent data)" "${CC_RUNTIME_DIR:-$REPO_ROOT/.run}")"
-  ADVERTISE_HOST="$(prompt "Advertise host/IP (what agents and browsers use to reach this box)" "${CC_ADVERTISE_HOST:-localhost}")"
+  # Accepts a bare host, host:port, or a full URL; normalize_advertise_host splits it
+  # into ADVERTISE_HOST / ADVERTISE_SCHEME / ADVERTISE_PORT so nothing downstream ever
+  # concatenates a scheme onto a value that already had one.
+  local advertise_raw
+  advertise_raw="$(prompt "Advertise host/IP or URL (what agents and browsers use to reach this box)" "${CC_ADVERTISE_HOST:-localhost}")"
+  normalize_advertise_host "$advertise_raw"
+  [ "$advertise_raw" = "$ADVERTISE_HOST" ] || ok "advertise host: $ADVERTISE_HOST (scheme: $ADVERTISE_SCHEME)"
 }
 
 configure_ports() {
@@ -113,7 +119,7 @@ configure_oidc() {
     OIDC_ISSUER_URL="$(prompt "OIDC issuer URL" "${CC_OIDC_ISSUER_URL:-}")"
     OIDC_CLIENT_ID="$(prompt "OIDC client id" "${CC_OIDC_CLIENT_ID:-}")"
     OIDC_CLIENT_SECRET="$(prompt_secret "OIDC client secret (blank for public client)" "${CC_OIDC_CLIENT_SECRET:-}")"
-    OIDC_REDIRECT_URL="$(prompt "OIDC redirect URL" "http://$ADVERTISE_HOST:$API_PORT/api/v1/auth/oidc/callback")"
+    OIDC_REDIRECT_URL="$(prompt "OIDC redirect URL" "$(public_base_url "$API_PORT")/api/v1/auth/oidc/callback")"
     OIDC_DEFAULT_ROLE="$(prompt "Default role for new SSO users" "viewer")"
   fi
 }
@@ -138,7 +144,7 @@ write_env_file() {
   # Externally-reachable address: the control plane's public HTTP port fronts the UI
   # (/app) and REST (/api). The control plane derives PUBLIC_HTTP_URL / the OIDC
   # redirect / TLS SAN from it, and PUBLIC_GRPC_ADDR from this host + the gRPC port.
-  PUBLIC_BASE_URL="${CC_PUBLIC_BASE_URL:-http://$ADVERTISE_HOST:$API_PORT}"
+  PUBLIC_BASE_URL="${CC_PUBLIC_BASE_URL:-$(public_base_url "$API_PORT")}"
 
   umask 077
   {
@@ -185,6 +191,8 @@ write_env_file() {
     echo "CC_GRPC_PORT=$GRPC_PORT"
     echo "CC_RUNTIME_DIR=$RUNTIME_DIR"
     echo "CC_ADVERTISE_HOST=$ADVERTISE_HOST"
+    echo "CC_ADVERTISE_SCHEME=$ADVERTISE_SCHEME"
+    echo "CC_ADVERTISE_PORT=${ADVERTISE_PORT:-}"
     echo "CC_ENABLE_AGENT=${ENABLE_AGENT:-0}"
     echo "CC_ENABLE_WEB=${ENABLE_WEB:-1}"
     if [ -n "$EXTRA_ENV_LINES" ]; then

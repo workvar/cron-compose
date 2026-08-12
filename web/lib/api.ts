@@ -1,10 +1,24 @@
 // Thin fetch wrapper around the control-plane REST API. Server components forward
 // the user's session cookie so authenticated reads work in SSR.
 import { cookies } from "next/headers";
+import { apiBase } from "./apiBase";
 
-const base = process.env.API_BASE ?? "http://localhost:8080/api/v1";
+// Thrown by every failed call so callers can tell "not signed in" (401/403) apart
+// from "the control plane is down", which need different UI.
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,   // 0 when the request never got a response
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+  get unauthorized() { return this.status === 401 || this.status === 403; }
+  get unreachable()  { return this.status === 0; }
+}
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const base = apiBase();
   const cookieJar = await cookies();
   const cookieHeader = cookieJar
     .getAll()
@@ -15,15 +29,20 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   if (body !== undefined) headers["content-type"] = "application/json";
   if (cookieHeader) headers["cookie"] = cookieHeader;
 
-  const res = await fetch(`${base}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${base}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      cache: "no-store",
+    });
+  } catch (err) {
+    throw new ApiError(0, `${method} ${path}: ${(err as Error).message}`);
+  }
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    throw new Error(`${method} ${path}: ${res.status} ${txt}`);
+    throw new ApiError(res.status, `${method} ${path}: ${res.status} ${txt}`);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

@@ -46,6 +46,8 @@ export NONINTERACTIVE ENABLE_AGENT ENABLE_WEB
 . "$LIB_DIR/common.sh"
 # shellcheck source=lib/preflight.sh
 . "$LIB_DIR/preflight.sh"
+# shellcheck source=lib/url.sh
+. "$LIB_DIR/url.sh"       # advertise-host parsing, used by configure.sh and services.sh
 # shellcheck source=lib/configure.sh
 . "$LIB_DIR/configure.sh"
 # shellcheck source=lib/database.sh
@@ -54,6 +56,8 @@ export NONINTERACTIVE ENABLE_AGENT ENABLE_WEB
 . "$LIB_DIR/codegen.sh"   # needs need_root/db_run from database.sh, PKG_MGR from preflight
 # shellcheck source=lib/build.sh
 . "$LIB_DIR/build.sh"
+# shellcheck source=lib/pm2.sh
+. "$LIB_DIR/pm2.sh"       # process management: pm2 + ecosystem.config.js
 # shellcheck source=lib/services.sh
 . "$LIB_DIR/services.sh"
 

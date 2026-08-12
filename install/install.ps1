@@ -84,7 +84,11 @@ function Invoke-Configure {
   Write-Step "Where to keep runtime state"
   if (-not $RuntimeDir) { $RuntimeDir = Get-CcEnv 'CC_RUNTIME_DIR' "$RepoRoot\.run" }
   $Cfg.RuntimeDir = Read-Default "Runtime directory (logs, pids, TLS)" $RuntimeDir
-  $Cfg.Advertise  = Read-Default "Advertise host/IP (what browsers use to reach this box)" (Get-CcEnv 'CC_ADVERTISE_HOST' 'localhost')
+  # Accepts a bare host, host:port, or a full URL; Split-AdvertiseHost keeps the raw
+  # value from being pasted into "http://$Advertise:$Port".
+  $advRaw = Read-Default "Advertise host/IP or URL (what browsers use to reach this box)" (Get-CcEnv 'CC_ADVERTISE_HOST' 'localhost')
+  $Cfg.Adv       = Split-AdvertiseHost $advRaw
+  $Cfg.Advertise = $Cfg.Adv.Host
 
   Write-Step "Choose ports (a free one is suggested for each)"
   $Cfg.WebPort  = Read-Port "Web UI port"     ([int](Get-CcEnv 'CC_WEB_PORT' '3000'))
@@ -159,7 +163,7 @@ function Configure-Oidc {
     $Cfg.OidcIssuer   = Read-Default "OIDC issuer URL" ''
     $Cfg.OidcClientId = Read-Default "OIDC client id" ''
     $Cfg.OidcSecret   = Read-Secret  "OIDC client secret (blank for public client)" ''
-    $Cfg.OidcRedirect = Read-Default "OIDC redirect URL" "http://$($Cfg.Advertise):$($Cfg.ApiPort)/api/v1/auth/oidc/callback"
+    $Cfg.OidcRedirect = Read-Default "OIDC redirect URL" "$(Get-PublicBaseUrl $Cfg.Adv $Cfg.ApiPort)/api/v1/auth/oidc/callback"
     $Cfg.OidcRole     = Read-Default "Default role for new SSO users" 'viewer'
   }
 }
@@ -179,7 +183,7 @@ function Write-EnvFile {
     "SECRETS_MASTER_KEY=$($Cfg.SecretsKey)"
     "SEED_ADMIN_EMAIL=$($Cfg.AdminEmail)"
     "SEED_ADMIN_PASSWORD=$($Cfg.AdminPass)"
-    "PUBLIC_HTTP_URL=http://$($Cfg.Advertise):$($Cfg.ApiPort)/api/v1"
+    "PUBLIC_HTTP_URL=$(Get-PublicBaseUrl $Cfg.Adv $Cfg.ApiPort)/api/v1"
     "PUBLIC_GRPC_ADDR=$($Cfg.Advertise):$($Cfg.GrpcPort)"
     "PORT=$($Cfg.WebPort)"
     "API_BASE=$($Cfg.ApiBase)"
@@ -360,11 +364,11 @@ function Start-Stack {
 }
 
 function Show-Summary {
-  $web = "http://$($Cfg.Advertise):$($Cfg.WebPort)"
+  $web = Get-PublicBaseUrl $Cfg.Adv $Cfg.WebPort
   Write-Host "`n============ CronCompose is installed and running ============" -ForegroundColor Green
   Write-Info ""
   Write-Info "Web UI:     $web"
-  Write-Info "REST API:   http://$($Cfg.Advertise):$($Cfg.ApiPort)/api/v1   (health: /healthz)"
+  Write-Info "REST API:   $(Get-PublicBaseUrl $Cfg.Adv $Cfg.ApiPort)/api/v1   (health: /healthz)"
   Write-Info "Agent gRPC: $($Cfg.Advertise):$($Cfg.GrpcPort)   (enroll agents from Linux/macOS hosts)"
   Write-Info ""
   Write-Info "Sign in with:  $($Cfg.AdminEmail)"

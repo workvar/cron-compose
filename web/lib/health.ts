@@ -2,11 +2,12 @@
 // because /healthz is a top-level route on the control plane, not under
 // /api/v1 — it predates the API and isn't covered by next.config's /api
 // rewrite, so we hit the control plane origin directly.
+import { apiOrigin } from "./apiBase";
+
 export type HealthStatus = "ok" | "db_down" | "unreachable";
 
 function healthzURL(): string {
-  const base = process.env.API_BASE ?? "http://localhost:8080/api/v1";
-  return new URL("/healthz", base).toString();
+  return `${apiOrigin()}/healthz`;
 }
 
 export async function getHealth(): Promise<HealthStatus> {

@@ -109,8 +109,11 @@ ensure_proto() {
   warn "generated code is stale; missing: ${PROTO_MISSING:-agent.pb.go}"
 
   if ! command -v protoc >/dev/null 2>&1; then
-    info "protoc not found, installing..."
-    install_protoc >/dev/null 2>&1 || true
+    # Never redirect this: on Linux it runs sudo, and hiding the password prompt makes
+    # the installer look hung while it silently waits on stdin.
+    info "protoc not found, installing with ${PKG_MGR:-your package manager} (you may be prompted for your sudo password)..."
+    install_protoc || warn "package install failed; continuing to the manual-install hint"
+    hash -r 2>/dev/null || true   # refresh the shell's command lookup cache
   fi
   command -v protoc >/dev/null 2>&1 || die "protoc is required to regenerate proto/agent/v1.
   Install it (${PKG_MGR:-your package manager}, or a release from

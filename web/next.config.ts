@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
-// The server-side API base (control plane), baked at build time. Override via
-// API_BASE in the environment before `next build`.
+// Only the /api rewrite below needs a build-time value; server code reads API_BASE
+// at request time via lib/apiBase.ts so a bundle built with one port still works
+// when pm2 starts it with another.
 const apiBase = process.env.API_BASE ?? "http://localhost:8080/api/v1";
 
 const config: NextConfig = {
@@ -13,8 +14,6 @@ const config: NextConfig = {
   // and redirect() pick this prefix up automatically; raw fetch() does not (see the
   // rewrite below), and next/image src would need it added by hand (none used).
   basePath: "/app",
-
-  env: { API_BASE: apiBase },
 
   // Browser calls to /api/* map onto the control plane's /api/v1. In production the
   // control plane fronts /api directly (it serves the bare /api prefix and the UI);

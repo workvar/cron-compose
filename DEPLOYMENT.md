@@ -7,7 +7,7 @@ supported:
   recommended way to run the control plane, web UI, and Postgres on one host or
   orchestrator.
 - **From source** ([install/install.sh](install/install.sh)): an interactive installer
-  that builds everything and supervises it with a generated `croncompose-ctl.sh`. See
+  that builds everything and supervises it with pm2 (`croncompose-ctl.sh` wraps it). See
   [install/README.md](install/README.md) for the full reference.
 
 For deeper operational topics this guide links out rather than repeating:
@@ -56,7 +56,7 @@ port (see [TLS and PKI](#tls-and-pki)); the gRPC port carries mTLS end to end.
 
 The control plane reads its configuration from the environment. On a from-source host
 that environment is a `0600` `.env` at the repo root, written by `./install/install.sh`
-and read by both `croncompose-ctl.sh` and `ecosystem.config.js`. For a manual install,
+and read by `ecosystem.config.js` (and so by `croncompose-ctl.sh`). For a manual install,
 or to look up a key, start from the annotated template:
 
 ```sh
@@ -156,32 +156,29 @@ git clone <repo> && cd croncompose
 
 The installer prompts for the public HTTP port (serves `/app` and `/api`), the public
 gRPC port, and the internal web UI port, then generates secrets, builds the binaries
-and the UI, applies migrations, and writes a `0600` `.env`. It starts everything with a
-generated control script:
+and the UI, applies migrations, and writes a `0600` `.env`. Everything runs under
+**pm2** (installed automatically if missing), defined by `ecosystem.config.js`.
+`croncompose-ctl.sh` is a thin wrapper over it:
 
 ```sh
 ./croncompose-ctl.sh status     # what's running
 ./croncompose-ctl.sh logs web   # tail a log (control-plane | web | agent)
-./croncompose-ctl.sh restart
+./croncompose-ctl.sh restart    # restart everything, re-reading .env
+./croncompose-ctl.sh boot       # survive reboots (pm2 startup + save)
 ```
+
+Plain pm2 commands work too: `pm2 status`, `pm2 monit`, `pm2 logs croncompose-web`.
 
 Pull updates and roll forward with `./update.sh` (source mode). Full flag and
 environment reference: [install/README.md](install/README.md).
 
-To survive reboots, wrap the control script in a `systemd` service or a `launchd` agent,
-or use pm2 (below).
+## Path C: pm2 without the installer
 
-## Path C: pm2 on a single host
-
-`ecosystem.config.js` runs the same processes as `croncompose-ctl.sh` under pm2, adding
-restart policies, log rotation and boot persistence. It reads the repo-root `.env`, so
-run the installer first.
+`ecosystem.config.js` is the single source of truth for the process list, with restart
+policies, log rotation and boot persistence. It reads the repo-root `.env`.
 
 ```sh
-./install/install.sh            # builds binaries + standalone web, writes .env
-./croncompose-ctl.sh stop       # free the ports the installer's script grabbed
 npm install -g pm2
-
 make pm2-start                  # start control-plane (+ web, + agent if enrolled)
 make pm2-save                   # persist the process list
 pm2 startup                     # print the boot command; run it once as instructed
