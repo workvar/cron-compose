@@ -118,13 +118,32 @@ gen_hex() { # <bytes> -> hex string of length 2*bytes
 
 # --- env files --------------------------------------------------------------
 
-# Quote a value for a .env file so passwords with #, $, spaces, or quotes survive
-# both `source .env` and the control plane's dotenv loader.
+# Quote a .env value only when a bare KEY=value line would be ambiguous (whitespace,
+# #, quotes, dollar, backtick, backslash). Ports, URLs, and hex secrets stay bare so
+# pm2, Next.js, and systemd EnvironmentFile all see PORT=3107 rather than PORT="3107".
 env_quote() {
   local s=$1
-  s=${s//\\/\\\\}
-  s=${s//\"/\\\"}
-  printf '"%s"' "$s"
+  if [ -n "$s" ] && [[ "$s" =~ [[:space:]#\'\"\\$\`] ]]; then
+    s=${s//\\/\\\\}
+    s=${s//\"/\\\"}
+    printf '"%s"' "$s"
+    return
+  fi
+  printf '%s' "$s"
+}
+
+# Inverse of env_quote, for re-reading keys from an existing .env on reinstall.
+env_unquote() {
+  local v=$1
+  local n=${#v}
+  if [ "$n" -ge 2 ] && [ "${v:0:1}" = '"' ] && [ "${v:$((n-1)):1}" = '"' ]; then
+    v=${v:1:$((n-2))}
+    v=${v//\\\"/\"}
+    v=${v//\\\\/\\}
+  elif [ "$n" -ge 2 ] && [ "${v:0:1}" = "'" ] && [ "${v:$((n-1)):1}" = "'" ]; then
+    v=${v:1:$((n-2))}
+  fi
+  printf '%s' "$v"
 }
 
 env_line() { printf '%s=%s\n' "$1" "$(env_quote "$2")"; }

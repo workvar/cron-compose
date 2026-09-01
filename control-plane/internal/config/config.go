@@ -240,7 +240,7 @@ func envBool(key string, def bool) bool {
 }
 
 func envInt(key string, def int) int {
-	v := os.Getenv(key)
+	v := unquoteEnv(os.Getenv(key))
 	if v == "" {
 		return def
 	}
@@ -252,7 +252,7 @@ func envInt(key string, def int) int {
 }
 
 func env(key, def string) string {
-	if v := os.Getenv(key); v != "" {
+	if v := unquoteEnv(os.Getenv(key)); v != "" {
 		return v
 	}
 	return def

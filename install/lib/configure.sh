@@ -74,8 +74,8 @@ reuse_existing_secrets() {
   local env_file="$REPO_ROOT/.env"
   [ -f "$env_file" ] || return 0
   local prev_session prev_master
-  prev_session="$(sed -n 's/^SESSION_SECRET=//p' "$env_file" | head -1)"
-  prev_master="$(sed -n 's/^SECRETS_MASTER_KEY=//p' "$env_file" | head -1)"
+  prev_session="$(env_unquote "$(sed -n 's/^SESSION_SECRET=//p' "$env_file" | head -1)")"
+  prev_master="$(env_unquote "$(sed -n 's/^SECRETS_MASTER_KEY=//p' "$env_file" | head -1)")"
   [ -n "$prev_session" ] && SESSION_SECRET="$prev_session"
   [ -n "$prev_master" ]  && SECRETS_MASTER_KEY="$prev_master"
   if [ -n "$prev_master" ]; then

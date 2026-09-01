@@ -83,6 +83,31 @@ func TestNoBaseURLKeepsDefaults(t *testing.T) {
 	}
 }
 
+// pm2 injects .env values as real process env. The installer quotes them
+// (PUBLIC_BASE_URL="https://..."), so without stripping quotes here the URL
+// parse fails and the process crash-loops.
+func TestPublicBaseURLStripsWrapperQuotes(t *testing.T) {
+	t.Setenv("PUBLIC_BASE_URL", `"https://admin.example.com"`)
+	t.Setenv("PUBLIC_HTTP_URL", "")
+	t.Setenv("PUBLIC_GRPC_ADDR", "")
+	t.Setenv("HTTP_ADDR", `":8787"`)
+	t.Setenv("GRPC_ADDR", `":9794"`)
+
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got, want := c.PublicBaseURL, "https://admin.example.com"; got != want {
+		t.Errorf("PublicBaseURL = %q, want %q", got, want)
+	}
+	if got, want := c.HTTPAddr, ":8787"; got != want {
+		t.Errorf("HTTPAddr = %q, want %q", got, want)
+	}
+	if got, want := c.PublicHTTPURL, "https://admin.example.com/api/v1"; got != want {
+		t.Errorf("PublicHTTPURL = %q, want %q", got, want)
+	}
+}
+
 func contains(s []string, v string) bool {
 	for _, x := range s {
 		if x == v {

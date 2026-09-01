@@ -18,7 +18,9 @@ const env = mergeEnv(path.join(root, '.env'));
 
 const runtimeDir = env.CC_RUNTIME_DIR || path.join(root, '.run');
 const logDir = path.join(runtimeDir, 'logs');
-const webPort = env.CC_WEB_PORT || env.PORT || '3000';
+// Next.js does parseInt(PORT) and falls back to 3000 on NaN, so a quoted leftover
+// like `"3007"` would silently bind the default and collide with whatever is there.
+const webPort = String(parseInt(env.CC_WEB_PORT || env.PORT || '3000', 10) || 3000);
 const standalone = path.join(root, 'web', '.next', 'standalone');
 
 /** Options every process shares. */

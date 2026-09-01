@@ -101,8 +101,8 @@ setup_secrets() {
   SECRETS_MASTER_KEY="$(gen_hex 32)"
   if [ -f "$REPO_ROOT/.env" ]; then
     local prev_session prev_master
-    prev_session="$(sed -n 's/^SESSION_SECRET=//p' "$REPO_ROOT/.env" | head -1)"
-    prev_master="$(sed -n 's/^SECRETS_MASTER_KEY=//p' "$REPO_ROOT/.env" | head -1)"
+    prev_session="$(env_unquote "$(sed -n 's/^SESSION_SECRET=//p' "$REPO_ROOT/.env" | head -1)")"
+    prev_master="$(env_unquote "$(sed -n 's/^SECRETS_MASTER_KEY=//p' "$REPO_ROOT/.env" | head -1)")"
     [ -n "$prev_session" ] && SESSION_SECRET="$prev_session"
     [ -n "$prev_master" ]  && SECRETS_MASTER_KEY="$prev_master"
     [ -n "$prev_master" ] && ok "reusing secrets from the existing .env"
