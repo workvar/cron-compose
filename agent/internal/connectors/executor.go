@@ -41,6 +41,13 @@ func (e *Executor) Execute(ctx context.Context, cmd Command) Result {
 	case "status", "list":
 		return e.list(ctx, prov, inst)
 
+	case "ports":
+		lister, okAssert := prov.(PortLister)
+		if !okAssert {
+			return fail(StatusUnsupported, cmd.Kind+" does not report listening ports")
+		}
+		return lister.Ports(ctx, inst)
+
 	case "lifecycle":
 		actor, okAssert := prov.(Actor)
 		if !okAssert {

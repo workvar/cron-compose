@@ -14,6 +14,8 @@ import { ObjectTable } from "@/components/connectors/ObjectTable";
 import { ConfigEditor } from "@/components/connectors/ConfigEditor";
 import { OperationHistory } from "@/components/connectors/OperationHistory";
 import { SnapshotList } from "@/components/connectors/SnapshotList";
+import { ConnectorTabs } from "@/components/connectors/ConnectorTabs";
+import { PortsPanel } from "@/components/connectors/PortsPanel";
 
 const tone: Record<Connector["status"], string> = {
   running: "ok",
@@ -59,8 +61,6 @@ export default async function ConnectorDetailPage({ params }: Props) {
   const objects = resources.filter((r) => r.type === "object");
   const files = resources.filter((r) => r.type === "config_file");
 
-  // Snapshots are admin-only server side, so a non-admin page omits the section
-  // rather than rendering one that 403s.
   let snapshots: ConnectorSnapshot[] = [];
   if (isAdmin && files.length > 0) {
     snapshots = await apiGet<ListResponse<ConnectorSnapshot>>(`/connectors/${id}/snapshots?limit=20`)
@@ -71,6 +71,46 @@ export default async function ConnectorDetailPage({ params }: Props) {
   const canAct = isOperator && Boolean(caps.can_lifecycle);
   const canEdit = isAdmin && Boolean(caps.can_edit);
   const capLabels = Object.entries(caps).filter(([, v]) => v).map(([k]) => k.replace(/_/g, " "));
+  const showPorts = c.kind === "systemd" || c.kind === "pm2";
+
+  const tabs = [
+    {
+      id: "objects",
+      label: objects.length > 0 ? `Objects (${objects.length})` : "Objects",
+      content: objects.length > 0
+        ? isOperator
+          ? <ObjectTable connectorId={c.id} kind={c.kind} rows={objects} canAct={canAct} />
+          : <ResourceTable rows={objects} kind="object" />
+        : <div className="panel"><div className="empty">No objects reported for this connector.</div></div>,
+    },
+    ...(showPorts ? [{
+      id: "ports",
+      label: "Ports",
+      content: <PortsPanel connectorId={c.id} canAct={canAct} />,
+    }] : []),
+    ...(files.length > 0 ? [{
+      id: "config",
+      label: "Config",
+      content: (
+        <>
+          {isAdmin
+            ? <ConfigEditor connectorId={c.id} files={files} canEdit={canEdit} />
+            : <ResourceTable rows={files} kind="config_file" />}
+          {isAdmin && snapshots.length > 0 && (
+            <div style={{ marginTop: 18 }}>
+              <h2>Backups</h2>
+              <SnapshotList connectorId={c.id} items={snapshots} />
+            </div>
+          )}
+        </>
+      ),
+    }] : []),
+    {
+      id: "history",
+      label: "History",
+      content: <OperationHistory items={operations} />,
+    },
+  ];
 
   return (
     <>
@@ -110,37 +150,7 @@ export default async function ConnectorDetailPage({ params }: Props) {
         </p>
       )}
 
-      {objects.length > 0 && (
-        <>
-          <h2>Objects</h2>
-          {isOperator
-            ? <ObjectTable connectorId={c.id} kind={c.kind} rows={objects} canAct={canAct} />
-            : <ResourceTable rows={objects} kind="object" />}
-        </>
-      )}
-
-      {files.length > 0 && (
-        <>
-          <h2>Config files</h2>
-          {isAdmin
-            ? <ConfigEditor connectorId={c.id} files={files} canEdit={canEdit} />
-            : <ResourceTable rows={files} kind="config_file" />}
-        </>
-      )}
-
-      {isAdmin && files.length > 0 && (
-        <>
-          <h2>Backups</h2>
-          <SnapshotList connectorId={c.id} items={snapshots} />
-        </>
-      )}
-
-      <h2>History</h2>
-      <OperationHistory items={operations} />
-
-      {resources.length === 0 && (
-        <div className="panel"><div className="empty">No resources reported for this connector.</div></div>
-      )}
+      <ConnectorTabs tabs={tabs} />
     </>
   );
 }

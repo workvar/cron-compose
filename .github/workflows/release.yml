@@ -2,59 +2,62 @@ name: Release
 
 on:
   push:
-    tags: ["v*.*.*"]
+    tags: ["v*"]
 
 permissions:
   contents: write
 
 jobs:
   build:
-    name: Build agent ${{ matrix.target }}
+    name: Build ${{ matrix.target }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: linux-amd64
-            goos: linux
             goarch: amd64
             pkg_arch: amd64
           - target: linux-arm64
-            goos: linux
             goarch: arm64
             pkg_arch: arm64
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
           cache: true
           cache-dependency-path: agent/go.sum
 
-      - name: Build agent binary
+      - name: Build static Linux binary
         working-directory: agent
         env:
-          GOOS: ${{ matrix.goos }}
+          GOOS: linux
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: 0
+          CGO_ENABLED: "0"
+          VERSION: ${{ github.ref_name }}
         run: |
+          ver="${VERSION#v}"
           mkdir -p ../dist
-          go build -trimpath -ldflags="-s -w" -o ../dist/croncompose-agent-${{ matrix.target }} ./cmd/agent
+          go build -trimpath \
+            -ldflags="-s -w -X github.com/croncompose/croncompose/agent/internal/config.buildVersion=${ver}" \
+            -o "../dist/croncompose-agent-${{ matrix.target }}" \
+            ./cmd/agent
 
       - name: Install nfpm
-        if: matrix.goos == 'linux'
         run: |
-          curl -sSLo /tmp/nfpm.tar.gz https://github.com/goreleaser/nfpm/releases/download/v2.40.0/nfpm_2.40.0_Linux_x86_64.tar.gz
+          curl -sSLo /tmp/nfpm.tar.gz \
+            https://github.com/goreleaser/nfpm/releases/download/v2.40.0/nfpm_2.40.0_Linux_x86_64.tar.gz
           mkdir -p /tmp/nfpm && tar -xzf /tmp/nfpm.tar.gz -C /tmp/nfpm
           sudo install /tmp/nfpm/nfpm /usr/local/bin/nfpm
-          nfpm --version
 
       - name: Build .deb and .apk
-        if: matrix.goos == 'linux'
         env:
           PKG_VERSION: ${{ github.ref_name }}
           PKG_ARCH: ${{ matrix.pkg_arch }}
         run: |
+          cp "dist/croncompose-agent-${{ matrix.target }}" dist/croncompose-agent
           mkdir -p artifacts
           nfpm pkg --config packaging/nfpm.yaml --packager deb \
             --target "artifacts/croncompose-agent_${PKG_VERSION}_${PKG_ARCH}.deb"
@@ -65,8 +68,8 @@ jobs:
         run: |
           mkdir -p artifacts
           cp "dist/croncompose-agent-${{ matrix.target }}" artifacts/
-          cd artifacts
-          sha256sum "croncompose-agent-${{ matrix.target }}" > "SHA256SUMS-${{ matrix.target }}.txt"
+          (cd artifacts && sha256sum "croncompose-agent-${{ matrix.target }}" \
+            > "SHA256SUMS-${{ matrix.target }}.txt")
 
       - uses: actions/upload-artifact@v4
         with:
@@ -82,7 +85,7 @@ jobs:
         with:
           path: artifacts
 
-      - name: Flatten and build checksums.json
+      - name: Flatten artifacts and build checksums.json
         run: |
           mkdir -p out
           find artifacts -type f -exec cp {} out/ \;

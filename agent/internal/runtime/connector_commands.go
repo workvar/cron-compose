@@ -65,11 +65,12 @@ func resultToProto(requestID string, res connectors.Result) *agentv1.ConnectorRe
 		})
 	}
 	return &agentv1.ConnectorResult{
-		RequestId: requestID,
-		Status:    res.Status,
-		Message:   res.Message,
-		Content:   res.Content,
-		Checksum:  res.Checksum,
-		Steps:     steps,
+		RequestId:   requestID,
+		Status:      res.Status,
+		Message:     res.Message,
+		Content:     res.Content,
+		Checksum:    res.Checksum,
+		Steps:       steps,
+		PayloadJson: res.Payload,
 	}
 }

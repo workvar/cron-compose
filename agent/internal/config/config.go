@@ -6,6 +6,9 @@ import (
 	"os"
 )
 
+// buildVersion is set at link time by the release workflow (-ldflags -X ...).
+var buildVersion = "0.1.0-dev"
+
 // Config is everything the agent needs at runtime.
 type Config struct {
 	ControlPlaneAddr     string // host:port of the gRPC endpoint
@@ -26,7 +29,7 @@ func Load() (Config, error) {
 		ControlPlaneHTTPBase: env("CONTROL_PLANE_HTTP", "http://localhost:8080/api/v1"),
 		ControlPlaneSNI:      env("CONTROL_PLANE_SNI", "localhost"),
 		DataDir:              env("DATA_DIR", defaultDataDir),
-		AgentVersion:         env("AGENT_VERSION", "0.1.0-dev"),
+		AgentVersion:         env("AGENT_VERSION", buildVersion),
 		SelfUpdate:           envBool("AGENT_SELF_UPDATE", true),
 	}
 	if c.ControlPlaneAddr == "" {
@@ -48,6 +51,11 @@ func envBool(key string, def bool) bool {
 		return true
 	}
 	return def
+}
+
+// Version returns the agent version baked in at link time.
+func Version() string {
+	return buildVersion
 }
 
 func env(key, def string) string {

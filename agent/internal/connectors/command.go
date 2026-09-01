@@ -7,7 +7,7 @@ import "context"
 // package stays free of any wire dependency (same reason discoveredToProto lives in
 // runtime rather than here).
 type Command struct {
-	Op           string // discover|status|list|read|validate|apply|lifecycle|rollback
+	Op           string // discover|status|list|read|validate|apply|lifecycle|rollback|ports
 	Kind         string // nginx|systemd|docker|pm2|...
 	Instance     string // provider instance discriminator; empty for singletons
 	Ref          string // path | unit | container id | pm2 id
@@ -42,6 +42,7 @@ type Result struct {
 	Message  string
 	Content  []byte // read: the file bytes
 	Checksum string
+	Payload  []byte // ports: JSON array of ListenPort
 	Steps    []Step
 }
 
@@ -94,6 +95,12 @@ type ConfigManager interface {
 	// path identifies which file changed, so systemd can reload that unit after
 	// daemon-reload rather than restarting the whole machine's services.
 	Activate(ctx context.Context, inst Instance, path string) Result
+}
+
+// PortLister is implemented by providers that can report which TCP ports their
+// objects are listening on. Optional: others report `unsupported` for the ports op.
+type PortLister interface {
+	Ports(ctx context.Context, inst Instance) Result
 }
 
 // allowedActions is the closed set of lifecycle verbs. Anything else is refused

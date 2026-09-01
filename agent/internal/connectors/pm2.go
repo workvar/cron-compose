@@ -16,6 +16,7 @@ func (pm2Provider) Kind() string { return "pm2" }
 type pm2Proc struct {
 	Name   string `json:"name"`
 	PmID   int    `json:"pm_id"`
+	Pid    int    `json:"pid"`
 	Pm2Env struct {
 		Status      string `json:"status"`
 		RestartTime int    `json:"restart_time"`
@@ -149,4 +150,19 @@ func pm2Object(p pm2Proc) Resource {
 			"cwd":      p.Pm2Env.Cwd,
 		},
 	}
+}
+
+func (p *pm2Provider) Ports(ctx context.Context, inst Instance) Result {
+	owners := map[int]portOwner{}
+	for _, pr := range p.list(ctx) {
+		if pr.Pid <= 0 {
+			continue
+		}
+		name := pr.Name
+		if name == "" {
+			name = strconv.Itoa(pr.PmID)
+		}
+		owners[pr.Pid] = portOwner{Ref: strconv.Itoa(pr.PmID), Name: name}
+	}
+	return portsResult(attachOwners(listeningSockets(ctx), owners, os.Getpid()))
 }

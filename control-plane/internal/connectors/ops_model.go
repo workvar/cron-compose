@@ -48,6 +48,19 @@ type Snapshot struct {
 	Content string `json:"content,omitempty"`
 }
 
+// PortRow is one listening socket owned by a connector object, as returned by
+// GET /connectors/:id/ports.
+type PortRow struct {
+	Proto     string `json:"proto"`
+	Address   string `json:"address"`
+	Port      int    `json:"port"`
+	PID       int    `json:"pid"`
+	Process   string `json:"process"`
+	Ref       string `json:"ref"`
+	Name      string `json:"name"`
+	Protected bool   `json:"protected"`
+}
+
 // LifecycleRequest is the body of POST /connectors/:id/actions.
 type LifecycleRequest struct {
 	Action string `json:"action"`

@@ -39,7 +39,7 @@ func main() {
 	case "run":
 		os.Exit(cmdRun(os.Args[2:]))
 	case "version":
-		fmt.Println("croncompose-agent 0.1.0-dev")
+		fmt.Println("croncompose-agent", config.Version())
 	default:
 		usage()
 		os.Exit(2)

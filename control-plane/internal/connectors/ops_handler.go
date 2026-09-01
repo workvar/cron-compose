@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"time"
@@ -262,6 +263,40 @@ func (h *handler) listOperations(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusInternalServerError, "list_failed", err)
 	}
 	return c.JSON(fiber.Map{"items": rows})
+}
+
+// listPorts: GET /connectors/:id/ports. Any authenticated role. Live from the agent,
+// not the discovery cache, because listen sockets change independently of the
+// five-minute sweep. Not recorded as an operation: refreshing the tab would drown
+// the history in no-op reads.
+func (h *handler) listPorts(c fiber.Ctx) error {
+	conn, err := h.store.Get(c.Context(), c.Params("id"))
+	if errors.Is(err, ErrNotFound) {
+		return jsonError(c, fiber.StatusNotFound, "not_found", err)
+	}
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "get_failed", err)
+	}
+
+	res, err := h.gateway.SendConnectorCommand(c.Context(), conn.ServerID, &agentv1.ConnectorCommand{
+		RequestId:     agentgw.NewRequestID(),
+		Op:            "ports",
+		ConnectorKind: conn.Kind,
+		ConnectorId:   conn.Instance,
+	})
+	if err != nil {
+		return h.dispatchError(c, err, "")
+	}
+	if res.GetStatus() != "succeeded" {
+		return jsonError(c, statusToHTTP(res.GetStatus()), res.GetStatus(), errors.New(res.GetMessage()))
+	}
+	items := []PortRow{}
+	if b := res.GetPayloadJson(); len(b) > 0 {
+		if err := json.Unmarshal(b, &items); err != nil {
+			return jsonError(c, fiber.StatusBadGateway, "bad_payload", err)
+		}
+	}
+	return c.JSON(fiber.Map{"items": items})
 }
 
 // listSnapshots: GET /connectors/:id/snapshots. Admin only (they hold config bytes).

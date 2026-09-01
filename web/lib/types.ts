@@ -204,6 +204,17 @@ export type ConnectorCommandResponse = {
   steps?: ConnectorStep[];
 };
 
+export type ConnectorPort = {
+  proto: string;
+  address: string;
+  port: number;
+  pid: number;
+  process: string;
+  ref: string;
+  name: string;
+  protected: boolean;
+};
+
 export type JobTemplate = {
   id: string;
   name: string;
