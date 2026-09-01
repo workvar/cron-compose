@@ -29,31 +29,53 @@ type FailedRunHook interface {
 // Gateway owns the gRPC server, the per-server connection registry, the log broker,
 // and the TLS listener.
 type Gateway struct {
-	addr     string
-	log      *slog.Logger
-	pool     *pgxpool.Pool
-	bundle   *pki.Bundle
-	registry  *Registry
-	broker    *LogBroker
-	terminals *TerminalBus
-	resolver  SecretResolver
-	onFailed  FailedRunHook
-	grpc      *grpc.Server
-	lis       net.Listener
+	addr        string
+	log         *slog.Logger
+	pool        *pgxpool.Pool
+	bundle      *pki.Bundle
+	registry    *Registry
+	broker      *LogBroker
+	terminals   *TerminalBus
+	pending     *PendingRequests
+	logMaxBytes int
+	update      UpdatePolicy
+	resolver    SecretResolver
+	onFailed    FailedRunHook
+	grpc        *grpc.Server
+	lis         net.Listener
 }
 
 // New constructs a Gateway.
 func New(addr string, log *slog.Logger, pool *pgxpool.Pool, bundle *pki.Bundle, resolver SecretResolver) *Gateway {
 	return &Gateway{
-		addr:     addr,
-		log:      log,
-		pool:     pool,
-		bundle:   bundle,
+		addr:      addr,
+		log:       log,
+		pool:      pool,
+		bundle:    bundle,
 		registry:  NewRegistry(),
 		broker:    NewLogBroker(),
 		terminals: NewTerminalBus(),
+		pending:   NewPendingRequests(),
 		resolver:  resolver,
 	}
+}
+
+// SetRunLogMaxBytes caps how much log output one run may store. Zero keeps the
+// default. Set before Start.
+func (g *Gateway) SetRunLogMaxBytes(n int) { g.logMaxBytes = n }
+
+// SetUpdatePolicy installs the agent self-update policy. Set this before Start; an
+// empty policy (the default) means agents are never asked to update themselves.
+func (g *Gateway) SetUpdatePolicy(p UpdatePolicy) { g.update = p }
+
+// SendAgentUpdate pushes an UpdateAgent message to one connected agent.
+func (g *Gateway) SendAgentUpdate(serverID string, up *agentv1.UpdateAgent) error {
+	if up == nil {
+		return errors.New("nil update")
+	}
+	return g.registry.Send(serverID, &agentv1.ServerMessage{
+		Body: &agentv1.ServerMessage_UpdateAgent{UpdateAgent: up},
+	})
 }
 
 // SetFailedRunHook installs a hook invoked when a run ends with a non-success status.
@@ -70,6 +92,10 @@ func (g *Gateway) Broker() *LogBroker { return g.broker }
 // Terminals exposes the terminal bus so the REST WebSocket endpoint can route a
 // session's output back to the browser.
 func (g *Gateway) Terminals() *TerminalBus { return g.terminals }
+
+// Pending exposes the connector request/response correlation registry. The REST
+// layer uses it indirectly through SendConnectorCommand; it is exported for tests.
+func (g *Gateway) Pending() *PendingRequests { return g.pending }
 
 // Start binds and serves over mTLS.
 func (g *Gateway) Start(_ context.Context) error {
@@ -97,7 +123,7 @@ func (g *Gateway) Start(_ context.Context) error {
 
 	creds := credentials.NewTLS(tlsCfg)
 	g.grpc = grpc.NewServer(grpc.Creds(creds))
-	agentv1.RegisterAgentServiceServer(g.grpc, newService(g.log, g.pool, g.registry, g.broker, g.terminals, g.resolver, g.onFailed))
+	agentv1.RegisterAgentServiceServer(g.grpc, newService(g.log, g.pool, g.registry, g.broker, g.terminals, g.pending, g.logMaxBytes, g.update, g.resolver, g.onFailed))
 
 	go func() {
 		g.log.Info("grpc listening (mTLS)", "addr", g.addr)

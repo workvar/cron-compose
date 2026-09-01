@@ -82,6 +82,18 @@ beside it. The most important variables:
 | `TLS_HOSTS`          | SANs the server cert covers. Must include the public name agents dial.   |
 | `LOG_LEVEL`          | `debug` \| `info` \| `warn` \| `error`. Default `info`.                  |
 | `OIDC_*`             | Optional SSO. See [operations.md](docs/operations.md).                  |
+| `METRICS_TOKEN`      | When set, `/metrics` requires `Authorization: Bearer <token>`. Empty leaves it open, which is fine on a private network and not on the internet. |
+| `RUN_LOG_MAX_BYTES`  | Per-run log storage cap. Default 5 MiB. The run still completes and its exit status is still reported; only the log tail is dropped, with a note in the log. |
+| `RETENTION_RUN_LOG_DAYS` | Delete run logs older than this. `0` (default) never prunes. |
+| `RETENTION_RUN_DAYS` | Delete runs older than this. `0` (default) never prunes. Set it longer than the log window: runs are small and answer "has this been failing all month". |
+| `RETENTION_AUDIT_DAYS` | Delete audit entries older than this. `0` (default) never prunes. |
+| `RETENTION_OPERATION_DAYS` | Delete connector operations older than this. `0` (default) never prunes. |
+| `AGENT_UPDATE_VERSION` | Target agent version. Agents reporting a different version on connect are offered an update. Empty (default) disables agent self-update entirely. |
+| `AGENT_UPDATE_URL`   | Download URL template. `{version}`, `{os}` and `{arch}` are substituted. Must be `https`. |
+| `AGENT_UPDATE_SHA256` | Pinned sha256 of the binary: a bare hex digest, or a JSON object mapping `"os/arch"` to a digest. **Required** for updates to be offered; there is no unverified path. |
+| `AGENT_UPDATE_RESTART` | `1` (default) tells the agent to exit after swapping so its supervisor restarts it. `0` leaves the new binary to take effect on the next restart. |
+| `GITHUB_RELEASE_REPO` | GitHub `owner/repo` to poll for agent releases (default `croncompose/croncompose`). Disabled when a manual `AGENT_UPDATE_*` policy is configured. |
+| `AGENT_UPDATE_POLL_MINUTES` | How often to check GitHub for a new tag (default `15`). |
 
 `PUBLIC_BASE_URL` is the easiest knob: set it once (for example
 `https://cc.example.com`) and the control plane derives `PUBLIC_HTTP_URL`
@@ -154,8 +166,8 @@ git clone <repo> && cd croncompose
 ./install/install.sh
 ```
 
-The installer prompts for the public HTTP port (serves `/app` and `/api`), the public
-gRPC port, and the internal web UI port, then generates secrets, builds the binaries
+The installer asks four questions (public URL, HTTP port, database, admin login) and
+derives the rest; `--advanced` asks the long form. It generates secrets, builds the binaries
 and the UI, applies migrations, and writes a `0600` `.env`. Everything runs under
 **pm2** (installed automatically if missing), defined by `ecosystem.config.js`.
 `croncompose-ctl.sh` is a thin wrapper over it:
@@ -169,8 +181,9 @@ and the UI, applies migrations, and writes a `0600` `.env`. Everything runs unde
 
 Plain pm2 commands work too: `pm2 status`, `pm2 monit`, `pm2 logs croncompose-web`.
 
-Pull updates and roll forward with `./update.sh` (source mode). Full flag and
-environment reference: [install/README.md](install/README.md).
+Pull updates and roll forward with `./update.sh` (source mode). Remove the install with
+`./uninstall.sh` (`--dry-run` to preview, `--keep-db` to spare the database). Full flag
+and environment reference: [install/README.md](install/README.md).
 
 ## Path C: pm2 without the installer
 
@@ -329,3 +342,47 @@ The safe sequence is: back up the database, apply migrations, roll the control p
 forward, then the web UI; agents reconnect on their own. `./update.sh` performs this for
 both Compose and source installs (it auto-detects the mode). See
 [upgrades.md](docs/upgrades.md).
+
+## Retention and log volume
+
+Two independent controls, because they solve different problems.
+
+**The per-run cap** (`RUN_LOG_MAX_BYTES`, 5 MiB default) stops one runaway job from
+filling the database on its own. It bounds stored bytes, not the job: the script keeps
+running, its exit status is reported truthfully, and a single line goes into the log
+saying the rest was not stored. Live SSE subscribers still see everything, so somebody
+watching a run does not have the stream cut off under them.
+
+**The retention pruner** bounds total history and is off by default, because silently
+deleting a user's history is not a thing to start doing unasked. Once any window is set
+it sweeps hourly, deleting in 5000-row batches so the statements stay short enough that
+normal traffic does not notice. A sensible starting point:
+
+    RETENTION_RUN_LOG_DAYS=14
+    RETENTION_RUN_DAYS=90
+    RETENTION_AUDIT_DAYS=365
+    RETENTION_OPERATION_DAYS=365
+
+Logs are the bulk of the data and are read within hours. Runs are small and are what
+trend questions are answered from, so they should outlive their logs. Audit entries are
+tiny and are the thing you most regret having deleted.
+
+Watch `cc_retention_deleted_total` to confirm the pruner is doing something, and
+`cc_run_log_bytes_total` against the database size to see the cap working.
+
+## Agent self-update
+
+Off unless all three of `AGENT_UPDATE_VERSION`, `AGENT_UPDATE_URL` and
+`AGENT_UPDATE_SHA256` are set. There is deliberately no unverified path: downloading a
+binary and running it as whatever the agent runs as is the most dangerous thing this
+system does, and the pinned checksum is what makes it a controlled action rather than a
+remote code execution primitive.
+
+    AGENT_UPDATE_VERSION=1.4.0
+    AGENT_UPDATE_URL=https://dl.example.com/croncompose/{version}/agent-{os}-{arch}
+    AGENT_UPDATE_SHA256='{"linux/amd64":"<hex>","linux/arm64":"<hex>"}'
+
+The offer is made when an agent says hello with a different version. The agent verifies
+the digest as it streams the download, keeps the old binary as `<name>.old`, swaps
+atomically, and exits 0 so its supervisor restarts it. On a box where nothing would
+bring the agent back, set `AGENT_SELF_UPDATE=0` on the agent and update it by hand.

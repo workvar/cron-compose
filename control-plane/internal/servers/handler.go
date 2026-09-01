@@ -42,12 +42,12 @@ func (h *handler) create(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusBadRequest, "missing_name", errors.New("name is required"))
 	}
 	srv := Server{
-		ID:        ids.New(),
-		Name:      in.Name,
+		ID:          ids.New(),
+		Name:        in.Name,
 		Description: in.Description,
-		Labels:    coalesceLabels(in.Labels),
-		Status:    "pending",
-		CreatedAt: time.Now().UTC(),
+		Labels:      coalesceLabels(in.Labels),
+		Status:      "pending",
+		CreatedAt:   time.Now().UTC(),
 	}
 	if err := h.store.Insert(c.Context(), srv); err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "insert_failed", err)

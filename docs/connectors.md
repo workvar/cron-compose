@@ -476,3 +476,64 @@ cron, and ufw.
    that keeps the managed job and the crontab in sync? Start with a one-time copy.
 5. **Multi-instance connectors.** pm2-per-user and multiple Docker contexts are real. The
    `instance` column covers it; confirm the discovery heuristics per connector.
+
+## Implementation status
+
+Phases A, B and C are implemented. Phase D (breadth) is not.
+
+**Phase A, read-only discovery.** Providers for nginx, systemd, docker and pm2. The
+agent sweeps on connect and every five minutes, and after every mutating command, and
+pushes a `ConnectorEvent` through the durable outbox. The control plane upserts it into
+the `connectors` / `connector_resources` cache (migration 0005).
+
+**Phase B, lifecycle.** `POST /connectors/:id/actions` with `{action, ref}`, operator
+role and above. start / stop / restart / reload / enable / disable, and nothing else:
+`ValidAction` is a closed allowlist, checked before any string reaches a shell. Per
+provider: systemd maps each verb to the same systemctl subcommand; docker has no reload
+and maps enable/disable to the restart policy; pm2's disable is stop-then-save, because
+that is what actually keeps a process down across a reboot.
+
+**Phase C, config read and write.** Admin role only, for both reading and writing:
+these files hold upstream addresses, internal ports and occasionally credentials.
+
+- `GET  /connectors/:id/config?path=` read one file
+- `POST /connectors/:id/config` apply, with `dry_run` for check-only
+- `GET  /connectors/:id/snapshots` backup history
+- `POST /connectors/:id/snapshots/:snapshotID/restore` roll back
+- `GET  /connectors/:id/operations` what has been done to this connector
+
+Every write goes through one pipeline in `agent/internal/connectors/safety.go`:
+
+    backup -> precheck -> validate -> write -> validate-live -> activate -> health
+
+`precheck` compares the caller's `base_checksum` against the file on disk, so an edit
+based on a stale read is refused rather than silently overwriting somebody else's
+change. `validate` checks the candidate without touching the live tree; for an nginx
+include that can only be a structural check, which is why `validate-live` re-runs
+`nginx -t` over the whole tree after the write. A failure at `validate-live`,
+`activate` or `health` restores the pre-write bytes and reactivates, so a bad config
+never outlives the request that caused it.
+
+Confinement matters as much as the pipeline: `nginxProvider.owns` rejects any path
+outside the config directories discovery reported. Without it the connector would be an
+arbitrary file read/write primitive wearing an nginx label.
+
+**Privilege.** The agent stays unprivileged by default. `privexec.go` escalates only
+through `sudo -n`, only for a closed list of binaries (systemctl, nginx, tee, cp, mv,
+install, ufw), and reports `unauthorized` rather than half-applying when the grant is
+missing. Docker is never escalated: daemon access is a group membership, and escalating
+to root to reach a socket the operator deliberately did not grant would be the wrong
+default. Discovery reports capabilities honestly, so the UI disables what the agent
+genuinely cannot do.
+
+**Durability.** Migration 0006 adds `connector_operations` (one append-only row per
+command, written before the command is sent so an unanswered one still leaves a trace)
+and `connector_snapshots` (pre-apply bytes, pruned to the newest 20 per file). Results
+travel back on the agent's EPHEMERAL direct-send path, not the durable outbox: a caller
+is blocked on an HTTP request, and a replayed result after a reconnect would resolve
+nothing.
+
+**Phase D, breadth.** apache, caddy, traefik, haproxy, system cron and ufw are designed
+above and have no providers yet. Adding one means a file in
+`agent/internal/connectors/`, registration in `registry.go`, and nothing else: the
+command dispatch, the safety pipeline, the REST surface and the UI are all generic.

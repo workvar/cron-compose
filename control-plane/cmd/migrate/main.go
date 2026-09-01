@@ -1,16 +1,3 @@
-// Command migrate applies the SQL files in migrations/ to a Postgres database, in
-// lexical order, recording each applied file in a schema_migrations table so re-runs
-// are safe. It exists so the installer can set up the schema on any OS without
-// requiring the psql client.
-//
-// Usage:
-//
-//	migrate                       # uses $DATABASE_URL and ./migrations
-//	migrate -dir ../migrations    # explicit migrations directory
-//	migrate -db postgres://...     # explicit connection string (overrides env)
-//
-// It reuses the control-plane module's pgx dependency, so no extra packages are
-// pulled in.
 package main
 
 import (
@@ -19,9 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 
+	"github.com/croncompose/croncompose/control-plane/internal/dbmigrate"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -58,36 +45,9 @@ func run() error {
 	}
 	defer pool.Close()
 
-	if err := ensureTable(ctx, pool); err != nil {
-		return err
-	}
-	applied, err := appliedVersions(ctx, pool)
+	pending, err := dbmigrate.Apply(ctx, pool, *dir)
 	if err != nil {
 		return err
-	}
-
-	pending := 0
-	for _, f := range files {
-		version := filepath.Base(f)
-		if applied[version] {
-			fmt.Printf("  skip   %s (already applied)\n", version)
-			continue
-		}
-		sql, err := os.ReadFile(f)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", version, err)
-		}
-		// Each migration file carries its own begin/commit. With no query args pgx
-		// uses the simple protocol, which runs all statements in the file.
-		if _, err := pool.Exec(ctx, string(sql)); err != nil {
-			return fmt.Errorf("apply %s: %w", version, err)
-		}
-		if _, err := pool.Exec(ctx,
-			"insert into schema_migrations (version, applied_at) values ($1, now())", version); err != nil {
-			return fmt.Errorf("record %s: %w", version, err)
-		}
-		fmt.Printf("  apply  %s\n", version)
-		pending++
 	}
 
 	if pending == 0 {
@@ -123,31 +83,6 @@ func connect(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	return nil, fmt.Errorf("connect: %w", lastErr)
 }
 
-func ensureTable(ctx context.Context, pool *pgxpool.Pool) error {
-	_, err := pool.Exec(ctx, `create table if not exists schema_migrations (
-		version    text primary key,
-		applied_at timestamptz not null default now()
-	)`)
-	return err
-}
-
-func appliedVersions(ctx context.Context, pool *pgxpool.Pool) (map[string]bool, error) {
-	rows, err := pool.Query(ctx, "select version from schema_migrations")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]bool{}
-	for rows.Next() {
-		var v string
-		if err := rows.Scan(&v); err != nil {
-			return nil, err
-		}
-		out[v] = true
-	}
-	return out, rows.Err()
-}
-
 func sqlFiles(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -159,6 +94,5 @@ func sqlFiles(dir string) ([]string, error) {
 			files = append(files, filepath.Join(dir, e.Name()))
 		}
 	}
-	sort.Strings(files)
 	return files, nil
 }

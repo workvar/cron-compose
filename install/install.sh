@@ -8,6 +8,8 @@
 #   ./install/install.sh
 #
 # Flags:
+#   --advanced          ask the long-form questions (runtime dir, the
+#                       database method menu, log level, OIDC, extra env vars)
 #   --non-interactive   accept defaults / CC_* env vars without prompting
 #   --no-agent          do not enroll/run a local agent (control plane only)
 #   --no-web            do not build or run the web UI (API-only install)
@@ -26,12 +28,14 @@ LIB_DIR="$SCRIPT_DIR/lib"
 NONINTERACTIVE=0
 ENABLE_AGENT=1
 ENABLE_WEB=1
+ADVANCED=0
 
 usage() { awk 'NR>1{ if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"; exit 0; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --non-interactive) NONINTERACTIVE=1 ;;
+    --advanced)        ADVANCED=1 ;;
     --no-agent)        ENABLE_AGENT=0 ;;
     --no-web)          ENABLE_WEB=0 ;;
     --runtime-dir)     shift; CC_RUNTIME_DIR="${1:-}" ;;
@@ -40,16 +44,20 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-export NONINTERACTIVE ENABLE_AGENT ENABLE_WEB
+export NONINTERACTIVE ENABLE_AGENT ENABLE_WEB ADVANCED
 
 # shellcheck source=lib/common.sh
 . "$LIB_DIR/common.sh"
 # shellcheck source=lib/preflight.sh
 . "$LIB_DIR/preflight.sh"
+# shellcheck source=lib/pgdetect.sh
+. "$LIB_DIR/pgdetect.sh" # local PostgreSQL discovery, used by configure.sh
 # shellcheck source=lib/url.sh
 . "$LIB_DIR/url.sh"       # advertise-host parsing, used by configure.sh and services.sh
 # shellcheck source=lib/configure.sh
 . "$LIB_DIR/configure.sh"
+# shellcheck source=lib/configure_db.sh
+. "$LIB_DIR/configure_db.sh" # the database question (configure_database)
 # shellcheck source=lib/database.sh
 . "$LIB_DIR/database.sh"
 # shellcheck source=lib/codegen.sh
@@ -72,8 +80,9 @@ banner() {
 ART
   printf '%s' "$C_RESET" >&2
   dim "Builds and runs the CronCompose control plane from source."
-  dim "Single entry point: the control plane serves the UI (/app) and REST (/api) on one"
-  dim "HTTP port; agents connect on the gRPC port."
+  dim "Single entry point: the control plane serves the UI (/app) and REST (/api) on the"
+  dim "backend HTTP port; agents connect on the gRPC port."
+  [ "$ADVANCED" = "1" ] && dim "Mode: advanced (all questions)." || dim "Asks URL, ports, database, and admin login. --advanced asks the rest."
   [ "$ENABLE_AGENT" = "1" ] && dim "Scope: control plane + a local agent on this machine."
   [ "$NONINTERACTIVE" = "1" ] && dim "Mode: non-interactive (using defaults / CC_* env)."
   return 0  # never let a false test above abort the script under `set -e`

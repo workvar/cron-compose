@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getDashboardData } from "@/lib/dashboard";
 import { StatCard } from "@/components/StatCard";
+import { UpdateBanner } from "@/components/UpdateBanner";
 import { BarChart } from "@/components/charts/BarChart";
 import { Gauge } from "@/components/charts/Gauge";
 import { IconPlus, IconJobs, IconServer, IconChevronRight } from "@/components/icons";
@@ -42,6 +43,8 @@ export default async function DashboardPage() {
           Could not reach the control plane. Showing what we have.
         </div>
       )}
+
+      {d.updates && <UpdateBanner status={d.updates} />}
 
       <div className="dash-grid">
         {/* Row 1 — stat cards */}

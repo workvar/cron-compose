@@ -18,6 +18,8 @@ export type JobDraft = {
   maxRetries: number;
   cpuPct: number;
   memMB: number;
+  tasksMax: number;
+  ioWeight: number;
   workingDir: string;
   runAsUser: string;
   secretRefs: string[];
@@ -39,6 +41,8 @@ export function initialDraft(): JobDraft {
     maxRetries: 0,
     cpuPct: 0,
     memMB: 0,
+    tasksMax: 0,
+    ioWeight: 0,
     workingDir: "",
     runAsUser: "",
     secretRefs: [],

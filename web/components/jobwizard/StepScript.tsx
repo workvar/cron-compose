@@ -1,6 +1,7 @@
 import type { JobDraft, Patch } from "./types";
 import { INTERPRETERS } from "./types";
 import { SecretRefsField } from "./SecretRefsField";
+import { TemplatePicker } from "./TemplatePicker";
 import { IconChevronRight } from "@/components/icons";
 
 export function StepScript({ draft, set }: { draft: JobDraft; set: (p: Patch) => void }) {
@@ -8,6 +9,8 @@ export function StepScript({ draft, set }: { draft: JobDraft; set: (p: Patch) =>
     <div>
       <h2 className="step-h">What should it do?</h2>
       <p className="step-lead">Name the job, pick an interpreter, and write the script.</p>
+
+      <TemplatePicker set={set} />
 
       <div className="grid-2">
         <div className="field">
@@ -70,6 +73,14 @@ export function StepScript({ draft, set }: { draft: JobDraft; set: (p: Patch) =>
             <div className="field">
               <label>Memory limit (MB, 0 = unlimited)</label>
               <input type="number" min={0} value={draft.memMB} onChange={(e) => set({ memMB: Number(e.target.value) })} />
+            </div>
+            <div className="field">
+              <label>Max processes (0 = unlimited)</label>
+              <input type="number" min={0} value={draft.tasksMax} onChange={(e) => set({ tasksMax: Number(e.target.value) })} />
+            </div>
+            <div className="field">
+              <label>IO weight (1-10000, 0 = default)</label>
+              <input type="number" min={0} max={10000} value={draft.ioWeight} onChange={(e) => set({ ioWeight: Number(e.target.value) })} />
             </div>
             <div className="field">
               <label>Run as user (optional)</label>

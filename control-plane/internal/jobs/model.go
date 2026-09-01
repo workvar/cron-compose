@@ -7,7 +7,7 @@ import "time"
 // Job is the row in the jobs table plus the joined current_version.
 type Job struct {
 	ID                string            `json:"id"`
-	TargetKind        string            `json:"target_kind"`            // "server" | "labels"
+	TargetKind        string            `json:"target_kind"` // "server" | "labels"
 	ServerID          *string           `json:"server_id,omitempty"`
 	TargetLabels      map[string]string `json:"target_labels"`
 	Name              string            `json:"name"`
@@ -24,6 +24,8 @@ type Job struct {
 	RunAsUser         string            `json:"run_as_user,omitempty"`
 	CPUQuotaPercent   int               `json:"cpu_quota_percent"`
 	MemoryMaxMB       int               `json:"memory_max_mb"`
+	TasksMax          int               `json:"tasks_max"`
+	IOWeight          int               `json:"io_weight"`
 	CurrentVersionID  string            `json:"current_version_id"`
 	CurrentVersion    int               `json:"current_version"`
 	ScriptBody        string            `json:"script_body"`
@@ -52,6 +54,8 @@ type CreateInput struct {
 	RunAsUser         string            `json:"run_as_user,omitempty"`
 	CPUQuotaPercent   int               `json:"cpu_quota_percent,omitempty"`
 	MemoryMaxMB       int               `json:"memory_max_mb,omitempty"`
+	TasksMax          int               `json:"tasks_max,omitempty"`
+	IOWeight          int               `json:"io_weight,omitempty"`
 	ScriptBody        string            `json:"script_body"`
 	Env               map[string]string `json:"env,omitempty"`
 	SecretRefs        []string          `json:"secret_refs,omitempty"`
@@ -76,6 +80,8 @@ type PatchInput struct {
 	RunAsUser         *string            `json:"run_as_user,omitempty"`
 	CPUQuotaPercent   *int               `json:"cpu_quota_percent,omitempty"`
 	MemoryMaxMB       *int               `json:"memory_max_mb,omitempty"`
+	TasksMax          *int               `json:"tasks_max,omitempty"`
+	IOWeight          *int               `json:"io_weight,omitempty"`
 	ScriptBody        *string            `json:"script_body,omitempty"`
 	Env               *map[string]string `json:"env,omitempty"`
 	SecretRefs        *[]string          `json:"secret_refs,omitempty"`

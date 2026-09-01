@@ -7,9 +7,9 @@ Linux/macOS optionally enroll a local **agent** so the box is also a job runner.
 - **Linux / macOS:** `install/install.sh`
 - **Windows:** `install/install.ps1` (control plane only: see [Agent](#agent))
 
-The installer asks for the ports to use (suggesting a free one for each), collects the
-required environment variables, generates the secrets for you, builds everything,
-creates the database schema, starts the services, and prints how to sign in.
+The installer asks four questions (URL, port, database, admin login), generates the
+secrets for you, builds everything, creates the database schema, starts the services
+under pm2, and prints how to sign in. `--advanced` asks the long form.
 
 The **control plane is the single entry point**: its HTTP port serves the REST API under
 `/api` and reverse-proxies `/app` to the web UI, and the bare URL redirects to `/app`.
@@ -22,10 +22,11 @@ You need a working toolchain because this builds from source:
 
 - **Go 1.25+**: builds the API, the migration tool, the agent, and the `cc` CLI.
 - **Node 20+** and **npm**: builds and runs the web UI.
-- **PostgreSQL**: optional to install yourself. The installer can **install and configure
-  it for you** via your OS package manager (apt, dnf/yum, pacman, apk, zypper, or
-  Homebrew), or you can point it at an existing server, a `psql`-reachable local server,
-  or Docker.
+- **PostgreSQL**: optional to install yourself. If one is already running locally the
+  installer offers to use it; otherwise it can **install and configure it for you** via
+  your OS package manager (apt, dnf/yum, pacman, apk, zypper, or Homebrew), or you can
+  paste a connection string for a server elsewhere. Docker Postgres stays available
+  behind `--advanced`.
 
 The installer checks all of this up front and stops with a clear message if something
 is missing.
@@ -51,48 +52,72 @@ chose (open `http://<host>:<http port>`; it redirects to `/app`).
 
 ## What it asks you
 
-1. **Runtime directory**: where logs, pids, TLS material, and agent data live
-   (default `./.run`).
-2. **Advertise host**: the hostname or IP that browsers and agents use to reach this
-   box (default `localhost`). A full URL is accepted too: `https://cron.example.com`
-   is parsed into scheme + host, and when a scheme is given the printed URLs omit the
-   local listener port, on the assumption that a TLS terminator fronts it. Add an
-   explicit port (`https://cron.example.com:8443`) to keep one.
-3. **Ports**: the public HTTP port (8080, serves the UI at `/app` and REST at `/api`),
-   the public agent gRPC port (9090), and the internal web UI port (3000). For each, the
-   installer probes for a free port and offers it; press Enter to accept or type your own.
-   Occupied ports are flagged before you commit. The HTTP and gRPC ports need to be
-   reachable from outside; the web UI port is bound to loopback and reached through the
-   control plane.
+Four questions:
+
+1. **Public URL**: where people will reach CronCompose. A hostname, an IP, or a full
+   URL (`https://cron.example.com`). When you give a scheme, the printed URLs omit the
+   listener port, on the assumption that a TLS proxy fronts it; add an explicit port
+   (`https://cron.example.com:8443`) to keep one.
+2. **HTTP port**: the single public port, serving the UI at `/app` and the REST API at
+   `/api`. A free port is suggested and occupied ones are flagged. The agent gRPC port
+   and the internal web UI port are chosen automatically from the first free port.
+3. **Database**: the installer looks for a PostgreSQL already running on this machine
+   and offers to use it (creating a `croncompose` database and role in it, with your
+   confirmation). If there is none, it offers to install PostgreSQL for you, and failing
+   that asks for a connection string (see [Database options](#database-options)).
 4. **Admin account**: the email and password you'll sign in with. Leave the password
    blank and one is generated and shown to you.
-5. **Database**: pick existing / psql / Docker (see [Database options](#database-options)).
-6. **OIDC SSO**: optional; if you opt in it collects the four `OIDC_*` values.
-7. **Extra variables**: optionally add any other `KEY=VALUE` pairs to append to `.env`.
 
-`SESSION_SECRET` and `SECRETS_MASTER_KEY` are always generated for you with a CSPRNG.
-Everything is written to a `.env` file (mode `600`) at the repo root.
+Everything else is derived: the runtime directory (`./.run`), the gRPC and web ports,
+the log level, and the TLS SANs. `SESSION_SECRET` and `SECRETS_MASTER_KEY` are generated
+with a CSPRNG, or **reused from an existing `.env`** so re-running the installer never
+orphans your stored secrets. It all lands in a `.env` (mode `600`) at the repo root.
+
+Run `./install/install.sh --advanced` to be asked the long form instead: runtime
+directory, all three ports, the database method menu, log level, OIDC SSO, and free-form
+`KEY=VALUE` extras. Every one of those is also settable non-interactively through a
+`CC_*` environment variable.
 
 ## Database options
 
-- **Install it for me** (offered if a package manager is found; the default): the
-  installer installs the PostgreSQL server with your OS package manager, starts and
-  enables the service (running `initdb` where the package manager doesn't), then creates
-  the role and database. You just choose the database name, role, and password (a
-  password is generated if you leave it blank). Needs `sudo` on Linux. Idempotent: it
-  skips the install if a server is already present. Supported managers: `apt`, `dnf`,
-  `yum`, `pacman`, `apk`, `zypper`, and Homebrew (`brew`). Preview the exact commands
-  without running them by setting `CC_DB_DRY_RUN=1`.
-- **Existing**: you paste a `DATABASE_URL`. Nothing is created; the schema is applied
-  to whatever you point at.
-- **psql** (offered if `psql` is on PATH): you give a superuser connection and the
-  installer creates the role and database in an already-running server.
-- **Docker** (offered if `docker` is on PATH): the installer runs Postgres from
-  `docker-compose.yml`, waits for it to be ready, and uses it.
+The default path is two steps only:
+
+1. **Local PostgreSQL** (checked first): probes `127.0.0.1` / `localhost` on
+   `CC_DB_PORT`, `5432` and `5433`. If a server answers, one yes/no asks whether to use
+   it. On yes, the installer creates the `croncompose` database and owning role with a
+   generated password (override via `CC_DB_NAME` / `CC_DB_USER` / `CC_DB_PASS`), using
+   your OS user as superuser on macOS or `postgres` on Linux. A superuser password is
+   prompted later only if the server requires one. Migrations run later in the same
+   install. Needs `psql` on PATH; without it the installer says so and falls through.
+2. **Remote connection string**: if nothing is listening, you decline the local offer,
+   or `psql` is missing, you paste a `DATABASE_URL` for a database that already exists.
+   Nothing is created; migrations are applied to whatever you point at. A quick
+   reachability check surfaces typos immediately.
+
+**Install via package manager** and **Docker** are not offered on the default path. Use
+`./install/install.sh --advanced` (menu items 3 and 4), or set `CC_DB_METHOD=native` /
+`CC_DB_METHOD=docker`. Native install supports `apt`, `dnf`, `yum`, `pacman`, `apk`,
+`zypper`, and Homebrew (`brew`); preview with `CC_DB_DRY_RUN=1`. Docker starts Postgres
+from `docker-compose.yml` and waits until it is ready. (Running *CronCompose itself* in
+Docker is separate: see `docker-compose.prod.yml` and `update.sh --mode compose`.)
 
 Migrations are applied by a small bundled tool (`control-plane/cmd/migrate`) that talks
 to Postgres directly, so **no `psql` client is required** on Windows or macOS. It records
 applied files in a `schema_migrations` table, so re-running the installer is safe.
+
+## Uninstalling
+
+`./uninstall.sh` removes everything the installer put on the machine, wherever it
+landed: pm2 processes and their boot entry, systemd units, the runtime directory, the
+control script, built artifacts, `.env`, and the database. It asks before destroying
+data, and leaves the checkout, PostgreSQL, Node and pm2 in place.
+
+```sh
+./uninstall.sh              # interactive; type the database name to confirm the drop
+./uninstall.sh --dry-run    # show what would be removed, touch nothing
+./uninstall.sh --keep-db    # everything except the database
+./uninstall.sh --yes        # no prompts, database included
+```
 
 ## Managing the stack
 
@@ -158,7 +183,7 @@ prompting. Values come from `CC_*` environment variables:
 | `CC_GRPC_PORT`       | agent gRPC port                                    | first free at/after `9090`       |
 | `CC_ADMIN_EMAIL`     | seed admin email                                   | `admin@example.com`              |
 | `CC_ADMIN_PASSWORD`  | seed admin password                                | generated if empty               |
-| `CC_DB_METHOD`       | `native` \| `existing` \| `psql` \| `docker`        | `native` if a package manager is found, else `existing` |
+| `CC_DB_METHOD`       | `psql` \| `native` \| `existing` \| `docker`        | default path: `psql` if local Postgres is accepted, else `existing`; `native`/`docker` only via `--advanced` or this env |
 | `CC_DATABASE_URL`    | DSN (for `existing`)                               | local dev DSN                    |
 | `CC_DB_NAME` / `CC_DB_USER` / `CC_DB_PASS` | database, role, password (for `native`/`psql`) | `croncompose` / `croncompose` / generated |
 | `CC_LOG_LEVEL`       | `debug` \| `info` \| `warn` \| `error`             | `info`                           |

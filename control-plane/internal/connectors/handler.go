@@ -5,12 +5,25 @@ import (
 	"log/slog"
 
 	"github.com/gofiber/fiber/v3"
+
+	"github.com/croncompose/croncompose/control-plane/internal/agentgw"
+	"github.com/croncompose/croncompose/control-plane/internal/audit"
+	"github.com/croncompose/croncompose/control-plane/internal/auth"
 )
 
-// handler holds the dependencies the read endpoints need.
+// handler holds the dependencies the connector endpoints need. The gateway and audit
+// writer are nil for nobody: the read endpoints ignore them, the write endpoints
+// require them.
 type handler struct {
-	log   *slog.Logger
-	store *Store
+	log     *slog.Logger
+	store   *Store
+	gateway *agentgw.Gateway
+	audit   audit.Writer
+}
+
+// audited records one connector mutation against the acting user.
+func (h *handler) audited(c fiber.Ctx, action, targetID string, meta map[string]any) {
+	h.audit.Write(c.Context(), auth.CurrentUserID(c), action, "connector", targetID, meta)
 }
 
 // listAll: GET /connectors. Every connector across all servers (overview).

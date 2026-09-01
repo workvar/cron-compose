@@ -29,9 +29,9 @@ func init() {
 			var resp struct {
 				Items []struct {
 					ID, Status, Trigger string
-					ExitCode            *int    `json:"exit_code"`
-					DurationMs          *int    `json:"duration_ms"`
-					CreatedAt           string  `json:"created_at"`
+					ExitCode            *int   `json:"exit_code"`
+					DurationMs          *int   `json:"duration_ms"`
+					CreatedAt           string `json:"created_at"`
 				} `json:"items"`
 			}
 			if err := API().JSON(http.MethodGet, "/jobs/"+args[0]+"/runs?limit=20", nil, &resp); err != nil {

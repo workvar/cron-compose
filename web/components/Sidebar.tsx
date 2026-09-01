@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Me } from "@/lib/types";
+import { Brand } from "./Brand";
 import { NavLink } from "./NavLink";
 import { LogoutButton } from "./LogoutButton";
 import {
@@ -12,10 +13,7 @@ export function Sidebar({ me }: { me: Me }) {
 
   return (
     <aside className="sidebar">
-      <Link href="/" className="brand">
-        <span className="mark"><IconZap /></span>
-        <span>CronCompose</span>
-      </Link>
+      <Brand href="/" />
 
       <div className="nav-section">
         <div className="nav-label">Menu</div>

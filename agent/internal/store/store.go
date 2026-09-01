@@ -32,6 +32,8 @@ type JobDef struct {
 	Secrets           map[string]string `json:"secrets"`
 	CPUQuotaPercent   int               `json:"cpu_quota_percent"`
 	MemoryMaxMB       int               `json:"memory_max_mb"`
+	TasksMax          int               `json:"tasks_max"`
+	IOWeight          int               `json:"io_weight"`
 }
 
 // Store is the on-disk cache of jobs the agent should run.

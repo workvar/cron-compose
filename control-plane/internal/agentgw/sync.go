@@ -29,7 +29,7 @@ func BuildFullSync(ctx context.Context, pool *pgxpool.Pool, resolver SecretResol
 		       coalesce(j.working_dir,''), coalesce(j.run_as_user,''),
 		       coalesce(jv.env::text, '{}'),
 		       coalesce(jv.secret_refs::text, '[]'),
-		       j.cpu_quota_percent, j.memory_max_mb
+		       j.cpu_quota_percent, j.memory_max_mb, j.tasks_max, j.io_weight
 		from jobs j
 		join job_versions jv on jv.id = j.current_version_id
 		where (j.target_kind = 'server' and j.server_id = $1)
@@ -54,7 +54,7 @@ func BuildFullSync(ctx context.Context, pool *pgxpool.Pool, resolver SecretResol
 			&d.ScheduleCron, &d.Timezone, &d.Enabled, &d.TimeoutSeconds,
 			&d.ConcurrencyPolicy, &d.CatchupPolicy, &d.MaxRetries,
 			&d.WorkingDir, &d.RunAsUser, &envJSON, &refsJSON,
-			&d.CpuQuotaPercent, &d.MemoryMaxMb,
+			&d.CpuQuotaPercent, &d.MemoryMaxMb, &d.TasksMax, &d.IoWeight,
 		); err != nil {
 			return nil, err
 		}

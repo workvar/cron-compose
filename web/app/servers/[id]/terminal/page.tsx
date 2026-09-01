@@ -16,6 +16,7 @@ export default function TerminalPage({ params }: Props) {
   const [phase, setPhase] = useState<"setup" | "live">("setup");
   const [mode, setMode] = useState<Mode>("shell");
   const [command, setCommand] = useState("");
+  const [runAs, setRunAs] = useState("");
   const [session, setSession] = useState(0); // bump remounts TerminalView for a fresh connection
 
   const start = () => {
@@ -32,7 +33,8 @@ export default function TerminalPage({ params }: Props) {
         <div>
           <h1>Terminal</h1>
           <p className="subtle" style={{ marginTop: 6 }}>
-            Opens a shell as the agent&apos;s user on this server. Admin/owner only; every session is audited.
+            Opens a shell on this server. Admin/owner only; every session is audited.
+            Switching to another user needs the agent to be running as root.
           </p>
         </div>
       </div>
@@ -65,6 +67,22 @@ export default function TerminalPage({ params }: Props) {
           )}
 
           <div>
+            <label htmlFor="term-user">Run as</label>
+            <input
+              id="term-user"
+              className="term-cmd"
+              placeholder="leave empty for the agent&apos;s own user"
+              value={runAs}
+              onChange={(e) => setRunAs(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") start(); }}
+            />
+            <p className="field-hint">
+              An unprivileged agent can only run as itself; anything else fails with a clear error
+              rather than silently running as the wrong user.
+            </p>
+          </div>
+
+          <div>
             <button type="button" className="button" onClick={start} disabled={mode === "command" && !command.trim()}>
               <IconTerminal /> {mode === "shell" ? "Open shell" : "Run command"}
             </button>
@@ -76,6 +94,7 @@ export default function TerminalPage({ params }: Props) {
           serverId={id}
           mode={mode}
           command={mode === "command" ? command : undefined}
+          runAs={runAs.trim() || undefined}
           onClose={back}
         />
       )}

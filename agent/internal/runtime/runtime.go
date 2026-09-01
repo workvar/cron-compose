@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"io"
 	"log/slog"
+	"runtime"
 	"sync"
 	"time"
 
@@ -40,15 +41,22 @@ type Runtime struct {
 	direct chan *agentv1.AgentMessage
 
 	conns     *connectors.Registry
+	exec      *connectors.Executor
 	terminals *terminal.Manager
 
 	sched *scheduler.Scheduler
 
-	jobsMu     sync.RWMutex
-	jobs       map[string]store.JobDef
-	runsMu     sync.Mutex
-	runIndex   map[string]activeRun // runID -> active run
-	jobBusy    map[string]int       // jobID -> count of in-progress runs
+	jobsMu   sync.RWMutex
+	jobs     map[string]store.JobDef
+	runsMu   sync.Mutex
+	runIndex map[string]activeRun     // runID -> active run
+	jobBusy  map[string]int           // jobID -> count of in-progress runs
+	gates    map[string]chan struct{} // jobID -> one-slot admission gate
+
+	// state is the persisted per-job history (last fire time) used by catch-up. Held
+	// in memory so recording a fire does not re-read the file every run.
+	stateMu sync.Mutex
+	state   map[string]store.JobState
 }
 
 // activeRun is the cancel handle for an in-progress run.
@@ -60,20 +68,22 @@ type activeRun struct {
 // New constructs a Runtime. Caller is responsible for the tls.Config and the outbox.
 func New(cfg config.Config, log *slog.Logger, st *store.Store, ident identity.Identity, tlsCfg *tls.Config, ob *outbox.Outbox) *Runtime {
 	r := &Runtime{
-		cfg:        cfg,
-		log:        log,
-		store:      st,
-		ident:      ident,
-		tlsCfg:     tlsCfg,
-		outbox:     ob,
-		wake:       make(chan struct{}, 1),
-		direct:     make(chan *agentv1.AgentMessage, 256),
-		conns:      connectors.NewRegistry(log),
+		cfg:      cfg,
+		log:      log,
+		store:    st,
+		ident:    ident,
+		tlsCfg:   tlsCfg,
+		outbox:   ob,
+		wake:     make(chan struct{}, 1),
+		direct:   make(chan *agentv1.AgentMessage, 256),
+		conns:    connectors.NewRegistry(log),
 		jobs:     map[string]store.JobDef{},
 		runIndex: map[string]activeRun{},
 		jobBusy:  map[string]int{},
+		gates:    map[string]chan struct{}{},
 	}
 	r.sched = scheduler.New(r.onSchedulerFire)
+	r.exec = connectors.NewExecutor(log, r.conns)
 	r.initTerminals()
 	return r
 }
@@ -85,6 +95,9 @@ func (r *Runtime) Run(ctx context.Context) error {
 	// Seed scheduler from the on-disk job cache so jobs fire even before first SyncJobs.
 	if cached, err := r.store.LoadJobs(); err == nil {
 		r.applyCachedJobs(cached)
+		// Catch-up runs before the scheduler starts, on its own goroutine so a slow
+		// backlog does not delay reconnecting to the control plane.
+		go r.runCatchup(ctx, cached)
 	}
 	r.sched.Start()
 	defer r.sched.Stop()
@@ -136,8 +149,9 @@ func (r *Runtime) connectAndServe(ctx context.Context, addr string) error {
 	r.queue(&agentv1.AgentMessage{
 		Body: &agentv1.AgentMessage_Hello{Hello: &agentv1.Hello{
 			AgentVersion: r.cfg.AgentVersion,
-			Os:           "linux",
-			Capabilities: []string{"terminal"},
+			Os:           runtime.GOOS,
+			Arch:         runtime.GOARCH,
+			Capabilities: []string{"terminal", "connectors.lifecycle", "connectors.config"},
 		}},
 	})
 

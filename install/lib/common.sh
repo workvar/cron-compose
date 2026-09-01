@@ -116,7 +116,18 @@ gen_hex() { # <bytes> -> hex string of length 2*bytes
   date +%s%N | shasum -a 256 2>/dev/null | awk '{print $1}'
 }
 
-# --- misc -------------------------------------------------------------------
+# --- env files --------------------------------------------------------------
+
+# Quote a value for a .env file so passwords with #, $, spaces, or quotes survive
+# both `source .env` and the control plane's dotenv loader.
+env_quote() {
+  local s=$1
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  printf '"%s"' "$s"
+}
+
+env_line() { printf '%s=%s\n' "$1" "$(env_quote "$2")"; }
 
 detect_host_ip() { # best-effort primary non-loopback IPv4, else 127.0.0.1
   local ip=""

@@ -27,6 +27,8 @@ external callers. Agents do **not** use this API; they use the gRPC channel in
 | PATCH  | `/servers/:id`                    | Rename, edit description/labels.         |
 | DELETE | `/servers/:id`                    | Remove server (and its jobs).            |
 | POST   | `/servers/:id/enrollment-token`   | Re-issue a one-time enrollment token.    |
+| POST   | `/servers/:id/update`             | Offer a connected agent a self-update to the latest release (admin). |
+| GET    | `/updates`                        | Latest agent release and per-server update status. |
 | POST   | `/servers/:id/revoke`             | Revoke the agent cert; forces re-enroll. |
 
 ## Jobs
@@ -90,3 +92,59 @@ external callers. Agents do **not** use this API; they use the gRPC channel in
 - Timestamps: RFC 3339 / ISO 8601 in UTC.
 - Idempotency: run upserts from agents are keyed by run `id`; the manual-run endpoint
   may accept an `Idempotency-Key` header to avoid duplicate triggers.
+
+## Connectors
+
+Read endpoints are open to any authenticated role. Lifecycle is operator and above.
+Anything touching config bytes is admin, for reading as well as writing.
+
+| Method | Path | Role | Notes |
+|---|---|---|---|
+| GET | `/connectors` | viewer | Every connector across the fleet. |
+| GET | `/connectors/:id` | viewer | |
+| GET | `/connectors/:id/resources` | viewer | Objects and config files. |
+| GET | `/connectors/:id/operations?limit=` | viewer | Append-only command history. |
+| GET | `/servers/:id/connectors` | viewer | |
+| POST | `/connectors/:id/actions` | operator | `{action, ref}`. Action must be one of start, stop, restart, reload, enable, disable. |
+| GET | `/connectors/:id/config?path=` | admin | `{path, content, checksum}`. |
+| POST | `/connectors/:id/config` | admin | `{path, content, base_checksum, dry_run}`. |
+| GET | `/connectors/:id/snapshots?path=&limit=` | admin | Backup history, without the bytes. |
+| POST | `/connectors/:id/snapshots/:snapshotID/restore` | admin | |
+
+Mutating calls return `{operation_id, status, message, steps}`. `status` is the agent's
+own verdict (`succeeded`, `failed`, `invalid`, `unauthorized`, `unsupported`) or a
+transport outcome the control plane recorded (`offline`, `timeout`). A 200 with
+`status: "invalid"` means the request was handled and the change was refused, so callers
+have to read `status` rather than only the HTTP code.
+
+Transport failures do use HTTP codes: `503 agent_offline`, `504 agent_timeout`. Both
+still carry `operation_id`, so the UI can link to the recorded attempt.
+
+`base_checksum` on an apply is the checksum from the read it was based on. A mismatch is
+refused with `invalid` rather than overwriting a change made in the meantime. Pass it
+empty to force.
+
+## Job templates
+
+| Method | Path | Role | Notes |
+|---|---|---|---|
+| GET | `/job-templates?category=` | viewer | Built-ins sort first within a category. |
+| GET | `/job-templates/:id` | viewer | |
+| POST | `/job-templates` | operator | Either the full body, or `{from_job_id, name}` to save an existing job. |
+| DELETE | `/job-templates/:id` | operator | `403 builtin` for shipped templates. |
+
+## Notification targets
+
+Admin throughout: these rows hold SMTP credentials and webhook URLs.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/notification-targets` | Secret config values come back as `********`. |
+| POST | `/notification-targets` | `{name, kind, url, config, server_labels, on_statuses}`. `kind` is webhook, slack or email. |
+| PATCH | `/notification-targets/:id` | Any subset. A config value sent as `********` keeps its stored value. |
+| POST | `/notification-targets/:id/test` | Sends a real message. Returns `{delivered: true}` or `{delivered: false, error}` with a 200 either way: the request succeeded, the delivery is what failed. |
+| DELETE | `/notification-targets/:id` | |
+
+`server_labels` scopes a target to servers whose labels contain all of the given pairs;
+empty means the whole fleet. `on_statuses` limits which run outcomes fire it; empty
+means every non-success outcome.

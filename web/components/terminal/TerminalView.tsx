@@ -14,13 +14,15 @@ type Props = {
   serverId: string;
   mode: "shell" | "command";
   command?: string;
+  /** OS user to run the session as. Empty or absent means the agent's own user. */
+  runAs?: string;
   onClose: () => void;
 };
 
 const dim = (s: string) => `\r\n\x1b[90m${s}\x1b[0m\r\n`;
 const red = (s: string) => `\r\n\x1b[31m${s}\x1b[0m\r\n`;
 
-export default function TerminalView({ serverId, mode, command, onClose }: Props) {
+export default function TerminalView({ serverId, mode, command, runAs, onClose }: Props) {
   const holder = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -47,7 +49,14 @@ export default function TerminalView({ serverId, mode, command, onClose }: Props
 
     ws.onopen = () => {
       setStatus("open");
-      ws.send(JSON.stringify({ type: "init", mode, command: command ?? "", cols: term.cols, rows: term.rows }));
+      ws.send(JSON.stringify({
+        type: "init",
+        mode,
+        command: command ?? "",
+        run_as: runAs ?? "",
+        cols: term.cols,
+        rows: term.rows,
+      }));
       term.focus();
     };
 
@@ -101,7 +110,7 @@ export default function TerminalView({ serverId, mode, command, onClose }: Props
       }
       term.dispose();
     };
-  }, [serverId, mode, command]);
+  }, [serverId, mode, command, runAs]);
 
   const ended = status === "closed" || status === "error";
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -114,6 +115,9 @@ func (s *service) handleAgentMessage(ctx context.Context, serverID string, msg *
 		return s.onRunFinished(ctx, serverID, body.RunFinished)
 	case *agentv1.AgentMessage_ConnectorEvent:
 		return s.onConnectorEvent(ctx, serverID, body.ConnectorEvent)
+	case *agentv1.AgentMessage_ConnectorResult:
+		s.pending.Resolve(body.ConnectorResult)
+		return nil
 	case *agentv1.AgentMessage_TerminalOutput:
 		s.terminals.Deliver(body.TerminalOutput)
 		return nil
@@ -126,7 +130,23 @@ func (s *service) onHello(ctx context.Context, serverID string, h *agentv1.Hello
 		update servers set agent_version = $1, os = $2, arch = $3, status = 'online', last_seen_at = now()
 		where id = $4
 	`, h.GetAgentVersion(), h.GetOs(), h.GetArch(), serverID)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Hello is the only moment we reliably know this agent's version, os and arch,
+	// so it is where the update offer belongs. Best effort: an agent that cannot be
+	// reached right now will say hello again on its next connect.
+	if up := s.update.For(h.GetAgentVersion(), h.GetOs(), h.GetArch()); up != nil {
+		s.log.Info("offering agent update", "server_id", serverID,
+			"from", h.GetAgentVersion(), "to", up.GetTargetVersion())
+		if sendErr := s.registry.Send(serverID, &agentv1.ServerMessage{
+			Body: &agentv1.ServerMessage_UpdateAgent{UpdateAgent: up},
+		}); sendErr != nil {
+			s.log.Warn("agent update offer not delivered", "server_id", serverID, "err", sendErr)
+		}
+	}
+	return nil
 }
 
 func (s *service) onHeartbeat(ctx context.Context, serverID string, _ *agentv1.Heartbeat) error {
@@ -144,14 +164,35 @@ func (s *service) onRunStarted(ctx context.Context, serverID string, r *agentv1.
 }
 
 func (s *service) onLogChunk(ctx context.Context, _ string, c *agentv1.LogChunk) error {
+	// Live subscribers see everything, cap or no cap: somebody watching a run should
+	// not have the stream cut off under them. The cap governs what is stored.
+	s.broker.Publish(c.GetRunId(), c)
+	metrics.RunLogBytes.Add(float64(len(c.GetData())))
+
+	store, notice := s.logCap.admit(c.GetRunId(), len(c.GetData()))
+	if notice {
+		s.log.Info("run log truncated", "run_id", c.GetRunId(), "limit_bytes", s.logCap.max)
+		// A sentinel seq, not the current chunk's: if stderr is the stream that
+		// overflowed, reusing its seq would collide with a line already stored and the
+		// ON CONFLICT would silently drop the notice, which is the one line that must
+		// not go missing. MaxInt32 also sorts it last, where a reader expects it.
+		_, err := s.pool.Exec(ctx, `
+			insert into run_logs (run_id, stream, seq, chunk)
+			values ($1, 'stderr', $2, $3)
+			on conflict (run_id, stream, seq) do nothing
+		`, c.GetRunId(), int32(math.MaxInt32),
+			"croncompose: output limit reached; the rest of this run's log was not stored")
+		return err
+	}
+	if !store {
+		return nil
+	}
+
 	_, err := s.pool.Exec(ctx, `
 		insert into run_logs (run_id, stream, seq, chunk)
 		values ($1, $2, $3, $4)
 		on conflict (run_id, stream, seq) do nothing
 	`, c.GetRunId(), c.GetStream(), c.GetSeq(), string(c.GetData()))
-	if err == nil {
-		s.broker.Publish(c.GetRunId(), c)
-	}
 	return err
 }
 
@@ -161,8 +202,10 @@ func (s *service) onRunFinished(ctx context.Context, serverID string, r *agentv1
 		set status = $1, exit_code = $2, finished_at = $3, duration_ms = $4, error = nullif($5, '')
 		where id = $6
 	`, r.GetStatus(), r.GetExitCode(), r.GetFinishedAt().AsTime(), r.GetDurationMs(), r.GetError(), r.GetRunId())
+	s.logCap.done(r.GetRunId())
 	if err == nil {
 		metrics.RunsTotal.WithLabelValues(r.GetStatus()).Inc()
+		metrics.RunDuration.WithLabelValues(r.GetStatus()).Observe(float64(r.GetDurationMs()) / 1000)
 		s.broker.PublishFinished(r.GetRunId(), r)
 		// Fire failure notification if hook installed and status is non-success.
 		if s.onFailed != nil && r.GetStatus() != "succeeded" {

@@ -97,7 +97,7 @@ func (h *handler) delete(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-func (h *handler) enable(c fiber.Ctx)  error { return h.setEnabled(c, true) }
+func (h *handler) enable(c fiber.Ctx) error  { return h.setEnabled(c, true) }
 func (h *handler) disable(c fiber.Ctx) error { return h.setEnabled(c, false) }
 
 func (h *handler) setEnabled(c fiber.Ctx, enabled bool) error {

@@ -9,7 +9,7 @@ import (
 
 // serviceStatus maps `systemctl is-active <unit>` onto running|stopped|unknown.
 func serviceStatus(ctx context.Context, unit string) string {
-	if !has("systemctl") {
+	if !systemdAvailable() {
 		return "unknown"
 	}
 	out, _ := run(ctx, "systemctl", "is-active", unit)

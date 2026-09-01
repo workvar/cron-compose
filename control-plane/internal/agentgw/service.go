@@ -22,10 +22,13 @@ type service struct {
 	registry  *Registry
 	broker    *LogBroker
 	terminals *TerminalBus
+	pending   *PendingRequests
+	logCap    *logCap
+	update    UpdatePolicy
 	resolver  SecretResolver
 	onFailed  FailedRunHook
 }
 
-func newService(log *slog.Logger, pool *pgxpool.Pool, reg *Registry, broker *LogBroker, terminals *TerminalBus, resolver SecretResolver, onFailed FailedRunHook) *service {
-	return &service{log: log, pool: pool, registry: reg, broker: broker, terminals: terminals, resolver: resolver, onFailed: onFailed}
+func newService(log *slog.Logger, pool *pgxpool.Pool, reg *Registry, broker *LogBroker, terminals *TerminalBus, pending *PendingRequests, logMaxBytes int, update UpdatePolicy, resolver SecretResolver, onFailed FailedRunHook) *service {
+	return &service{log: log, pool: pool, registry: reg, broker: broker, terminals: terminals, pending: pending, logCap: newLogCap(logMaxBytes), update: update, resolver: resolver, onFailed: onFailed}
 }

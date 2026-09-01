@@ -7,7 +7,7 @@ import "time"
 // Secret is the read shape, without the value.
 type Secret struct {
 	ID        string    `json:"id"`
-	Scope     string    `json:"scope"`              // global | server | job
+	Scope     string    `json:"scope"` // global | server | job
 	ScopeID   string    `json:"scope_id,omitempty"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
@@ -15,8 +15,8 @@ type Secret struct {
 
 // CreateInput is the body of POST /secrets.
 type CreateInput struct {
-	Scope   string `json:"scope"`              // optional, defaults to "global"
+	Scope   string `json:"scope"` // optional, defaults to "global"
 	ScopeID string `json:"scope_id,omitempty"`
 	Name    string `json:"name"`
-	Value   string `json:"value"`              // plaintext, write-only, encrypted at rest
+	Value   string `json:"value"` // plaintext, write-only, encrypted at rest
 }

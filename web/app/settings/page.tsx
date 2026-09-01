@@ -2,7 +2,8 @@ import Link from "next/link";
 import { apiGet } from "@/lib/api";
 import type { ListResponse, Me, NotificationTarget } from "@/lib/types";
 import { LogoutButton } from "@/components/LogoutButton";
-import { IconKey, IconShield, IconBell } from "@/components/icons";
+import { IconKey, IconShield } from "@/components/icons";
+import { TargetManager } from "@/components/notify/TargetManager";
 
 function initials(me: Me): string {
   const src = me.name?.trim() || me.email;
@@ -49,26 +50,12 @@ export default async function SettingsPage() {
       )}
 
       <h2>Notifications</h2>
-      {targets.length === 0 ? (
-        <div className="panel"><div className="empty">No webhook targets configured.</div></div>
-      ) : (
-        <div className="stack">
-          {targets.map((t) => (
-            <div key={t.id} className="panel">
-              <div className="row">
-                <div className="cluster" style={{ flexWrap: "nowrap" }}>
-                  <span className="mini-icon"><IconBell /></span>
-                  <div>
-                    <div style={{ fontWeight: 700, color: "var(--text)" }}>{t.name}</div>
-                    <div className="subtle mono" style={{ fontSize: 12 }}>{t.kind} · {t.url}</div>
-                  </div>
-                </div>
-                <span className={`status ${t.enabled ? "ok" : "neutral"}`}>{t.enabled ? "enabled" : "disabled"}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
+        Where CronCompose tells you a job failed. Nothing is sent if there are no enabled targets.
+      </p>
+      {isAdmin
+        ? <TargetManager initial={targets} />
+        : <div className="panel"><div className="empty">Only admins can view notification targets.</div></div>}
 
       {isAdmin && (
         <>

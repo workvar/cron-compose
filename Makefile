@@ -1,9 +1,9 @@
-.PHONY: help db-up db-down migrate migrate-tool proto proto-check control-plane agent cli web dev tidy install \
+.PHONY: help db-up db-down migrate migrate-tool proto proto-check control-plane agent cli web dev setup tidy install uninstall \
         pm2-start pm2-stop pm2-restart pm2-reload pm2-status pm2-logs pm2-save pm2-delete
 
 help:
 	@echo "Targets:"
-	@echo "  db-up           Start Postgres in docker-compose"
+	@echo "  db-up           Start Postgres in docker-compose (optional; a local Postgres works too)"
 	@echo "  db-down         Stop Postgres"
 	@echo "  migrate         Apply SQL migrations to local Postgres"
 	@echo "  proto           Regenerate Go code from proto/agent.proto"
@@ -12,12 +12,15 @@ help:
 	@echo "  agent           Build the agent binary"
 	@echo "  web             Install web deps and run Next.js dev server"
 	@echo "  dev             db-up + control-plane + web (separate shells expected)"
+	@echo "  setup           interactive dev setup (Postgres, .env, migrations)"
 	@echo "  tidy            go mod tidy in each Go module"
 	@echo "  pm2-start       Start the stack under pm2 (needs a built tree + .env)"
 	@echo "  pm2-restart     Restart pm2 processes, re-reading .env"
 	@echo "  pm2-status      Show pm2 process status"
 	@echo "  pm2-logs        Tail pm2 logs"
 	@echo "  pm2-save        Persist the pm2 process list for boot"
+	@echo "  install         Interactive install (4 questions; --advanced for the rest)"
+	@echo "  uninstall       Remove the install from this machine (pm2, files, database)"
 
 db-up:
 	docker compose up -d postgres
@@ -66,8 +69,16 @@ migrate-tool:
 install:
 	./install/install.sh
 
+# Undoes install: pm2 processes, systemd units, runtime dir, artifacts, .env, database.
+# Prompts before dropping data; ./uninstall.sh --dry-run shows what it would remove.
+uninstall:
+	./uninstall.sh
+
 web:
 	cd web && npm install && npm run dev
+
+setup:
+	./setup.sh
 
 tidy:
 	cd control-plane && go mod tidy

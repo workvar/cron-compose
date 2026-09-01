@@ -26,15 +26,15 @@ type Request struct {
 	OS           string `json:"os"`
 	Arch         string `json:"arch"`
 	AgentVersion string `json:"agent_version"`
-	CSRPEM       string `json:"csr_pem"`           // raw PEM or base64-wrapped PEM
-	CSRBase64    string `json:"csr_pem_base64"`    // optional, convenience for clients
+	CSRPEM       string `json:"csr_pem"`        // raw PEM or base64-wrapped PEM
+	CSRBase64    string `json:"csr_pem_base64"` // optional, convenience for clients
 }
 
 // Response is the JSON body returned on success.
 type Response struct {
-	ServerID            string `json:"server_id"`
-	ClientCertPEM       string `json:"client_cert_pem"`
-	ServerCAPEM         string `json:"server_ca_pem"`
+	ServerID             string `json:"server_id"`
+	ClientCertPEM        string `json:"client_cert_pem"`
+	ServerCAPEM          string `json:"server_ca_pem"`
 	ControlPlaneGRPCAddr string `json:"control_plane_grpc_addr"`
 }
 

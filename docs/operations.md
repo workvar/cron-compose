@@ -90,3 +90,25 @@ The unit hardens the runtime: `NoNewPrivileges`, `ProtectSystem=full`,
 
 For a one-off install (no apt/apk available), the existing `scripts/install-agent.sh`
 still works.
+
+## Metrics
+
+Prometheus at `/metrics`, outside `/api/v1`. Open by default; set `METRICS_TOKEN` to
+require `Authorization: Bearer <token>`.
+
+| Metric | Type | Labels | Reads as |
+|---|---|---|---|
+| `cc_http_requests_total` | counter | method, path, status | REST traffic. Path is the route template, so cardinality stays bounded. |
+| `cc_http_request_duration_seconds` | histogram | method, path | |
+| `cc_agents_connected` | gauge | | Agents holding an open stream. A drop here is the first sign of a network problem. |
+| `cc_runs_total` | counter | status | |
+| `cc_run_duration_seconds` | histogram | status | Bucketed from half a second to two hours. |
+| `cc_run_log_bytes_total` | counter | | Bytes received, including bytes the per-run cap dropped. |
+| `cc_log_subscribers` | gauge | | Live SSE viewers. |
+| `cc_connector_operations_total` | counter | op, status | |
+| `cc_notifications_total` | counter | kind, outcome | A rising `failed` here means alerts are not arriving. |
+| `cc_retention_deleted_total` | counter | table | Flat after configuring a window means the pruner is not running. |
+
+The two worth alerting on first: `cc_agents_connected` dropping below your fleet size,
+and `cc_notifications_total{outcome="failed"}` rising, because that one is the failure
+that hides every other failure.

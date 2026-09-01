@@ -14,6 +14,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/croncompose/croncompose/agent/internal/osuser"
 	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
 )
 
@@ -82,7 +83,15 @@ func (m *Manager) open(in *agentv1.TerminalInput) {
 		argv = []string{"-i"} // interactive shell; the PTY supplies the tty
 	}
 
-	sess, err := startSession(id, m.shell, argv, in.GetCols(), in.GetRows(), m.home)
+	// Resolve the requested user before starting anything: a session that cannot run
+	// as who it claims to must fail loudly rather than fall back to the agent's user.
+	cred, err := osuser.Resolve(in.GetRunAs())
+	if err != nil {
+		m.emit(id, "error", nil, 0, "run as "+in.GetRunAs()+": "+err.Error())
+		return
+	}
+
+	sess, err := startSession(id, m.shell, argv, in.GetCols(), in.GetRows(), m.home, cred)
 	if err != nil {
 		m.emit(id, "error", nil, 0, err.Error())
 		return

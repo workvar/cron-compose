@@ -7,7 +7,8 @@ mTLS for the agent channel, SSE for live logs, session auth + RBAC on the REST A
 
 - Go 1.25+
 - Node 20+ (Next.js 16)
-- Docker (for the Postgres dev instance)
+- PostgreSQL 16: a local server is fine (point `DATABASE_URL` at it), or use the
+  containerized one with `make db-up` if you prefer Docker
 - Only when regenerating proto: `protoc` plus the Go plugins
   - `go install google.golang.org/protobuf/cmd/protoc-gen-go@latest`
   - `go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest`
@@ -15,7 +16,7 @@ mTLS for the agent channel, SSE for live logs, session auth + RBAC on the REST A
 ## First run
 
 ```sh
-make db-up        # start Postgres
+make db-up        # start Postgres in Docker (skip if you run a local Postgres)
 make migrate      # apply migrations/0001_init.sql, 0002_agent_token.sql
 make tidy         # pull Go deps for all three modules
 

@@ -21,10 +21,20 @@ const config: NextConfig = {
   // Next is hit directly (e.g. `next dev`). basePath: false keeps the source at the
   // real root (/api/*, not /app/api/*) so the client's fetch("/api/..") still
   // matches; allowed here because the destination is an absolute (external) URL.
+  //
+  // The UI lives under /app, so a bare / would 404. Next only allows rewrites
+  // outside basePath to an http(s) URL, so we loop back to this process for the
+  // nginx-style welcome page at public/index.html (exposed as /app/index.html).
   async rewrites() {
-    return [
-      { source: "/api/:path*", destination: `${apiBase}/:path*`, basePath: false },
-    ];
+    const self = `http://127.0.0.1:${process.env.PORT || "3000"}`;
+    return {
+      beforeFiles: [
+        { source: "/", destination: `${self}/app/index.html`, basePath: false },
+      ],
+      afterFiles: [
+        { source: "/api/:path*", destination: `${apiBase}/:path*`, basePath: false },
+      ],
+    };
   },
 };
 

@@ -4,8 +4,10 @@ package main
 
 import (
 	"context"
+	"flag"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,17 +20,22 @@ import (
 	"github.com/croncompose/croncompose/control-plane/internal/logger"
 	"github.com/croncompose/croncompose/control-plane/internal/notify"
 	"github.com/croncompose/croncompose/control-plane/internal/pki"
+	"github.com/croncompose/croncompose/control-plane/internal/retention"
 	"github.com/croncompose/croncompose/control-plane/internal/secrets"
+	"github.com/croncompose/croncompose/control-plane/internal/setup"
+	"github.com/croncompose/croncompose/control-plane/internal/updates"
 )
 
 func main() {
-	if err := run(); err != nil {
+	seedAndExit := flag.Bool("seed-and-exit", false, "upsert SEED_ADMIN_* from env/.env into the database and exit")
+	flag.Parse()
+	if err := run(*seedAndExit); err != nil {
 		os.Stderr.WriteString("fatal: " + err.Error() + "\n")
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(seedAndExit bool) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -49,14 +56,45 @@ func run() error {
 	// failed ping here is not fatal: the server still starts, /healthz reports
 	// "degraded" until Postgres is reachable, and the UI shows a setup banner.
 	pingCtx, pingCancel := context.WithTimeout(ctx, 3*time.Second)
-	if err := pool.Ping(pingCtx); err != nil {
-		log.Warn("postgres not reachable; control plane is starting in a degraded state", "err", err)
-	} else {
+	dbErr := pool.Ping(pingCtx)
+	pingCancel()
+	if dbErr != nil {
+		if cfg.AutoBootstrapDB {
+			log.Info("postgres not reachable; attempting auto-bootstrap")
+			bootCtx, bootCancel := context.WithTimeout(ctx, 3*time.Minute)
+			res, bootErr := setup.Bootstrap(bootCtx, pool, setup.Options{
+				DatabaseURL:   cfg.DatabaseURL,
+				ProjectRoot:   cfg.ProjectRoot,
+				MigrationsDir: cfg.MigrationsDir,
+				Mode:          setup.ParseMode(cfg.BootstrapMode),
+			})
+			bootCancel()
+			if bootErr != nil {
+				log.Warn("auto-bootstrap failed; control plane is starting in a degraded state", "err", bootErr)
+			} else {
+				log.Info("auto-bootstrap complete",
+					"started_postgres", res.StartedPostgres,
+					"migrations", res.Migrations)
+				rePingCtx, rePingCancel := context.WithTimeout(ctx, 3*time.Second)
+				dbErr = pool.Ping(rePingCtx)
+				rePingCancel()
+			}
+		}
+		if dbErr != nil {
+			log.Warn("postgres not reachable; control plane is starting in a degraded state", "err", dbErr)
+		}
+	}
+	if dbErr == nil {
 		log.Info("postgres reachable")
 	}
-	pingCancel()
 
-	auth.SeedAdmin(ctx, log, auth.NewStore(pool), cfg.SeedAdminEmail, cfg.SeedAdminPassword)
+	seedErr := auth.SeedAdmin(ctx, log, auth.NewStore(pool), cfg.SeedAdminEmail, cfg.SeedAdminPassword)
+	if seedAndExit {
+		if dbErr != nil {
+			return dbErr
+		}
+		return seedErr
+	}
 
 	oidcCfg := auth.OIDCConfig{
 		IssuerURL:    cfg.OIDCIssuerURL,
@@ -82,28 +120,66 @@ func run() error {
 	log.Info("pki ready", "dir", cfg.TLSDir, "hosts", cfg.TLSHosts)
 
 	secretStore := secrets.NewStore(pool, box)
-	notifier := notify.NewNotifier(notify.NewStore(pool), log)
+	notifier := notify.NewNotifier(notify.NewStore(pool), pool, log, publicUIBase(cfg))
 	gw := agentgw.New(cfg.GRPCAddr, log, pool, bundle, secretStore)
 	gw.SetFailedRunHook(notifier)
+	gw.SetRunLogMaxBytes(cfg.RunLogMaxBytes)
+	manualUpdate := agentgw.ParseUpdatePolicy(
+		cfg.AgentUpdateVersion, cfg.AgentUpdateURL, cfg.AgentUpdateSHA256, cfg.AgentUpdateRestart)
+	gw.SetUpdatePolicy(manualUpdate)
 	if err := gw.Start(ctx); err != nil {
 		return err
 	}
 	defer gw.Stop()
 
+	pruner := retention.New(pool, log, retention.Config{
+		RunDays:       cfg.RetentionRunDays,
+		RunLogDays:    cfg.RetentionRunLogDays,
+		AuditDays:     cfg.RetentionAuditDays,
+		OperationDays: cfg.RetentionOperationDays,
+	})
+	if pruner.Enabled() {
+		go pruner.Start(ctx)
+	} else {
+		log.Info("retention pruning is off; set RETENTION_RUN_LOG_DAYS and RETENTION_RUN_DAYS to enable it")
+	}
+
+	var updateCatalog *updates.Catalog
+	if cfg.GitHubReleaseRepo != "" && !manualUpdate.Active() {
+		updateCatalog = updates.NewCatalog(log, updates.Config{
+			Repo:     cfg.GitHubReleaseRepo,
+			Restart:  cfg.AgentUpdateRestart,
+			Interval: time.Duration(cfg.AgentUpdatePollMinutes) * time.Minute,
+		})
+		go updateCatalog.Run(ctx)
+		log.Info("watching github for agent releases", "repo", cfg.GitHubReleaseRepo)
+	}
+
 	app := api.New(api.Deps{
-		Log:              log,
-		Pool:             pool,
-		Gateway:          gw,
-		PKI:              bundle,
-		GRPCAddr:         cfg.GRPCAddr,
-		SessionSecret:    []byte(cfg.SessionSecret),
-		PublicHTTPURL:    cfg.PublicHTTPURL,
-		PublicGRPCAddr:   cfg.PublicGRPCAddr,
-		InstallScriptURL: cfg.InstallScriptURL,
-		WebUpstream:      cfg.WebUpstream,
-		Crypto:           box,
-		OIDC:             oidc,
-		OIDCPostPath:     "/",
+		Log:                log,
+		Pool:               pool,
+		Gateway:            gw,
+		PKI:                bundle,
+		GRPCAddr:           cfg.GRPCAddr,
+		SessionSecret:      []byte(cfg.SessionSecret),
+		PublicHTTPURL:      cfg.PublicHTTPURL,
+		PublicGRPCAddr:     cfg.PublicGRPCAddr,
+		InstallScriptURL:   cfg.InstallScriptURL,
+		WebUpstream:        cfg.WebUpstream,
+		Crypto:             box,
+		OIDC:               oidc,
+		OIDCPostPath:       "/",
+		Notifier:           notifier,
+		MetricsToken:       cfg.MetricsToken,
+		Env:                cfg.Env,
+		DatabaseURL:        cfg.DatabaseURL,
+		ProjectRoot:        cfg.ProjectRoot,
+		MigrationsDir:      cfg.MigrationsDir,
+		BootstrapMode:      setup.ParseMode(cfg.BootstrapMode),
+		SeedAdminEmail:     cfg.SeedAdminEmail,
+		SeedAdminPassword:  cfg.SeedAdminPassword,
+		Updates:            updateCatalog,
+		ManualUpdatePolicy: manualUpdate,
 	})
 
 	errCh := make(chan error, 1)
@@ -126,4 +202,14 @@ func run() error {
 	defer shutdownCancel()
 	_ = app.ShutdownWithContext(shutdownCtx)
 	return nil
+}
+
+// publicUIBase is the origin notifications link back to. PublicHTTPURL points at the
+// REST API (it ends in /api/v1), so deep links have to be built from the base URL, not
+// from it. An unset base yields an empty string and links are simply omitted.
+func publicUIBase(cfg config.Config) string {
+	if cfg.PublicBaseURL != "" {
+		return strings.TrimSuffix(cfg.PublicBaseURL, "/")
+	}
+	return strings.TrimSuffix(strings.TrimSuffix(cfg.PublicHTTPURL, "/"), "/api/v1")
 }

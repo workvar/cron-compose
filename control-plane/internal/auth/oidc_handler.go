@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	oidcStateCookie    = "cc_oidc_state"
-	oidcReturnedTo     = "cc_oidc_returned_to"
-	oidcCookieMaxAge   = 10 * time.Minute
+	oidcStateCookie  = "cc_oidc_state"
+	oidcReturnedTo   = "cc_oidc_returned_to"
+	oidcCookieMaxAge = 10 * time.Minute
 )
 
 type oidcHandler struct {

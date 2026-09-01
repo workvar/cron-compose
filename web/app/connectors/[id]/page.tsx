@@ -1,8 +1,19 @@
 import Link from "next/link";
 import { apiGet } from "@/lib/api";
-import type { Connector, ConnectorResource, ListResponse } from "@/lib/types";
+import type {
+  Connector,
+  ConnectorOperation,
+  ConnectorResource,
+  ConnectorSnapshot,
+  ListResponse,
+  Me,
+} from "@/lib/types";
 import { IconChevronLeft } from "@/components/icons";
 import { ResourceTable } from "@/components/connectors/ResourceTable";
+import { ObjectTable } from "@/components/connectors/ObjectTable";
+import { ConfigEditor } from "@/components/connectors/ConfigEditor";
+import { OperationHistory } from "@/components/connectors/OperationHistory";
+import { SnapshotList } from "@/components/connectors/SnapshotList";
 
 const tone: Record<Connector["status"], string> = {
   running: "ok",
@@ -17,10 +28,17 @@ export default async function ConnectorDetailPage({ params }: Props) {
   const { id } = await params;
   let connector: Connector | null = null;
   let resources: ConnectorResource[] = [];
+  let operations: ConnectorOperation[] = [];
+  let me: Me | null = null;
   let error: string | null = null;
+
   try {
     connector = await apiGet<Connector>(`/connectors/${id}`);
-    resources = (await apiGet<ListResponse<ConnectorResource>>(`/connectors/${id}/resources`)).items;
+    [resources, operations, me] = await Promise.all([
+      apiGet<ListResponse<ConnectorResource>>(`/connectors/${id}/resources`).then((r) => r.items),
+      apiGet<ListResponse<ConnectorOperation>>(`/connectors/${id}/operations?limit=20`).then((r) => r.items),
+      apiGet<Me>("/me"),
+    ]);
   } catch (e) {
     error = (e as Error).message;
   }
@@ -35,11 +53,24 @@ export default async function ConnectorDetailPage({ params }: Props) {
   }
 
   const c = connector;
-  const caps = Object.entries(c.capabilities || {})
-    .filter(([, v]) => v)
-    .map(([k]) => k.replace(/_/g, " "));
+  const isAdmin = me?.role === "admin" || me?.role === "owner";
+  const isOperator = isAdmin || me?.role === "operator";
+  const caps = c.capabilities ?? {};
   const objects = resources.filter((r) => r.type === "object");
   const files = resources.filter((r) => r.type === "config_file");
+
+  // Snapshots are admin-only server side, so a non-admin page omits the section
+  // rather than rendering one that 403s.
+  let snapshots: ConnectorSnapshot[] = [];
+  if (isAdmin && files.length > 0) {
+    snapshots = await apiGet<ListResponse<ConnectorSnapshot>>(`/connectors/${id}/snapshots?limit=20`)
+      .then((r) => r.items)
+      .catch(() => []);
+  }
+
+  const canAct = isOperator && Boolean(caps.can_lifecycle);
+  const canEdit = isAdmin && Boolean(caps.can_edit);
+  const capLabels = Object.entries(caps).filter(([, v]) => v).map(([k]) => k.replace(/_/g, " "));
 
   return (
     <>
@@ -61,15 +92,15 @@ export default async function ConnectorDetailPage({ params }: Props) {
         <div className="panel" style={{ marginBottom: 16 }}>
           <div className="subtle" style={{ fontSize: 13 }}>
             Detected but not manageable: the agent lacks the privilege to change this connector.
-            Editing and lifecycle actions arrive in a later phase and require granting the agent
-            access. See docs/connectors.md.
+            Run the agent as root, add it to the relevant group, or grant a passwordless sudo
+            entry for the tool. See docs/connectors.md.
           </div>
         </div>
       )}
 
-      {caps.length > 0 && (
+      {capLabels.length > 0 && (
         <div className="cluster" style={{ marginBottom: 18 }}>
-          {caps.map((cap) => <span key={cap} className="pill">{cap}</span>)}
+          {capLabels.map((cap) => <span key={cap} className="pill">{cap}</span>)}
         </div>
       )}
 
@@ -82,16 +113,30 @@ export default async function ConnectorDetailPage({ params }: Props) {
       {objects.length > 0 && (
         <>
           <h2>Objects</h2>
-          <ResourceTable rows={objects} kind="object" />
+          {isOperator
+            ? <ObjectTable connectorId={c.id} kind={c.kind} rows={objects} canAct={canAct} />
+            : <ResourceTable rows={objects} kind="object" />}
         </>
       )}
 
       {files.length > 0 && (
         <>
           <h2>Config files</h2>
-          <ResourceTable rows={files} kind="config_file" />
+          {isAdmin
+            ? <ConfigEditor connectorId={c.id} files={files} canEdit={canEdit} />
+            : <ResourceTable rows={files} kind="config_file" />}
         </>
       )}
+
+      {isAdmin && files.length > 0 && (
+        <>
+          <h2>Backups</h2>
+          <SnapshotList connectorId={c.id} items={snapshots} />
+        </>
+      )}
+
+      <h2>History</h2>
+      <OperationHistory items={operations} />
 
       {resources.length === 0 && (
         <div className="panel"><div className="empty">No resources reported for this connector.</div></div>

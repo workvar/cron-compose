@@ -45,3 +45,25 @@ func (r *Registry) Discover(ctx context.Context) []Discovered {
 	}
 	return out
 }
+
+// Resolve finds the provider for a kind and the specific instance a command targets.
+//
+// The instance is re-detected rather than served from a cache on purpose: a command
+// acts on the box as it is right now, and capabilities (is nginx.conf still writable?
+// is the agent still in the docker group?) are exactly the kind of thing that changes
+// between a discovery sweep and an operator clicking a button. An empty wanted
+// instance matches the first one, which is the singleton case.
+func (r *Registry) Resolve(ctx context.Context, kind, wanted string) (Provider, Instance, bool) {
+	for _, p := range r.providers {
+		if p.Kind() != kind {
+			continue
+		}
+		for _, inst := range p.Detect(ctx) {
+			if wanted == "" || inst.Instance == wanted {
+				return p, inst, true
+			}
+		}
+		return nil, Instance{}, false
+	}
+	return nil, Instance{}, false
+}

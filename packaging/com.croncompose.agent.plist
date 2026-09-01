@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd equivalent of packaging/croncompose-agent.service, for macOS.
+
+  Install as /Library/LaunchDaemons/com.croncompose.agent.plist, owned by root:wheel
+  with mode 0644, then load it with:
+
+      sudo launchctl bootstrap system /Library/LaunchDaemons/com.croncompose.agent.plist
+
+  scripts/install-agent.sh writes this file for you with the real values filled in.
+  This copy is the reference for a hand-managed install; replace every __PLACEHOLDER__.
+
+  Differences from the systemd unit, and why:
+
+  * It runs as root. launchd has no equivalent of the systemd sandboxing directives
+    (NoNewPrivileges, ProtectSystem, ProtectHome), and macOS has no useradd, so the
+    dedicated unprivileged service user the Linux packages create has no clean
+    counterpart here. Running as root is also what `run_as_user` needs in order to
+    switch to another user at all.
+  * KeepAlive is unconditional rather than keyed on a non-zero exit. Agent self-update
+    deliberately exits 0 and expects its supervisor to start the replacement binary;
+    keying on SuccessfulExit would leave the agent stopped after every update.
+  * Environment lives in this file. launchd has no EnvironmentFile, so changing the
+    control-plane address means editing this plist and reloading the job.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.croncompose.agent</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/croncompose-agent</string>
+        <string>run</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CONTROL_PLANE_ADDR</key>
+        <string>__CONTROL_PLANE_ADDR__</string>
+        <key>CONTROL_PLANE_HTTP</key>
+        <string>__CONTROL_PLANE_HTTP__</string>
+        <key>CONTROL_PLANE_SNI</key>
+        <string>__CONTROL_PLANE_SNI__</string>
+        <key>DATA_DIR</key>
+        <string>/usr/local/var/croncompose</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Matches RestartSec=5s. launchd's own floor is 10s; a smaller value here is
+         accepted but does not speed up the respawn. -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/usr/local/var/log/croncompose-agent.log</string>
+    <key>StandardErrorPath</key>
+    <string>/usr/local/var/log/croncompose-agent.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>/usr/local/var/croncompose</string>
+</dict>
+</plist>

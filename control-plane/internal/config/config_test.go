@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 // Setting PUBLIC_BASE_URL should derive the REST URL, the gRPC dial address (host of
 // the base URL + the gRPC listen port), and add the host to the TLS SANs.
@@ -87,4 +90,46 @@ func contains(s []string, v string) bool {
 		}
 	}
 	return false
+}
+
+func TestParseDotEnvQuotedSpecials(t *testing.T) {
+	got, err := parseDotEnv("SEED_ADMIN_PASSWORD=\"p#ass$word\"\nSEED_ADMIN_EMAIL=admin@example.com\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["SEED_ADMIN_PASSWORD"] != "p#ass$word" {
+		t.Errorf("password=%q, want quoted value with # and $ intact", got["SEED_ADMIN_PASSWORD"])
+	}
+	if got["SEED_ADMIN_EMAIL"] != "admin@example.com" {
+		t.Errorf("email=%q", got["SEED_ADMIN_EMAIL"])
+	}
+}
+
+func TestParseDotEnvSkipsComments(t *testing.T) {
+	got, err := parseDotEnv("# comment\nFOO=bar\n\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["FOO"] != "bar" {
+		t.Errorf("FOO=%q", got["FOO"])
+	}
+}
+
+func TestApplyDotEnvDoesNotOverride(t *testing.T) {
+	t.Setenv("KEEP_ME", "from-process")
+	dir := t.TempDir()
+	path := dir + "/.env"
+	if err := os.WriteFile(path, []byte("KEEP_ME=from-file\nNEW_ME=from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyDotEnvFile(path); err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv("KEEP_ME") != "from-process" {
+		t.Errorf("KEEP_ME overridden to %q", os.Getenv("KEEP_ME"))
+	}
+	if os.Getenv("NEW_ME") != "from-file" {
+		t.Errorf("NEW_ME=%q, want from-file", os.Getenv("NEW_ME"))
+	}
+	t.Cleanup(func() { os.Unsetenv("NEW_ME") })
 }

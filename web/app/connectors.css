@@ -1,0 +1,53 @@
+/* Connector operation reporting: the per-stage step list shown under an action, an
+   apply, or a history entry. Deliberately quiet, because it appears inline in tables
+   and cards and should read as annotation rather than as its own panel. */
+
+.step-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.step-list .step {
+  position: relative;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* The bullet carries the pass/fail signal, so the text stays readable at this size. */
+.step-list .step::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+}
+
+.step-list .step.bad::before { background: var(--danger); }
+.step-list .step.bad .step-name { color: var(--danger); }
+
+.step-list .step-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.step-list .step-output {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: var(--surface-2, rgba(0, 0, 0, 0.04));
+  border-radius: 8px;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
+}

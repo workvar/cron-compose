@@ -74,8 +74,8 @@ function Invoke-Preflight {
 
   $Cfg.HavePsql   = [bool](Get-Command psql -ErrorAction SilentlyContinue)
   $Cfg.HaveDocker = [bool](Get-Command docker -ErrorAction SilentlyContinue)
-  if ($Cfg.HavePsql)   { Write-Ok "psql detected (enables auto-creating a local database)" }
-  if ($Cfg.HaveDocker) { Write-Ok "docker detected (enables a containerized Postgres)" }
+  if ($Cfg.HavePsql)   { Write-Ok "psql detected (lets the installer create a database in your local PostgreSQL)" }
+  if ($Cfg.HaveDocker) { Write-Dim "docker detected (a containerized Postgres is offered only if no local one is found)" }
 }
 
 # --- configure --------------------------------------------------------------
@@ -91,10 +91,15 @@ function Invoke-Configure {
   $Cfg.Advertise = $Cfg.Adv.Host
 
   Write-Step "Choose ports (a free one is suggested for each)"
-  $Cfg.WebPort  = Read-Port "Web UI port"     ([int](Get-CcEnv 'CC_WEB_PORT' '3000'))
-  $Cfg.ApiPort  = Read-Port "REST API port"   ([int](Get-CcEnv 'CC_API_PORT' '8080'))
+  $Cfg.ApiPort = Read-Port "Backend HTTP port (UI + REST API)" ([int](Get-CcEnv 'CC_API_PORT' '8080'))
+  if ($script:EnableWeb) {
+    $Cfg.WebPort = Read-Port "Frontend port (internal web UI)" ([int](Get-CcEnv 'CC_WEB_PORT' '3000'))
+  } else {
+    $Cfg.WebPort = [int](Get-CcEnv 'CC_WEB_PORT' '3000')
+    Write-Dim "skipping frontend port (-NoWeb); using $($Cfg.WebPort)"
+  }
   $Cfg.GrpcPort = Read-Port "Agent gRPC port" ([int](Get-CcEnv 'CC_GRPC_PORT' '9090'))
-  Write-Ok "web=$($Cfg.WebPort)  api=$($Cfg.ApiPort)  grpc=$($Cfg.GrpcPort)"
+  Write-Ok "backend=$($Cfg.ApiPort)  frontend=$($Cfg.WebPort)  agent=$($Cfg.GrpcPort)"
 
   Write-Step "Seed administrator account"
   $Cfg.AdminEmail = Read-Default "Admin email" (Get-CcEnv 'CC_ADMIN_EMAIL' 'admin@example.com')
@@ -119,19 +124,70 @@ function Invoke-Configure {
   Write-EnvFile
 }
 
+# Is a PostgreSQL already listening on this machine? Returns the port it answered on,
+# or 0. Probes CC_DB_PORT first, then the two conventional ports.
+function Find-LocalPostgres {
+  $ports = @()
+  $envPort = Get-CcEnv 'CC_DB_PORT' ''
+  if ($envPort) { $ports += [int]$envPort }
+  $ports += 5432
+  $ports += 5433
+  foreach ($p in ($ports | Select-Object -Unique)) {
+    try {
+      $client = New-Object System.Net.Sockets.TcpClient
+      $async = $client.BeginConnect('127.0.0.1', $p, $null, $null)
+      $connected = $async.AsyncWaitHandle.WaitOne(2000, $false)
+      if ($connected -and $client.Connected) { $client.Close(); return $p }
+      $client.Close()
+    } catch { }
+  }
+  return 0
+}
+
+# The database question. Order: a PostgreSQL already running here, then a connection
+# string. Docker Postgres stays available but is never chosen for you.
 function Configure-Database {
   Write-Step "Database (PostgreSQL)"
-  $method = Get-CcEnv 'CC_DB_METHOD' 'existing'
-  if (-not $script:NonInteractive) {
-    Write-Info "1) Use an existing Postgres (enter a connection string)"
-    if ($Cfg.HavePsql)   { Write-Info "2) Auto-create a local database with psql" }
-    if ($Cfg.HaveDocker) { Write-Info "3) Run Postgres in Docker (docker-compose.yml)" }
-    switch (Read-Default "Select" "1") {
-      "2" { if ($Cfg.HavePsql)   { $method = 'psql' }   else { $method = 'existing' } }
-      "3" { if ($Cfg.HaveDocker) { $method = 'docker' } else { $method = 'existing' } }
-      default { $method = 'existing' }
+
+  $envUrl = Get-CcEnv 'CC_DATABASE_URL' ''
+  if ($envUrl) {
+    $Cfg.DbMethod = 'existing'; $Cfg.DatabaseUrl = $envUrl
+    Write-Ok "using the Postgres from CC_DATABASE_URL"
+    return
+  }
+
+  $method = Get-CcEnv 'CC_DB_METHOD' ''
+  if (-not $method) {
+    Write-Info "looking for a PostgreSQL server on this machine..."
+    $localPort = Find-LocalPostgres
+    if ($localPort -gt 0) {
+      Write-Ok "PostgreSQL is listening on 127.0.0.1:$localPort"
+      if (-not $Cfg.HavePsql) {
+        Write-Warnn "psql is not installed, so the role and database cannot be created for you"
+        Write-Dim "install the PostgreSQL client tools, or paste a connection string below"
+      } elseif ($script:NonInteractive -or (Confirm-Yes "Connect CronCompose to this local PostgreSQL?" 'y')) {
+        $Cfg.DbHost = '127.0.0.1'; $Cfg.DbPort = "$localPort"
+        $Cfg.DbName = Read-Default "Database to create" (Get-CcEnv 'CC_DB_NAME' 'croncompose')
+        $Cfg.DbUser = Read-Default "Role to create" (Get-CcEnv 'CC_DB_USER' 'croncompose')
+        Write-Info "CronCompose will create the database '$($Cfg.DbName)' owned by a new role"
+        Write-Info "'$($Cfg.DbUser)' in the server at 127.0.0.1:$localPort. Nothing else is touched."
+        if ($script:NonInteractive -or (Confirm-Yes "Create them now?" 'y')) { $method = 'psql' }
+      }
+    } else {
+      Write-Dim "nothing is listening on the usual PostgreSQL ports"
     }
   }
+
+  if (-not $method) {
+    if (-not $script:NonInteractive -and $Cfg.HaveDocker) {
+      Write-Info "1) Use an existing Postgres (enter a connection string)"
+      Write-Info "2) Run Postgres in Docker (docker-compose.yml)"
+      if ((Read-Default "Select" "1") -eq "2") { $method = 'docker' } else { $method = 'existing' }
+    } else {
+      $method = 'existing'
+    }
+  }
+
   $Cfg.DbMethod = $method
   switch ($method) {
     'docker' {
@@ -141,17 +197,20 @@ function Configure-Database {
       Write-Ok "will start Postgres in Docker on 127.0.0.1:$($Cfg.DbPort)"
     }
     'psql' {
-      $Cfg.DbHost = Read-Default "Postgres host" (Get-CcEnv 'CC_DB_HOST' 'localhost')
-      $Cfg.DbPort = Read-Default "Postgres port" (Get-CcEnv 'CC_DB_PORT' '5432')
-      $Cfg.DbSuper = Read-Default "Superuser to create role/db with" (Get-CcEnv 'CC_DB_SUPERUSER' 'postgres')
-      $Cfg.DbSuperPass = Read-Secret "Superuser password (blank if trust auth)" (Get-CcEnv 'CC_DB_SUPER_PASS' '')
-      $Cfg.DbName = Read-Default "New database name" (Get-CcEnv 'CC_DB_NAME' 'croncompose')
-      $Cfg.DbUser = Read-Default "New database role" (Get-CcEnv 'CC_DB_USER' 'croncompose')
+      if (-not $Cfg.DbHost) { $Cfg.DbHost = Read-Default "Postgres host" (Get-CcEnv 'CC_DB_HOST' 'localhost') }
+      if (-not $Cfg.DbPort) { $Cfg.DbPort = Read-Default "Postgres port" (Get-CcEnv 'CC_DB_PORT' '5432') }
+      if (-not $Cfg.DbName) { $Cfg.DbName = Read-Default "New database name" (Get-CcEnv 'CC_DB_NAME' 'croncompose') }
+      if (-not $Cfg.DbUser) { $Cfg.DbUser = Read-Default "New database role" (Get-CcEnv 'CC_DB_USER' 'croncompose') }
+      $Cfg.DbSuper = Read-Default "Superuser to create them with" (Get-CcEnv 'CC_DB_SUPERUSER' 'postgres')
+      $Cfg.DbSuperPass = Read-Secret "Password for $($Cfg.DbSuper) (blank if trust auth)" (Get-CcEnv 'CC_DB_SUPER_PASS' '')
       $Cfg.DbPass = Read-Secret "Password for new role (blank = generate)" (Get-CcEnv 'CC_DB_PASS' '')
       if ([string]::IsNullOrWhiteSpace($Cfg.DbPass)) { $Cfg.DbPass = New-HexSecret 12; Write-Ok "generated db password: $($Cfg.DbPass)" }
       $Cfg.DatabaseUrl = "postgres://$($Cfg.DbUser):$($Cfg.DbPass)@$($Cfg.DbHost):$($Cfg.DbPort)/$($Cfg.DbName)?sslmode=disable"
+      Write-Ok "will create '$($Cfg.DbName)' in the PostgreSQL at $($Cfg.DbHost):$($Cfg.DbPort)"
     }
     default {
+      Write-Dim "Example: postgres://user:password@host:5432/croncompose?sslmode=disable"
+      Write-Dim "The database must already exist; the installer only applies migrations to it."
       $Cfg.DatabaseUrl = Read-Default "DATABASE_URL" (Get-CcEnv 'CC_DATABASE_URL' 'postgres://croncompose:croncompose@localhost:5432/croncompose?sslmode=disable')
     }
   }

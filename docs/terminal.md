@@ -124,3 +124,21 @@ The web build (`next build`) and `tsc --noEmit` were verified green.
   or per-server "disable terminal" switch, and copy/paste-friendly download of a session
   transcript.
 ```
+
+## run_as
+
+A session can request an OS user via `run_as` in the init frame (`TerminalInput.run_as`,
+field 9). Empty means the agent's own user, which is the previous behaviour.
+
+Resolution happens in `agent/internal/osuser` before the PTY is created. A user that
+does not exist, or that this agent cannot become because it is not root, fails the
+session with an explicit error frame. It never silently falls back to the agent's user:
+an operator who asked for a shell as `deploy` and got one as `root` would have no way to
+know.
+
+When the switch succeeds the session takes that user's login shell, home directory,
+uid/gid and supplementary groups, so it behaves like an ssh login rather than like the
+agent wearing someone else's name.
+
+The endpoint remains admin/owner only and every session is still audited, now including
+the requested user.

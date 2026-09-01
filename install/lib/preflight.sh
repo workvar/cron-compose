@@ -45,9 +45,9 @@ check_curl() {
 # Probe optional tooling that unlocks extra database options. Never fatal.
 detect_db_tools() {
   HAVE_PSQL=0; HAVE_DOCKER=0; HAVE_PG_ISREADY=0
-  command -v psql >/dev/null 2>&1 && { HAVE_PSQL=1; ok "psql detected (enables auto-creating a local database)"; }
+  command -v psql >/dev/null 2>&1 && { HAVE_PSQL=1; ok "psql detected (lets the installer create a database in your local PostgreSQL)"; }
   command -v pg_isready >/dev/null 2>&1 && HAVE_PG_ISREADY=1
-  if command -v docker >/dev/null 2>&1; then HAVE_DOCKER=1; ok "docker detected (enables a containerized Postgres)"; fi
+  if command -v docker >/dev/null 2>&1; then HAVE_DOCKER=1; dim "docker detected (a containerized Postgres is available via --advanced)"; fi
   detect_pkg_manager
 }
 
@@ -62,8 +62,8 @@ detect_pkg_manager() {
     done
   fi
   if [ -n "$PKG_MGR" ]; then HAVE_PKG=1; ok "$PKG_MGR detected (the installer can install + configure PostgreSQL for you)"; fi
-  if [ "$HAVE_PSQL" = "0" ] && [ "$HAVE_DOCKER" = "0" ] && [ "$HAVE_PKG" = "0" ]; then
-    dim "no package manager, psql, or docker found: you'll supply a Postgres connection string"
+  if [ "$HAVE_PSQL" = "0" ] && [ "$HAVE_PKG" = "0" ]; then
+    dim "no local PostgreSQL tooling found: you'll supply a Postgres connection string"
   fi
   return 0  # trailing tests must not set a non-zero status under `set -e`
 }

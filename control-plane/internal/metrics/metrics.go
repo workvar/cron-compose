@@ -44,6 +44,41 @@ var LogSubscribers = prometheus.NewGauge(prometheus.GaugeOpts{
 	Help: "Current SSE subscribers across all runs.",
 })
 
+// RunDuration measures how long runs take, bucketed for the range that actually
+// matters here: sub-second health checks through hour-long backups.
+var RunDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+	Name:    "cc_run_duration_seconds",
+	Help:    "Run wall-clock duration in seconds, by terminal status.",
+	Buckets: []float64{0.5, 1, 5, 15, 60, 300, 900, 1800, 3600, 7200},
+}, []string{"status"})
+
+// RunLogBytes counts log bytes received from agents, including bytes dropped by the
+// per-run storage cap. The gap between this and the database size is the cap working.
+var RunLogBytes = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "cc_run_log_bytes_total",
+	Help: "Total run log bytes received from agents.",
+})
+
+// ConnectorOpsTotal counts connector commands by op and outcome. This is the metric
+// that answers "is anybody actually managing services through this, and does it work".
+var ConnectorOpsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Name: "cc_connector_operations_total",
+	Help: "Connector commands by operation and result status.",
+}, []string{"op", "status"})
+
+// RetentionDeletedTotal counts rows the pruner removed, by table. A flat line here
+// after a retention window is configured means the pruner is not running.
+var RetentionDeletedTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Name: "cc_retention_deleted_total",
+	Help: "Rows deleted by the retention pruner, by table.",
+}, []string{"table"})
+
+// NotificationsTotal counts delivery attempts by channel kind and outcome.
+var NotificationsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Name: "cc_notifications_total",
+	Help: "Notification delivery attempts by kind and outcome.",
+}, []string{"kind", "outcome"})
+
 func init() {
 	Registry.MustRegister(
 		HTTPRequestsTotal,
@@ -51,6 +86,11 @@ func init() {
 		AgentsConnected,
 		RunsTotal,
 		LogSubscribers,
+		RunDuration,
+		RunLogBytes,
+		ConnectorOpsTotal,
+		RetentionDeletedTotal,
+		NotificationsTotal,
 		// Process + Go runtime collectors for free.
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),

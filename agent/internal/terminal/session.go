@@ -7,6 +7,8 @@ import (
 	"syscall"
 
 	"github.com/creack/pty"
+
+	"github.com/croncompose/croncompose/agent/internal/osuser"
 )
 
 // session is one running terminal: a process attached to a pseudo-terminal. Both modes
@@ -22,11 +24,29 @@ type session struct {
 
 // startSession launches argv under a fresh PTY sized to cols x rows. The caller owns the
 // read and wait loops.
-func startSession(id, shell string, argv []string, cols, rows uint32, dir string) (*session, error) {
+//
+// A non-nil credential runs the shell as that user: their login shell, their home, and
+// their uid/gid, so the session behaves like an ssh login rather than like the agent
+// wearing someone else's name. Resolving the credential is the caller's job, because
+// failing to switch users has to be reported to the browser, not swallowed here.
+func startSession(id, shell string, argv []string, cols, rows uint32, dir string, cred *osuser.Credential) (*session, error) {
+	if cred != nil {
+		if cred.Shell != "" {
+			shell = cred.Shell
+		}
+		if cred.Home != "" {
+			dir = cred.Home
+		}
+	}
+
 	cmd := exec.Command(shell, argv...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	cmd.Env = append(cmd.Env, cred.Env()...)
 	if dir != "" {
 		cmd.Dir = dir
+	}
+	if attr := cred.SysProcAttr(); attr != nil {
+		cmd.SysProcAttr = attr
 	}
 
 	ptmx, err := pty.StartWithSize(cmd, winsize(cols, rows))

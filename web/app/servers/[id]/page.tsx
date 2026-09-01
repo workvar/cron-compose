@@ -2,7 +2,9 @@ import Link from "next/link";
 import { apiGet } from "@/lib/api";
 import type { Job, ListResponse, Me, Server } from "@/lib/types";
 import { JobRow } from "@/components/JobRow";
+import { UpdateServerButton } from "@/components/UpdateServerButton";
 import { IconChevronLeft, IconPlus, IconTerminal } from "@/components/icons";
+import type { UpdateStatus } from "@/lib/types";
 
 const tone: Record<Server["status"], string> = { online: "ok", offline: "danger", pending: "neutral" };
 
@@ -13,6 +15,7 @@ export default async function ServerDetailPage({ params }: Props) {
   let server: Server | null = null;
   let jobs: Job[] = [];
   let me: Me | null = null;
+  let updates: UpdateStatus | null = null;
   let error: string | null = null;
   try {
     server = await apiGet<Server>(`/servers/${id}`);
@@ -25,7 +28,13 @@ export default async function ServerDetailPage({ params }: Props) {
   } catch {
     me = null;
   }
+  try {
+    updates = await apiGet<UpdateStatus>("/updates");
+  } catch {
+    updates = null;
+  }
   const canTerminal = me?.role === "admin" || me?.role === "owner";
+  const updateInfo = updates?.items.find((s) => s.server_id === id);
 
   if (error || !server) {
     return (
@@ -58,6 +67,16 @@ export default async function ServerDetailPage({ params }: Props) {
       </div>
 
       {server.description && <p className="subtle" style={{ marginTop: -8, marginBottom: 18 }}>{server.description}</p>}
+
+      {canTerminal && updateInfo && (
+        <UpdateServerButton
+          serverId={server.id}
+          currentVersion={updateInfo.current_version}
+          targetVersion={updates?.latest_version}
+          canUpdate={updateInfo.can_update}
+          updateAvailable={updateInfo.update_available}
+        />
+      )}
 
       <h2>Jobs</h2>
       {jobs.length === 0 ? (

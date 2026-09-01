@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { IconZap } from "@/components/icons";
+import { Brand } from "@/components/Brand";
 
 type AuthConfig = {
   password_login: boolean;
@@ -62,10 +62,7 @@ function LoginForm() {
 
   return (
     <div className="auth-card">
-        <div className="brand">
-          <span className="mark"><IconZap /></span>
-          <span>CronCompose</span>
-        </div>
+        <Brand />
         <h1 style={{ marginTop: 18 }}>Sign in</h1>
         <p className="subtle" style={{ margin: "0 0 4px" }}>
           Welcome back to your control plane.

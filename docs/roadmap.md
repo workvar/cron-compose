@@ -4,12 +4,17 @@ Phased so each phase ships something usable. The MVP is the smallest slice that 
 the core promise: write a job in the UI, have it run on a remote server on a schedule,
 and watch the logs.
 
-## Phase 0 — Design (current)
+## Status
+
+Phases 0 through 4 are implemented, and connectors (Phase 5) are complete through
+Phase C. What remains is listed under "Not built yet" at the bottom.
+
+## Phase 0 — Design (done)
 
 The spec in this repo. Output: agreed architecture, data model, agent protocol, API,
 security model.
 
-## Phase 1 — MVP
+## Phase 1 — MVP (done)
 
 The end-to-end vertical slice, single user, no RBAC yet.
 
@@ -37,7 +42,7 @@ UI (Next.js 16):
 Definition of done: a Raspberry Pi behind a home router runs a job every 6 hours,
 survives a control-plane restart, and shows correct logs and history.
 
-## Phase 2 — Multi-user and safety
+## Phase 2 — Multi-user and safety (done)
 
 - RBAC roles (owner/admin/operator/viewer).
 - Secrets: encrypted storage, injection into runs, log scrubbing.
@@ -45,27 +50,57 @@ survives a control-plane restart, and shows correct logs and history.
 - Audit log surfaced in the UI.
 - Run-history retention/pruning.
 
-## Phase 3 — Scale and reach
+## Phase 3 — Scale and reach (done)
 
 - Target multiple servers from one job via labels (run the same job on all "edge" boxes).
-- Job templates / a small library of common scripts.
-- Notifications on failure: email, Slack, generic webhook.
-- Agent auto-update channel.
+  `jobs.target_kind = 'labels'` plus a jsonb selector; resolved at sync and run-now time.
+- Job templates: six built-ins seeded by migration 0008, plus "save this job as a
+  template". Offered in the job wizard's script step.
+- Notifications on failure: webhook, Slack (Block Kit), and email (SMTP with
+  STARTTLS or implicit TLS). Targets can be scoped by server label and by run
+  outcome, carry a test-delivery button, and record their last delivery error.
+- Agent auto-update channel: the control plane offers an update on Hello when the
+  agent's version differs from the configured target. The agent verifies a pinned
+  sha256 before swapping its own binary and exits for its supervisor to restart it.
+  Inert until `AGENT_UPDATE_VERSION`, `AGENT_UPDATE_URL` and `AGENT_UPDATE_SHA256`
+  are all set: no checksum, no update.
 
-## Phase 4 — Depth
+## Phase 4 — Depth (done)
 
-- Resource limits via `systemd-run` / cgroups (CPU, memory).
-- Metrics and dashboards (success rate, durations, trends).
-- Larger log handling: object storage or file backend beyond the Postgres cap.
-- Possibly job dependencies / simple DAGs (run B after A succeeds).
+- Resource limits via `systemd-run` (CPU quota, memory, max processes, IO weight).
+  The agent checks that systemd is actually running, not merely installed, and
+  degrades to an unlimited run with a note in the log rather than failing.
+- Metrics: run durations, log bytes, connector operations, notification deliveries,
+  and retention deletions, on top of the existing HTTP and agent gauges. `/metrics`
+  can be gated behind `METRICS_TOKEN`.
+- Log handling: a per-run storage cap (`RUN_LOG_MAX_BYTES`, 5 MiB default) that
+  truncates storage without truncating the run, and a retention pruner for
+  `run_logs`, `runs`, `audit_log` and `connector_operations`. Pruning is off until a
+  window is configured. An object-storage backend is still not built; the cap plus
+  retention is what replaced the need for one so far.
+- Job dependencies / DAGs: NOT built. Still an open question below.
 
-## Phase 5 — Connectors
+## Phase 5 — Connectors (A, B and C done; D pending)
 
 Manage the service managers already running on a target server (nginx, Apache, Caddy,
 Traefik, HAProxy, pm2, systemd, Docker, system cron, ufw) from the portal: discover what
 is installed, view live status and current config, and safely edit config and drive
 lifecycle actions. Reuses the agent channel, audit log, and RBAC; the agent stays
 unprivileged by default. Full design and phasing in [connectors.md](connectors.md).
+
+## Not built yet
+
+- **Connectors Phase D (breadth).** Only nginx, systemd, docker and pm2 have
+  providers. apache, caddy, traefik, haproxy, system cron and ufw are designed in
+  [connectors.md](connectors.md) and unimplemented.
+- **Job dependencies / DAGs.** See the open question below.
+- **Object storage for logs.** The per-run cap and retention pruner cover the cases
+  that forced this onto the list; revisit if someone genuinely needs full logs kept.
+- **Horizontally scaled control plane.** The log broker and the connector request
+  registry are both in-process, so a second replica would not see the first one's
+  agent streams. A fan-out bus is the prerequisite.
+- **Windows installer parity.** `install.ps1` has not been updated alongside the
+  Linux/macOS installer.
 
 ## Open questions
 
@@ -77,13 +112,17 @@ These need a decision before or during the relevant phase:
 2. **Log storage backend.** Postgres cap is fine for the MVP. When do jobs with large or
    long-running output force object storage or files? Decide in Phase 4, or sooner if a
    user hits the cap.
-3. **Catch-up policy default.** After a long offline period, default to running a single
-   catch-up (`once`). Confirm this matches user expectations vs `skip`.
-4. **Job dependencies / DAGs.** Single jobs only for now. Is "run B after A" a real need,
-   or out of scope? Affects the data model if yes.
+3. **Catch-up policy default.** Implemented: the agent persists each job's last fire
+   time locally and, on startup, replays what the schedule missed. `once` runs one
+   catch-up however many windows were missed, `all` runs each up to a cap of 20, and
+   `skip` does nothing. `once` is the default. Whether that is the right default is
+   still worth confirming with real users.
+4. **Job dependencies / DAGs.** Still single jobs only, and still undecided. Is "run B
+   after A" a real need, or out of scope? Affects the data model if yes.
 5. **Agent distribution.** Single binary + install script, a system package (apt/rpm), a
    container, or all three? Affects the install UX shown in the UI.
-6. **gRPC vs WebSocket transport.** gRPC is the recommendation. If self-hosters find the
-   gRPC/mTLS setup heavy, the WebSocket fallback is on the table. Validate during Phase 1.
-7. **Cron syntax.** Standard 5-field, or 6-field with seconds, plus human helpers like
-   "every 6 hours"? Recommend supporting both cron and a friendly preset picker in the UI.
+6. **gRPC vs WebSocket transport.** gRPC/mTLS shipped and carries jobs, logs,
+   connectors and the web terminal over one stream. The WebSocket fallback was never
+   needed and is off the table unless a self-hoster reports otherwise.
+7. **Cron syntax.** Settled: standard 5-field only, with a preset picker in the wizard.
+   Seconds were not added; a job that needs sub-minute cadence wants a daemon, not cron.

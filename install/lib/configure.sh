@@ -1,41 +1,65 @@
 #!/usr/bin/env bash
-# Interactive configuration. Collects ports, admin credentials, secrets, database
-# connection, and any extra env vars, then writes a 0600 .env at the repo root.
-#
-# Reads CC_* env vars as defaults so the whole thing can run --non-interactive.
+# Interactive configuration: public URL, ports, database, admin login, then a 0600
+# .env at the repo root. Reads CC_* env vars as defaults so the whole thing can run
+# --non-interactive. --advanced (ADVANCED=1) restores the long form: runtime dir,
+# the database method menu, log level, OIDC and free-form env vars.
 
 EXTRA_ENV_LINES=""
 
+# Everything the installer asks: the URL, the ports behind it, the database, and the
+# admin login. Anything else (runtime dir, log level, TLS SANs, OIDC, extra env) is
+# derived or defaulted, and is still overridable through CC_* environment variables
+# or --advanced for the people who need it.
+
 configure_runtime() {
-  step "Where to keep runtime state"
-  RUNTIME_DIR="$(prompt "Runtime directory (logs, pids, TLS, agent data)" "${CC_RUNTIME_DIR:-$REPO_ROOT/.run}")"
-  # Accepts a bare host, host:port, or a full URL; normalize_advertise_host splits it
-  # into ADVERTISE_HOST / ADVERTISE_SCHEME / ADVERTISE_PORT so nothing downstream ever
-  # concatenates a scheme onto a value that already had one.
+  # Not a question: one directory under the repo unless CC_RUNTIME_DIR says otherwise.
+  RUNTIME_DIR="${CC_RUNTIME_DIR:-$REPO_ROOT/.run}"
+  if [ "${ADVANCED:-0}" = "1" ]; then
+    step "Where to keep runtime state"
+    RUNTIME_DIR="$(prompt "Runtime directory (logs, TLS, agent data)" "$RUNTIME_DIR")"
+  fi
+
+  step "Where will people reach CronCompose?"
+  dim "A URL is fine (https://cron.example.com), so is a hostname or an IP."
+  dim "Behind a TLS proxy? Give the public https:// URL; the port below stays internal."
   local advertise_raw
-  advertise_raw="$(prompt "Advertise host/IP or URL (what agents and browsers use to reach this box)" "${CC_ADVERTISE_HOST:-localhost}")"
+  # The default is deliberately bare: a scheme in the answer means "something fronts
+  # me on the standard port", which would wrongly drop the port from every printed URL
+  # if it arrived from a default the user never typed.
+  advertise_raw="$(prompt "Public URL" "${CC_ADVERTISE_HOST:-localhost}")"
+  # Splits a URL / host:port / bare host into scheme + host + port, so nothing later
+  # concatenates a scheme onto a value that already had one.
   normalize_advertise_host "$advertise_raw"
-  [ "$advertise_raw" = "$ADVERTISE_HOST" ] || ok "advertise host: $ADVERTISE_HOST (scheme: $ADVERTISE_SCHEME)"
 }
 
 configure_ports() {
-  step "Choose ports (a free one is suggested for each)"
-  # Thread the ports chosen so far so no two services are offered (or accept) the same
-  # one, even when a default is occupied by a leftover daemon from a previous install.
-  local taken=""
-  info "The control plane is the single public entry: its HTTP port serves the UI (/app)"
-  info "and the REST API (/api); agents reach it on the gRPC port. The web UI port is internal."
-  API_PORT="$(prompt_port "HTTP port (public: UI + REST API)" "${CC_API_PORT:-8080}" "$taken")"; taken="$taken $API_PORT"
-  GRPC_PORT="$(prompt_port "Agent gRPC port (public)" "${CC_GRPC_PORT:-9090}" "$taken")"; taken="$taken $GRPC_PORT"
-  WEB_PORT="$(prompt_port "Web UI port (internal)" "${CC_WEB_PORT:-3000}" "$taken")";  taken="$taken $WEB_PORT"
-  ok "http=$API_PORT  grpc=$GRPC_PORT  web=$WEB_PORT (internal)"
+  step "Ports"
+  # Backend HTTP is the public entry point (UI at /app, REST at /api). Frontend is
+  # the internal Next.js listener the control plane proxies /app to. Agent gRPC is
+  # where enrolled agents dial in — always asked, because remote agents use it even
+  # when this machine is not running a local agent.
+  dim "A free port is suggested for each. Occupied ones are flagged."
+  local default_api="${ADVERTISE_PORT:-${CC_API_PORT:-8080}}"
+  API_PORT="$(prompt_port "Backend HTTP port (UI + REST API)" "$default_api" "")"
+  ADVERTISE_PORT="${ADVERTISE_PORT:+$API_PORT}"   # keep an explicit URL port in step
+
+  local taken="$API_PORT"
+  if [ "${ENABLE_WEB:-1}" = "1" ]; then
+    WEB_PORT="$(prompt_port "Frontend port (internal web UI)" "${CC_WEB_PORT:-3000}" "$taken")"
+    taken="$taken $WEB_PORT"
+  else
+    WEB_PORT="$(find_free_port "${CC_WEB_PORT:-3000}" "$taken")"
+    taken="$taken $WEB_PORT"
+  fi
+  GRPC_PORT="$(prompt_port "Agent gRPC port" "${CC_GRPC_PORT:-9090}" "$taken")"
+  ok "backend=$API_PORT  frontend=$WEB_PORT  agent=$GRPC_PORT"
 }
 
 configure_admin() {
-  step "Seed administrator account (used to sign in to the UI)"
-  ADMIN_EMAIL="$(prompt "Admin email" "${CC_ADMIN_EMAIL:-admin@example.com}")"
+  step "Administrator account (your login)"
+  ADMIN_EMAIL="$(prompt "Email" "${CC_ADMIN_EMAIL:-admin@example.com}")"
   case "$ADMIN_EMAIL" in *@*.*) : ;; *) warn "that doesn't look like an email, continuing anyway" ;; esac
-  ADMIN_PASSWORD="$(prompt_secret "Admin password (blank = generate one)" "${CC_ADMIN_PASSWORD:-}")"
+  ADMIN_PASSWORD="$(prompt_secret "Password (blank = generate one)" "${CC_ADMIN_PASSWORD:-}")"
   if [ -z "$ADMIN_PASSWORD" ]; then
     ADMIN_PASSWORD="$(gen_hex 12)"
     ADMIN_PASSWORD_GENERATED=1
@@ -43,77 +67,45 @@ configure_admin() {
   fi
 }
 
+# Reuse the session and encryption keys from a previous install when one is present.
+# Rotating SECRETS_MASTER_KEY would make every stored secret undecryptable, so a
+# re-run must never do it silently.
+reuse_existing_secrets() {
+  local env_file="$REPO_ROOT/.env"
+  [ -f "$env_file" ] || return 0
+  local prev_session prev_master
+  prev_session="$(sed -n 's/^SESSION_SECRET=//p' "$env_file" | head -1)"
+  prev_master="$(sed -n 's/^SECRETS_MASTER_KEY=//p' "$env_file" | head -1)"
+  [ -n "$prev_session" ] && SESSION_SECRET="$prev_session"
+  [ -n "$prev_master" ]  && SECRETS_MASTER_KEY="$prev_master"
+  if [ -n "$prev_master" ]; then
+    ok "reusing the keys from the existing .env (stored secrets stay readable)"
+  fi
+  return 0
+}
+
 configure_secrets() {
   step "Generating secrets"
   SESSION_SECRET="$(gen_hex 32)"
   SECRETS_MASTER_KEY="$(gen_hex 32)"
-  ok "SESSION_SECRET and SECRETS_MASTER_KEY generated"
-  TLS_HOSTS="${CC_TLS_HOSTS:-localhost,127.0.0.1,$ADVERTISE_HOST}"
-  LOG_LEVEL="$(prompt "Log level (debug|info|warn|error)" "${CC_LOG_LEVEL:-info}")"
+  reuse_existing_secrets
+  LOG_LEVEL="${CC_LOG_LEVEL:-info}"
+  case "$ADVERTISE_HOST" in
+    localhost|127.0.0.1) TLS_HOSTS="${CC_TLS_HOSTS:-localhost,127.0.0.1}" ;;
+    *)                   TLS_HOSTS="${CC_TLS_HOSTS:-localhost,127.0.0.1,$ADVERTISE_HOST}" ;;
+  esac
   # SNI the local agent verifies the server cert against. localhost when advertising
   # locally; otherwise the advertise host (which is also added to TLS_HOSTS above).
   case "$ADVERTISE_HOST" in localhost|127.0.0.1) AGENT_SNI="localhost" ;; *) AGENT_SNI="$ADVERTISE_HOST" ;; esac
+  ok "session and encryption keys ready"
 }
 
-# Database method: existing connection string, auto-create via psql, or Docker Postgres.
-configure_database() {
-  step "Database (PostgreSQL)"
-  # Default to installing Postgres when we can; otherwise an existing DSN.
-  local default_method="${CC_DB_METHOD:-}"
-  if [ -z "$default_method" ]; then
-    if [ "$HAVE_PKG" = "1" ]; then default_method="native"; else default_method="existing"; fi
-  fi
-  if [ "${NONINTERACTIVE:-0}" != "1" ]; then
-    [ "$HAVE_PKG" = "1" ]    && info "1) Install PostgreSQL for me and create the database ($PKG_MGR; needs sudo)"
-    info "2) Use an existing Postgres (enter a connection string)"
-    [ "$HAVE_PSQL" = "1" ]   && info "3) Create a database in an already-running local Postgres (psql)"
-    [ "$HAVE_DOCKER" = "1" ] && info "4) Run Postgres in Docker (docker-compose.yml)"
-    local def_choice="1"; [ "$HAVE_PKG" = "1" ] || def_choice="2"
-    local choice; choice="$(prompt "Select" "$def_choice")"
-    case "$choice" in
-      1) [ "$HAVE_PKG" = "1" ]    && default_method="native"   || default_method="existing" ;;
-      2) default_method="existing" ;;
-      3) [ "$HAVE_PSQL" = "1" ]   && default_method="psql"     || default_method="existing" ;;
-      4) [ "$HAVE_DOCKER" = "1" ] && default_method="docker"   || default_method="existing" ;;
-      *) default_method="existing" ;;
-    esac
-  fi
-  DB_METHOD="$default_method"
+# The database question lives in configure_db.sh (configure_database).
 
-  case "$DB_METHOD" in
-    native)
-      DB_HOST="127.0.0.1"; DB_PORT="${CC_DB_PORT:-5432}"
-      DB_NAME="$(prompt "Database name to create" "${CC_DB_NAME:-croncompose}")"
-      DB_USER="$(prompt "Database role to create" "${CC_DB_USER:-croncompose}")"
-      DB_PASS="$(prompt_secret "Password for the role (blank = generate)" "${CC_DB_PASS:-}")"
-      [ -z "$DB_PASS" ] && { DB_PASS="$(gen_hex 12)"; ok "generated db password: $DB_PASS"; }
-      DATABASE_URL="postgres://$DB_USER:$DB_PASS@127.0.0.1:$DB_PORT/$DB_NAME?sslmode=disable"
-      ok "will install PostgreSQL with $PKG_MGR and create database '$DB_NAME'"
-      ;;
-    docker)
-      DB_NAME="croncompose"; DB_USER="croncompose"; DB_PASS="croncompose"
-      DB_HOST="127.0.0.1"; DB_PORT="$(prompt_port "Host port to expose Postgres on" "${CC_DB_PORT:-5432}")"
-      DATABASE_URL="postgres://$DB_USER:$DB_PASS@$DB_HOST:$DB_PORT/$DB_NAME?sslmode=disable"
-      ok "will start Postgres in Docker on $DB_HOST:$DB_PORT"
-      ;;
-    psql)
-      DB_HOST="$(prompt "Postgres host" "${CC_DB_HOST:-localhost}")"
-      DB_PORT="$(prompt "Postgres port" "${CC_DB_PORT:-5432}")"
-      DB_SUPERUSER="$(prompt "Superuser to create role/db with" "${CC_DB_SUPERUSER:-postgres}")"
-      DB_SUPER_PASS="$(prompt_secret "Superuser password (blank if trust/peer auth)" "${CC_DB_SUPER_PASS:-}")"
-      DB_NAME="$(prompt "New database name" "${CC_DB_NAME:-croncompose}")"
-      DB_USER="$(prompt "New database role" "${CC_DB_USER:-croncompose}")"
-      DB_PASS="$(prompt_secret "Password for new role (blank = generate)" "${CC_DB_PASS:-}")"
-      [ -z "$DB_PASS" ] && { DB_PASS="$(gen_hex 12)"; ok "generated db password: $DB_PASS"; }
-      DATABASE_URL="postgres://$DB_USER:$DB_PASS@$DB_HOST:$DB_PORT/$DB_NAME?sslmode=disable"
-      ;;
-    *)
-      DATABASE_URL="$(prompt "DATABASE_URL" "${CC_DATABASE_URL:-postgres://croncompose:croncompose@localhost:5432/croncompose?sslmode=disable}")"
-      ;;
-  esac
-}
-
+# Advanced-only: OIDC is configurable after the fact through .env, so it does not
+# belong in a four-question install.
 configure_oidc() {
+  [ "${ADVANCED:-0}" = "1" ] || return 0
   if confirm "Configure OIDC single sign-on now?" n; then
     step "OIDC SSO"
     OIDC_ISSUER_URL="$(prompt "OIDC issuer URL" "${CC_OIDC_ISSUER_URL:-}")"
@@ -126,6 +118,7 @@ configure_oidc() {
 
 # "and others": free-form KEY=VALUE pairs appended verbatim to .env.
 configure_extras() {
+  [ "${ADVANCED:-0}" = "1" ] || return 0
   [ "${NONINTERACTIVE:-0}" = "1" ] && return 0
   if confirm "Add any extra environment variables?" n; then
     step "Extra environment variables (blank line to finish)"
@@ -149,52 +142,53 @@ write_env_file() {
   umask 077
   {
     echo "# Generated by install.sh on $(date). Contains secrets, keep private."
-    echo "APP_ENV=prod"
-    echo "LOG_LEVEL=$LOG_LEVEL"
-    echo "DATABASE_URL=$DATABASE_URL"
-    echo "HTTP_ADDR=:$API_PORT"
-    echo "GRPC_ADDR=:$GRPC_PORT"
-    echo "TLS_DIR=$RUNTIME_DIR/tls"
-    echo "TLS_HOSTS=$TLS_HOSTS"
-    echo "SESSION_SECRET=$SESSION_SECRET"
-    echo "SECRETS_MASTER_KEY=$SECRETS_MASTER_KEY"
-    echo "SEED_ADMIN_EMAIL=$ADMIN_EMAIL"
-    echo "SEED_ADMIN_PASSWORD=$ADMIN_PASSWORD"
+    env_line APP_ENV prod
+    env_line LOG_LEVEL "$LOG_LEVEL"
+    env_line DATABASE_URL "$DATABASE_URL"
+    env_line HTTP_ADDR ":$API_PORT"
+    env_line GRPC_ADDR ":$GRPC_PORT"
+    env_line TLS_DIR "$RUNTIME_DIR/tls"
+    env_line TLS_HOSTS "$TLS_HOSTS"
+    env_line SESSION_SECRET "$SESSION_SECRET"
+    env_line SECRETS_MASTER_KEY "$SECRETS_MASTER_KEY"
+    env_line SEED_ADMIN_EMAIL "$ADMIN_EMAIL"
+    env_line SEED_ADMIN_PASSWORD "$ADMIN_PASSWORD"
     echo "# Single point of change for the externally-reachable address. Edit this one"
     echo "# line (e.g. https://cron.example.com) and restart; it derives the public REST"
     echo "# URL, the OIDC redirect, and the TLS SAN."
-    echo "PUBLIC_BASE_URL=$PUBLIC_BASE_URL"
+    env_line PUBLIC_BASE_URL "$PUBLIC_BASE_URL"
     echo "# web UI (internal; the control plane reverse-proxies /app to it)"
-    echo "PORT=$WEB_PORT"
-    echo "API_BASE=$API_BASE"
+    env_line PORT "$WEB_PORT"
+    env_line API_BASE "$API_BASE"
     if [ "${ENABLE_WEB:-1}" = "1" ]; then
-      echo "WEB_UPSTREAM=http://127.0.0.1:$WEB_PORT"
+      env_line WEB_UPSTREAM "http://127.0.0.1:$WEB_PORT"
     fi
     if [ -n "${OIDC_ISSUER_URL:-}" ]; then
       echo "# OIDC SSO"
-      echo "OIDC_ISSUER_URL=$OIDC_ISSUER_URL"
-      echo "OIDC_CLIENT_ID=$OIDC_CLIENT_ID"
-      echo "OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}"
-      echo "OIDC_REDIRECT_URL=$OIDC_REDIRECT_URL"
-      echo "OIDC_DEFAULT_ROLE=${OIDC_DEFAULT_ROLE:-viewer}"
+      env_line OIDC_ISSUER_URL "$OIDC_ISSUER_URL"
+      env_line OIDC_CLIENT_ID "$OIDC_CLIENT_ID"
+      env_line OIDC_CLIENT_SECRET "${OIDC_CLIENT_SECRET:-}"
+      env_line OIDC_REDIRECT_URL "$OIDC_REDIRECT_URL"
+      env_line OIDC_DEFAULT_ROLE "${OIDC_DEFAULT_ROLE:-viewer}"
     fi
     if [ "${ENABLE_AGENT:-0}" = "1" ]; then
       echo "# local agent (enroll + run on this machine)"
-      echo "CONTROL_PLANE_HTTP=http://127.0.0.1:$API_PORT/api/v1"
-      echo "CONTROL_PLANE_ADDR=127.0.0.1:$GRPC_PORT"
-      echo "CONTROL_PLANE_SNI=$AGENT_SNI"
-      echo "DATA_DIR=$RUNTIME_DIR/agent"
+      env_line CONTROL_PLANE_HTTP "http://127.0.0.1:$API_PORT/api/v1"
+      env_line CONTROL_PLANE_ADDR "127.0.0.1:$GRPC_PORT"
+      env_line CONTROL_PLANE_SNI "$AGENT_SNI"
+      env_line DATA_DIR "$RUNTIME_DIR/agent"
     fi
     echo "# installer metadata (read by croncompose-ctl)"
-    echo "CC_WEB_PORT=$WEB_PORT"
-    echo "CC_API_PORT=$API_PORT"
-    echo "CC_GRPC_PORT=$GRPC_PORT"
-    echo "CC_RUNTIME_DIR=$RUNTIME_DIR"
-    echo "CC_ADVERTISE_HOST=$ADVERTISE_HOST"
-    echo "CC_ADVERTISE_SCHEME=$ADVERTISE_SCHEME"
-    echo "CC_ADVERTISE_PORT=${ADVERTISE_PORT:-}"
-    echo "CC_ENABLE_AGENT=${ENABLE_AGENT:-0}"
-    echo "CC_ENABLE_WEB=${ENABLE_WEB:-1}"
+    env_line CC_WEB_PORT "$WEB_PORT"
+    env_line CC_API_PORT "$API_PORT"
+    env_line CC_GRPC_PORT "$GRPC_PORT"
+    env_line CC_RUNTIME_DIR "$RUNTIME_DIR"
+    env_line CC_ADVERTISE_HOST "$ADVERTISE_HOST"
+    env_line CC_ADVERTISE_SCHEME "$ADVERTISE_SCHEME"
+    env_line CC_ADVERTISE_PORT "${ADVERTISE_PORT:-}"
+    env_line CC_ENABLE_AGENT "${ENABLE_AGENT:-0}"
+    env_line CC_ENABLE_WEB "${ENABLE_WEB:-1}"
+    env_line CC_DB_METHOD "${DB_METHOD:-existing}"
     if [ -n "$EXTRA_ENV_LINES" ]; then
       echo "# extra vars"
       printf '%s' "$EXTRA_ENV_LINES"

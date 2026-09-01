@@ -88,6 +88,7 @@ type clientMsg struct {
 	Cols    uint32 `json:"cols"`    // init / resize
 	Rows    uint32 `json:"rows"`    // init / resize
 	Signal  string `json:"signal"`  // signal: INT | TERM | ...
+	RunAs   string `json:"run_as"`  // init: OS user to run as; empty = the agent's user
 }
 
 // serverEvent is a control frame the server sends in text frames. PTY output is sent as
@@ -127,7 +128,7 @@ func (h *handler) serve(conn *websocket.Conn, serverID, actor string) {
 
 	if err := h.toAgent(serverID, &agentv1.TerminalInput{
 		SessionId: sessionID, Op: "open", Kind: mode,
-		Cols: init.Cols, Rows: init.Rows, Command: init.Command,
+		Cols: init.Cols, Rows: init.Rows, Command: init.Command, RunAs: init.RunAs,
 	}); err != nil {
 		writeEvent(conn, serverEvent{Type: "error", Message: "agent offline"})
 		return
@@ -135,7 +136,7 @@ func (h *handler) serve(conn *websocket.Conn, serverID, actor string) {
 
 	bg := context.Background()
 	h.audit.Write(bg, actor, "terminal.open", "server", serverID,
-		map[string]any{"session_id": sessionID, "mode": mode})
+		map[string]any{"session_id": sessionID, "mode": mode, "run_as": init.RunAs})
 	defer h.audit.Write(bg, actor, "terminal.close", "server", serverID,
 		map[string]any{"session_id": sessionID})
 

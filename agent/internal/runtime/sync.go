@@ -17,6 +17,13 @@ func (r *Runtime) handleServerMessage(ctx context.Context, msg *agentv1.ServerMe
 		go r.executeRun(ctx, body.RunNow.GetJobId(), body.RunNow.GetRunId(), "manual")
 	case *agentv1.ServerMessage_CancelRun:
 		r.cancelRun(body.CancelRun.GetRunId())
+	case *agentv1.ServerMessage_UpdateAgent:
+		// Downloading a binary is slow and must not block the receive loop.
+		go r.handleUpdate(ctx, body.UpdateAgent)
+	case *agentv1.ServerMessage_ConnectorCommand:
+		// Dispatched on its own goroutine: an apply can take tens of seconds and this
+		// switch runs on the receive loop.
+		go r.handleConnectorCommand(ctx, body.ConnectorCommand)
 	case *agentv1.ServerMessage_TerminalInput:
 		r.terminals.Handle(body.TerminalInput)
 	}
@@ -91,6 +98,8 @@ func protoToStore(d *agentv1.JobDef) store.JobDef {
 		Secrets:           d.GetSecrets(),
 		CPUQuotaPercent:   int(d.GetCpuQuotaPercent()),
 		MemoryMaxMB:       int(d.GetMemoryMaxMb()),
+		TasksMax:          int(d.GetTasksMax()),
+		IOWeight:          int(d.GetIoWeight()),
 	}
 }
 

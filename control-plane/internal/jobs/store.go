@@ -27,7 +27,7 @@ const selectCols = `
   j.schedule_cron, j.timezone, j.enabled, j.timeout_seconds,
   j.concurrency_policy, j.catchup_policy, j.max_retries,
   coalesce(j.working_dir,''), coalesce(j.run_as_user,''),
-  j.cpu_quota_percent, j.memory_max_mb,
+  j.cpu_quota_percent, j.memory_max_mb, j.tasks_max, j.io_weight,
   j.current_version_id, jv.version_number, jv.script_body,
   coalesce(jv.env::text,'{}'), coalesce(jv.secret_refs::text,'[]'),
   j.created_at, j.updated_at
@@ -43,7 +43,7 @@ func scanJob(row pgx.Row) (Job, error) {
 		&j.ScheduleCron, &j.Timezone, &j.Enabled, &j.TimeoutSeconds,
 		&j.ConcurrencyPolicy, &j.CatchupPolicy, &j.MaxRetries,
 		&j.WorkingDir, &j.RunAsUser,
-		&j.CPUQuotaPercent, &j.MemoryMaxMB,
+		&j.CPUQuotaPercent, &j.MemoryMaxMB, &j.TasksMax, &j.IOWeight,
 		&j.CurrentVersionID, &j.CurrentVersion, &j.ScriptBody,
 		&envJSON, &refsJSON,
 		&j.CreatedAt, &j.UpdatedAt,
@@ -157,15 +157,15 @@ func (s *Store) Insert(ctx context.Context, in CreateInput) (Job, error) {
 		  name, description, interpreter,
 		  schedule_cron, timezone, enabled, timeout_seconds,
 		  concurrency_policy, catchup_policy, max_retries,
-		  working_dir, run_as_user, cpu_quota_percent, memory_max_mb,
+		  working_dir, run_as_user, cpu_quota_percent, memory_max_mb, tasks_max, io_weight,
 		  current_version_id
-		) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+		) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
 	`,
 		jobID, in.TargetKind, nullIfEmpty(in.ServerID), marshalLabels(in.TargetLabels),
 		in.Name, in.Description, in.Interpreter,
 		in.ScheduleCron, in.Timezone, *in.Enabled, in.TimeoutSeconds,
 		in.ConcurrencyPolicy, in.CatchupPolicy, in.MaxRetries,
-		nullIfEmpty(in.WorkingDir), nullIfEmpty(in.RunAsUser), in.CPUQuotaPercent, in.MemoryMaxMB,
+		nullIfEmpty(in.WorkingDir), nullIfEmpty(in.RunAsUser), in.CPUQuotaPercent, in.MemoryMaxMB, in.TasksMax, in.IOWeight,
 		versionID,
 	); err != nil {
 		return Job{}, err
@@ -246,6 +246,12 @@ func (s *Store) Patch(ctx context.Context, id string, in PatchInput) (Job, error
 	if in.MemoryMaxMB != nil {
 		job.MemoryMaxMB = *in.MemoryMaxMB
 	}
+	if in.TasksMax != nil {
+		job.TasksMax = *in.TasksMax
+	}
+	if in.IOWeight != nil {
+		job.IOWeight = *in.IOWeight
+	}
 
 	sidArg := ""
 	if job.ServerID != nil {
@@ -299,8 +305,9 @@ func (s *Store) Patch(ctx context.Context, id string, in PatchInput) (Job, error
 		  concurrency_policy = $11, catchup_policy = $12, max_retries = $13,
 		  working_dir = $14, run_as_user = $15,
 		  cpu_quota_percent = $16, memory_max_mb = $17,
-		  current_version_id = $18, updated_at = now()
-		where id = $19
+		  tasks_max = $18, io_weight = $19,
+		  current_version_id = $20, updated_at = now()
+		where id = $21
 	`,
 		job.TargetKind, nullIfEmpty(sidArg), marshalLabels(job.TargetLabels),
 		job.Name, job.Description, job.Interpreter,
@@ -308,6 +315,7 @@ func (s *Store) Patch(ctx context.Context, id string, in PatchInput) (Job, error
 		job.ConcurrencyPolicy, job.CatchupPolicy, job.MaxRetries,
 		nullIfEmpty(job.WorkingDir), nullIfEmpty(job.RunAsUser),
 		job.CPUQuotaPercent, job.MemoryMaxMB,
+		job.TasksMax, job.IOWeight,
 		job.CurrentVersionID,
 		id,
 	); err != nil {

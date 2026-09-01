@@ -21,6 +21,23 @@ export type ListResponse<T> = {
   next_cursor?: string;
 };
 
+export type UpdateServerStatus = {
+  server_id: string;
+  server_name: string;
+  status: Server["status"];
+  current_version?: string;
+  update_available: boolean;
+  can_update: boolean;
+};
+
+export type UpdateStatus = {
+  latest_version?: string;
+  release_url?: string;
+  published_at?: string;
+  check_error?: string;
+  items: UpdateServerStatus[];
+};
+
 export type CreateServerResponse = {
   server: Server;
   enrollment: { token: string; expires_at: string };
@@ -46,6 +63,8 @@ export type Job = {
   run_as_user?: string;
   cpu_quota_percent: number;
   memory_max_mb: number;
+  tasks_max: number;
+  io_weight: number;
   current_version_id: string;
   current_version: number;
   script_body: string;
@@ -97,9 +116,17 @@ export type Secret = {
 export type NotificationTarget = {
   id: string;
   name: string;
-  kind: string;
-  url: string;
+  kind: "webhook" | "slack" | "email";
+  url?: string;
   enabled: boolean;
+  /** Channel-specific settings. Secret values come back as "********". */
+  config?: Record<string, string>;
+  /** Empty means every server. */
+  server_labels?: Record<string, string>;
+  /** Empty means every non-success outcome. */
+  on_statuses?: string[];
+  last_error?: string;
+  last_fired_at?: string | null;
   created_at: string;
 };
 
@@ -131,4 +158,64 @@ export type ConnectorResource = {
   size_bytes?: number;
   attributes?: Record<string, string>;
   updated_at: string;
+};
+
+export type ConnectorStep = {
+  name: string;
+  ok: boolean;
+  output?: string;
+  exit_code?: number;
+};
+
+export type ConnectorOperation = {
+  id: string;
+  connector_id: string;
+  server_id: string;
+  request_id: string;
+  op: string;
+  action?: string;
+  ref?: string;
+  dry_run: boolean;
+  status: string;
+  message?: string;
+  steps: ConnectorStep[];
+  actor_user_id?: string | null;
+  created_at: string;
+  finished_at?: string | null;
+};
+
+export type ConnectorSnapshot = {
+  id: string;
+  connector_id: string;
+  ref: string;
+  checksum?: string;
+  size_bytes: number;
+  reason: string;
+  operation_id?: string | null;
+  actor_user_id?: string | null;
+  created_at: string;
+};
+
+export type ConnectorCommandResponse = {
+  operation_id: string;
+  status: string;
+  message?: string;
+  checksum?: string;
+  steps?: ConnectorStep[];
+};
+
+export type JobTemplate = {
+  id: string;
+  name: string;
+  description?: string;
+  category: string;
+  interpreter: string;
+  script_body: string;
+  schedule_cron: string;
+  timezone: string;
+  env: Record<string, string>;
+  /** Built-ins ship with CronCompose and cannot be edited or deleted. */
+  builtin: boolean;
+  created_by?: string | null;
+  created_at: string;
 };

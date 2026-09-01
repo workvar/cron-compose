@@ -61,6 +61,8 @@ export default function NewJobPage({ params }: { params: Promise<{ id: string }>
         timeout_seconds: draft.timeoutSeconds,
         cpu_quota_percent: draft.cpuPct,
         memory_max_mb: draft.memMB,
+        tasks_max: draft.tasksMax,
+        io_weight: draft.ioWeight,
         concurrency_policy: draft.concurrencyPolicy,
         catchup_policy: draft.catchupPolicy,
         max_retries: draft.maxRetries,

@@ -133,6 +133,8 @@ message JobDef {
   // 0 means unlimited.
   int32 cpu_quota_percent = 18; // 100 = one full core, 200 = two cores, etc.
   int32 memory_max_mb     = 19;
+  int32 tasks_max         = 20; // cap on processes/threads; what stops a fork bomb
+  int32 io_weight         = 21; // 1..10000 relative block IO priority; 0 = default
 }
 
 message SyncJobs {
@@ -155,6 +157,8 @@ message CancelRun {
 message UpdateAgent {
   string target_version = 1;
   string download_url   = 2;
+  string sha256         = 3;  // hex digest of the binary at download_url; required
+  bool   restart        = 4;  // exit after swapping so the supervisor restarts us
 }
 
 // ---- Connectors ----
@@ -247,6 +251,7 @@ message TerminalInput {
   uint32 rows       = 6;  // open/resize: terminal height
   string command    = 7;  // open+command: the one-shot command line to run
   string signal     = 8;  // signal: INT | TERM | QUIT | KILL
+  string run_as     = 9;  // open: OS user to run as; empty = the agent's own user
 }
 
 message TerminalOutput {

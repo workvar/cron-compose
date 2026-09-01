@@ -9,16 +9,20 @@ permissions:
 
 jobs:
   build:
-    name: Build agent ${{ matrix.arch }}
+    name: Build agent ${{ matrix.target }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - arch: amd64
+          - target: linux-amd64
+            goos: linux
             goarch: amd64
-          - arch: arm64
+            pkg_arch: amd64
+          - target: linux-arm64
+            goos: linux
             goarch: arm64
+            pkg_arch: arm64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -30,14 +34,15 @@ jobs:
       - name: Build agent binary
         working-directory: agent
         env:
-          GOOS: linux
+          GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
           mkdir -p ../dist
-          go build -trimpath -ldflags="-s -w" -o ../dist/croncompose-agent ./cmd/agent
+          go build -trimpath -ldflags="-s -w" -o ../dist/croncompose-agent-${{ matrix.target }} ./cmd/agent
 
       - name: Install nfpm
+        if: matrix.goos == 'linux'
         run: |
           curl -sSLo /tmp/nfpm.tar.gz https://github.com/goreleaser/nfpm/releases/download/v2.40.0/nfpm_2.40.0_Linux_x86_64.tar.gz
           mkdir -p /tmp/nfpm && tar -xzf /tmp/nfpm.tar.gz -C /tmp/nfpm
@@ -45,25 +50,27 @@ jobs:
           nfpm --version
 
       - name: Build .deb and .apk
+        if: matrix.goos == 'linux'
         env:
           PKG_VERSION: ${{ github.ref_name }}
-          PKG_ARCH: ${{ matrix.arch }}
+          PKG_ARCH: ${{ matrix.pkg_arch }}
         run: |
           mkdir -p artifacts
-          # nfpm reads ${VAR} placeholders directly from the env.
           nfpm pkg --config packaging/nfpm.yaml --packager deb \
             --target "artifacts/croncompose-agent_${PKG_VERSION}_${PKG_ARCH}.deb"
           nfpm pkg --config packaging/nfpm.yaml --packager apk \
             --target "artifacts/croncompose-agent_${PKG_VERSION}_${PKG_ARCH}.apk"
 
-      - name: Generate checksums
+      - name: Stage release artifacts
         run: |
+          mkdir -p artifacts
+          cp "dist/croncompose-agent-${{ matrix.target }}" artifacts/
           cd artifacts
-          sha256sum *.deb *.apk > "SHA256SUMS-${{ matrix.arch }}.txt"
+          sha256sum "croncompose-agent-${{ matrix.target }}" > "SHA256SUMS-${{ matrix.target }}.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: packages-${{ matrix.arch }}
+          name: packages-${{ matrix.target }}
           path: artifacts/*
 
   release:
@@ -75,10 +82,28 @@ jobs:
         with:
           path: artifacts
 
-      - name: Flatten
+      - name: Flatten and build checksums.json
         run: |
           mkdir -p out
           find artifacts -type f -exec cp {} out/ \;
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          out = pathlib.Path("out")
+          sums = {}
+          for path in sorted(out.glob("croncompose-agent-*")):
+              if path.suffix:
+                  continue
+              target = path.name.removeprefix("croncompose-agent-")
+              key = {
+                  "linux-amd64": "linux/amd64",
+                  "linux-arm64": "linux/arm64",
+                  "linux-armv7": "linux/arm",
+                  "darwin-amd64": "darwin/amd64",
+                  "darwin-arm64": "darwin/arm64",
+              }.get(target, target.replace("-", "/", 1))
+              sums[key] = hashlib.sha256(path.read_bytes()).hexdigest()
+          (out / "checksums.json").write_text(json.dumps(sums, indent=2) + "\n")
+          PY
           ls -la out/
 
       - uses: softprops/action-gh-release@v2

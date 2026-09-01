@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,7 +81,7 @@ func TestMountWebRedirectAndProxy(t *testing.T) {
 	}
 }
 
-// With no upstream configured, mountWeb registers nothing.
+// With no upstream configured, mountWeb serves an nginx-style welcome page at /.
 func TestMountWebDisabled(t *testing.T) {
 	app := fiber.New()
 	mountWeb(app, "")
@@ -88,7 +89,18 @@ func TestMountWebDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode != fiber.StatusNotFound {
-		t.Errorf("/ with no upstream status=%d want=404", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("/ with no upstream status=%d want=200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Errorf("/ content-type=%q want text/html", ct)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	body := string(b)
+	if !strings.Contains(body, "Welcome to CronCompose!") {
+		t.Errorf("/ body=%q want welcome page", b)
+	}
+	if !strings.Contains(body, `class="btn"`) || !strings.Contains(body, `href="/app/"`) {
+		t.Errorf("/ body missing control-plane button, got %q", b)
 	}
 }

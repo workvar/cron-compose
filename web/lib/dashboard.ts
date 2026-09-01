@@ -2,7 +2,7 @@
 // There is no global runs feed, so recent-run metrics are sampled from the most
 // recent jobs (bounded + parallel). Every call degrades gracefully on error.
 import { apiGet } from "@/lib/api";
-import type { Job, ListResponse, Run, Server } from "@/lib/types";
+import type { Job, ListResponse, Run, Server, UpdateStatus } from "@/lib/types";
 
 const SAMPLE_JOBS = 12; // cap on jobs we pull runs for
 
@@ -17,6 +17,7 @@ export type DashboardData = {
   weekly: { label: string; value: number }[];
   todayIndex: number;
   reachable: boolean;
+  updates: UpdateStatus | null;
 };
 
 const WEEKDAY = ["S", "M", "T", "W", "T", "F", "S"];
@@ -85,6 +86,13 @@ export async function getDashboardData(): Promise<DashboardData> {
   });
   const last24h = recentRuns.filter((r) => +now - +new Date(r.created_at) <= dayMs).length;
 
+  let updates: UpdateStatus | null = null;
+  try {
+    updates = await apiGet<UpdateStatus>("/updates");
+  } catch {
+    updates = null;
+  }
+
   return {
     servers,
     jobs,
@@ -96,5 +104,6 @@ export async function getDashboardData(): Promise<DashboardData> {
     weekly,
     todayIndex: 6,
     reachable,
+    updates,
   };
 }

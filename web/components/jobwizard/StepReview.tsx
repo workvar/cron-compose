@@ -21,6 +21,8 @@ export function StepReview({ draft, serverName }: { draft: JobDraft; serverName?
       draft.timeoutSeconds ? `${draft.timeoutSeconds}s timeout` : null,
       draft.cpuPct ? `${draft.cpuPct}% CPU` : null,
       draft.memMB ? `${draft.memMB} MB` : null,
+      draft.tasksMax ? `${draft.tasksMax} procs` : null,
+      draft.ioWeight ? `IO weight ${draft.ioWeight}` : null,
       draft.maxRetries ? `${draft.maxRetries} retries` : null,
     ].filter(Boolean).join(" · ") || "defaults";
 
