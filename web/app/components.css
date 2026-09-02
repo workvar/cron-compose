@@ -57,6 +57,21 @@ a.panel:hover {
 .button.block { width: 100%; }
 .button.sm { padding: 8px 14px; font-size: 13px; }
 
+.updates-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 8px;
+}
+.updates-version {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--text);
+  line-height: 1.1;
+}
+
 /* ---------- Pills / tags / status ---------- */
 .pill {
   display: inline-flex;

@@ -34,6 +34,7 @@ type ServerStatus struct {
 
 // StatusResponse is returned by GET /updates.
 type StatusResponse struct {
+	Repo          string         `json:"repo,omitempty"`
 	LatestVersion string         `json:"latest_version,omitempty"`
 	ReleaseURL    string         `json:"release_url,omitempty"`
 	PublishedAt   *string        `json:"published_at,omitempty"`
@@ -45,7 +46,7 @@ func (h *handler) status(c fiber.Ctx) error {
 	policy := h.effectivePolicy()
 	rel, ok, checkErr := h.catalog.Snapshot()
 
-	resp := StatusResponse{Items: []ServerStatus{}}
+	resp := StatusResponse{Items: []ServerStatus{}, Repo: h.catalog.Repo()}
 	if ok {
 		resp.LatestVersion = rel.Version
 		resp.ReleaseURL = rel.ReleaseURL
@@ -54,7 +55,7 @@ func (h *handler) status(c fiber.Ctx) error {
 			resp.PublishedAt = &s
 		}
 	}
-	if checkErr != "" && !ok && !policy.Active() {
+	if checkErr != "" {
 		resp.CheckError = checkErr
 	}
 
@@ -79,6 +80,11 @@ func (h *handler) status(c fiber.Ctx) error {
 		resp.Items = append(resp.Items, item)
 	}
 	return c.JSON(resp)
+}
+
+func (h *handler) checkNow(c fiber.Ctx) error {
+	h.catalog.Refresh(c.Context())
+	return h.status(c)
 }
 
 func (h *handler) triggerServerUpdate(c fiber.Ctx) error {

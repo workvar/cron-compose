@@ -108,6 +108,17 @@ func TestPublicBaseURLStripsWrapperQuotes(t *testing.T) {
 	}
 }
 
+func TestGitHubReleaseRepoDefaultsToThisProject(t *testing.T) {
+	t.Setenv("GITHUB_RELEASE_REPO", "")
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got, want := c.GitHubReleaseRepo, "workvar/cron-compose"; got != want {
+		t.Errorf("GitHubReleaseRepo = %q, want %q", got, want)
+	}
+}
+
 func contains(s []string, v string) bool {
 	for _, x := range s {
 		if x == v {

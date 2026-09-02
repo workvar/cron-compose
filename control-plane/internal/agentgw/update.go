@@ -22,7 +22,7 @@ type UpdatePolicy struct {
 	// are replaced. Example:
 	// https://github.com/{repo}/releases/download/{version}/croncompose-agent-{target}
 	URLTemplate string
-	// Repo is substituted for {repo} in URLTemplate (e.g. croncompose/croncompose).
+	// Repo is substituted for {repo} in URLTemplate (e.g. workvar/cron-compose).
 	Repo string
 	// Checksums maps "os/arch" to a sha256 hex digest. A single-entry map keyed "*"
 	// covers a homogeneous fleet.

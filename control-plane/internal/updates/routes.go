@@ -32,5 +32,6 @@ func Register(
 	}
 	r.Get("/updates", h.status)
 	admin := auth.RequireRole("admin")
+	r.Post("/updates/check", admin, h.checkNow)
 	r.Post("/servers/:id/update", admin, h.triggerServerUpdate)
 }

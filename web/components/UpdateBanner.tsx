@@ -18,11 +18,12 @@ export function UpdateBanner({ status }: { status: UpdateStatus }) {
           <p>
             {pending.length} server{pending.length === 1 ? "" : "s"} running an older agent.
             {online > 0
-              ? ` ${online} can be updated now from the server page.`
+              ? ` ${online} can be updated now from Settings.`
               : " Connect agents to apply the update."}
           </p>
           <div className="setup-banner-actions">
-            <Link href="/servers" className="button sm">Review servers</Link>
+            <Link href="/settings#updates" className="button sm">Update agents</Link>
+            <Link href="/servers" className="button ghost sm">Review servers</Link>
             {status.release_url && (
               <a href={status.release_url} className="button ghost sm" target="_blank" rel="noreferrer">
                 Release notes

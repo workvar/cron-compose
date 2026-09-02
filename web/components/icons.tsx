@@ -95,3 +95,6 @@ export const IconUser = (p: P) => (
 export const IconPlug = (p: P) => (
   <svg {...base(p)}><path d="M12 22v-5M9 7V2M15 7V2M6 13V8h12v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4Z" /></svg>
 );
+export const IconDownload = (p: P) => (
+  <svg {...base(p)}><path d="M12 3v12M7 11l5 5 5-5M5 21h14" /></svg>
+);

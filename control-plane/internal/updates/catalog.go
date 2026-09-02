@@ -82,6 +82,22 @@ func (c *Catalog) refresh(ctx context.Context) {
 	c.log.Info("latest agent release", "version", rel.Version, "tag", rel.Tag)
 }
 
+// Repo is the GitHub owner/repo this catalog polls.
+func (c *Catalog) Repo() string {
+	if c == nil {
+		return ""
+	}
+	return c.repo
+}
+
+// Refresh polls GitHub once and updates the cache.
+func (c *Catalog) Refresh(ctx context.Context) {
+	if c == nil {
+		return
+	}
+	c.refresh(ctx)
+}
+
 // Snapshot returns the cached latest release, if any.
 func (c *Catalog) Snapshot() (Release, bool, string) {
 	if c == nil {

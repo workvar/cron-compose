@@ -37,6 +37,7 @@
   ],
   "exclude": [
     "node_modules",
-    "lib/ui-helpers.test.ts"
+    "lib/ui-helpers.test.ts",
+    "lib/update-helpers.test.ts"
   ]
 }

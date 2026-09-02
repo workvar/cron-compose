@@ -92,7 +92,7 @@ beside it. The most important variables:
 | `AGENT_UPDATE_URL`   | Download URL template. `{version}`, `{os}` and `{arch}` are substituted. Must be `https`. |
 | `AGENT_UPDATE_SHA256` | Pinned sha256 of the binary: a bare hex digest, or a JSON object mapping `"os/arch"` to a digest. **Required** for updates to be offered; there is no unverified path. |
 | `AGENT_UPDATE_RESTART` | `1` (default) tells the agent to exit after swapping so its supervisor restarts it. `0` leaves the new binary to take effect on the next restart. |
-| `GITHUB_RELEASE_REPO` | GitHub `owner/repo` to poll for agent releases (default `croncompose/croncompose`). Disabled when a manual `AGENT_UPDATE_*` policy is configured. |
+| `GITHUB_RELEASE_REPO` | GitHub `owner/repo` to poll for agent releases (default `workvar/cron-compose`). Disabled when a manual `AGENT_UPDATE_*` policy is configured. |
 | `AGENT_UPDATE_POLL_MINUTES` | How often to check GitHub for a new tag (default `15`). |
 
 `PUBLIC_BASE_URL` is the easiest knob: set it once (for example

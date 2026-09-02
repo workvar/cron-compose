@@ -29,7 +29,7 @@ export function UpdateServerButton({
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/servers/${serverId}/update`, { method: "POST" });
+      const res = await fetch(`/api/servers/${serverId}/update`, { method: "POST" });
       const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
       if (!res.ok) {
         throw new Error(body?.error?.message ?? `Update failed (${res.status})`);

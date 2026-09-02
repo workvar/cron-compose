@@ -31,6 +31,7 @@ export type UpdateServerStatus = {
 };
 
 export type UpdateStatus = {
+  repo?: string;
   latest_version?: string;
   release_url?: string;
   published_at?: string;

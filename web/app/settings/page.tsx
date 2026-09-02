@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { apiGet } from "@/lib/api";
-import type { ListResponse, Me, NotificationTarget } from "@/lib/types";
+import type { ListResponse, Me, NotificationTarget, UpdateStatus } from "@/lib/types";
 import { LogoutButton } from "@/components/LogoutButton";
 import { IconKey, IconShield } from "@/components/icons";
 import { TargetManager } from "@/components/notify/TargetManager";
+import { UpdatesPanel } from "@/components/UpdatesPanel";
 
 function initials(me: Me): string {
   const src = me.name?.trim() || me.email;
@@ -15,12 +16,16 @@ function initials(me: Me): string {
 export default async function SettingsPage() {
   let me: Me | null = null;
   let targets: NotificationTarget[] = [];
+  let updates: UpdateStatus | null = null;
   try {
     me = await apiGet<Me>("/me");
   } catch { /* shown below */ }
   try {
     targets = (await apiGet<ListResponse<NotificationTarget>>("/notification-targets")).items;
   } catch { /* non-admin or unavailable */ }
+  try {
+    updates = await apiGet<UpdateStatus>("/updates");
+  } catch { /* control plane unreachable */ }
 
   const isAdmin = me?.role === "admin" || me?.role === "owner";
 
@@ -56,6 +61,12 @@ export default async function SettingsPage() {
       {isAdmin
         ? <TargetManager initial={targets} />
         : <div className="panel"><div className="empty">Only admins can view notification targets.</div></div>}
+
+      <h2>Updates</h2>
+      <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
+        When a new GitHub tag is published, update agents from here.
+      </p>
+      <UpdatesPanel initial={updates} canUpdate={isAdmin} />
 
       {isAdmin && (
         <>

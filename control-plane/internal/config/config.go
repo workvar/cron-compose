@@ -129,7 +129,7 @@ func Load() (Config, error) {
 		AgentUpdateSHA256:  env("AGENT_UPDATE_SHA256", ""),
 		AgentUpdateRestart: env("AGENT_UPDATE_RESTART", "1") != "0",
 
-		GitHubReleaseRepo:      env("GITHUB_RELEASE_REPO", "croncompose/croncompose"),
+		GitHubReleaseRepo:      env("GITHUB_RELEASE_REPO", "workvar/cron-compose"),
 		AgentUpdatePollMinutes: envInt("AGENT_UPDATE_POLL_MINUTES", 15),
 
 		SecretsMasterKey: env("SECRETS_MASTER_KEY", "0000000000000000000000000000000000000000000000000000000000000000"),

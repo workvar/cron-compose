@@ -29,6 +29,7 @@ external callers. Agents do **not** use this API; they use the gRPC channel in
 | POST   | `/servers/:id/enrollment-token`   | Re-issue a one-time enrollment token.    |
 | POST   | `/servers/:id/update`             | Offer a connected agent a self-update to the latest release (admin). |
 | GET    | `/updates`                        | Latest agent release and per-server update status. |
+| POST   | `/updates/check`                 | Re-poll GitHub immediately and return update status (admin). |
 | POST   | `/servers/:id/revoke`             | Revoke the agent cert; forces re-enroll. |
 
 ## Jobs

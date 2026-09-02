@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const githubAPI = "https://api.github.com"
+var githubAPI = "https://api.github.com"
 
 type ghRelease struct {
 	TagName     string    `json:"tag_name"`
