@@ -110,7 +110,7 @@
 }
 .search {
   flex: 1;
-  max-width: 520px;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -124,6 +124,7 @@
 .search input {
   border: 0;
   background: transparent;
+  min-height: 0;
   padding: 11px 0;
   box-shadow: none;
 }
@@ -137,7 +138,13 @@
   padding: 2px 7px;
   white-space: nowrap;
 }
-.topbar-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.topbar-actions { display: flex; align-items: center; gap: 12px; margin-left: auto; flex: none; }
+
+.ports-search {
+  width: 100%;
+  max-width: none;
+  margin: 0 0 18px;
+}
 .profile { display: flex; align-items: center; gap: 10px; padding-left: 6px; }
 .profile .who { line-height: 1.2; }
 .profile .who .name { font-weight: 700; color: var(--text); font-size: 13px; }

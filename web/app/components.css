@@ -135,8 +135,10 @@ a.panel:hover {
 .avatar.sm { width: 32px; height: 32px; font-size: 12px; }
 
 /* ---------- Forms ---------- */
+/* Native selects still match text inputs if any remain; SearchableSelect is the default. */
 input, textarea, select {
   width: 100%;
+  min-height: 44px;
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border-strong);
@@ -145,6 +147,14 @@ input, textarea, select {
   font: inherit;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%238b9298' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m4 6 4 4 4-4'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
 textarea { resize: vertical; }
 input:focus, textarea:focus, select:focus {
   outline: none;
@@ -152,7 +162,7 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 16%, transparent);
 }
 input::placeholder, textarea::placeholder { color: var(--faint); }
-input[type="radio"], input[type="checkbox"] { width: auto; accent-color: var(--green); }
+input[type="radio"], input[type="checkbox"] { width: auto; min-height: 0; padding: 0; accent-color: var(--green); }
 label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; font-weight: 600; letter-spacing: 0.01em; }
 .field-hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
 
@@ -164,6 +174,71 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px
   padding: 10px 13px;
   font-size: 13px;
 }
+
+/* Searchable dropdown: same box as text inputs, filterable list. */
+.ss { position: relative; width: 100%; }
+.ss-field { position: relative; }
+.ss-input {
+  width: 100%;
+  min-height: 44px;
+  padding-right: 36px;
+}
+.ss-chevron {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.ss-chevron svg { width: 16px; height: 16px; }
+.ss-chevron:disabled { cursor: default; opacity: 0.5; }
+.ss-list {
+  position: absolute;
+  z-index: 30;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  max-height: 240px;
+  overflow: auto;
+}
+.ss-opt {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.ss-opt:hover, .ss-opt.on { background: var(--surface-2); }
+.ss-opt.selected { font-weight: 600; color: var(--green-strong); }
+.ss-empty {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.ss-grow { flex: 1; min-width: 0; max-width: 420px; }
 
 .divider {
   display: flex;

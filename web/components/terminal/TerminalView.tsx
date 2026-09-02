@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { TerminalFrame } from "./TerminalFrame";
 
 export type TermStatus = "connecting" | "open" | "closed" | "error";
 
@@ -114,11 +115,14 @@ export default function TerminalView({ serverId, mode, command, runAs, onClose }
 
   const ended = status === "closed" || status === "error";
 
+  const title = mode === "command" && command ? command : "interactive shell";
+
   return (
-    <div className="term-wrap">
-      <div className="term-bar">
-        <span className={`status ${statusTone(status)}`}>{statusLabel(status)}</span>
+    <TerminalFrame
+      title={title}
+      actions={
         <div className="cluster">
+          <span className={`status ${statusTone(status)}`}>{statusLabel(status)}</span>
           {ended ? (
             <button className="button secondary sm" type="button" onClick={() => closeRef.current()}>
               New session
@@ -129,9 +133,10 @@ export default function TerminalView({ serverId, mode, command, runAs, onClose }
             </button>
           )}
         </div>
-      </div>
+      }
+    >
       <div ref={holder} className="term-holder" />
-    </div>
+    </TerminalFrame>
   );
 }
 

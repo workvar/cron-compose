@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ConnectorResource } from "@/lib/types";
 import { StepList } from "./StepList";
 import { useConnectorCommand } from "./useConnectorCommand";
+import { SearchableSelect } from "@/components/SearchableSelect";
 
 /**
  * Read, check, and apply one config file.
@@ -77,17 +78,13 @@ export function ConfigEditor({
   return (
     <div className="panel stack" style={{ gap: 12 }}>
       <div className="row">
-        <select
-          className="input"
+        <SearchableSelect
           value={path}
-          onChange={(e) => setPath(e.target.value)}
+          onChange={setPath}
           disabled={loading || busy}
-          style={{ maxWidth: 420 }}
-        >
-          {files.map((f) => (
-            <option key={f.id} value={f.ref}>{f.ref}</option>
-          ))}
-        </select>
+          className="ss-grow"
+          options={files.map((f) => ({ value: f.ref, label: f.ref }))}
+        />
         <button type="button" className="button secondary sm" onClick={() => void load(path)} disabled={loading || busy}>
           Reload
         </button>

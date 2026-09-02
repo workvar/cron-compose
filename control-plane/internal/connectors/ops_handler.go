@@ -296,7 +296,11 @@ func (h *handler) listPorts(c fiber.Ctx) error {
 			return jsonError(c, fiber.StatusBadGateway, "bad_payload", err)
 		}
 	}
-	return c.JSON(fiber.Map{"items": items})
+	labels, err := h.store.ListLabelsForServer(c.Context(), conn.ServerID)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "labels_failed", err)
+	}
+	return c.JSON(fiber.Map{"items": ApplyLabels(conn.ServerID, items, labels)})
 }
 
 // listSnapshots: GET /connectors/:id/snapshots. Admin only (they hold config bytes).

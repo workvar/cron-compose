@@ -51,17 +51,22 @@ export default function TerminalPage({ params }: Props) {
           </div>
 
           {mode === "command" && (
-            <div>
+            <div className="term-prompt-wrap">
               <label htmlFor="term-cmd">Command</label>
-              <input
-                id="term-cmd"
-                className="term-cmd"
-                placeholder="e.g. systemctl status nginx"
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") start(); }}
-                autoFocus
-              />
+              <div className="term-prompt">
+                <span className="term-ps1">$</span>
+                <input
+                  id="term-cmd"
+                  className="term-cmd"
+                  placeholder="systemctl status nginx"
+                  value={command}
+                  onChange={(e) => setCommand(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") start(); }}
+                  autoFocus
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+              </div>
               <p className="field-hint">Runs once via the login shell, streams output, then exits.</p>
             </div>
           )}

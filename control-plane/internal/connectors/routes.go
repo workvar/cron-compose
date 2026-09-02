@@ -30,6 +30,8 @@ func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, gw *agentgw.
 	r.Get("/connectors/:id/resources", h.listResources)
 	r.Get("/connectors/:id/operations", h.listOperations)
 	r.Get("/connectors/:id/ports", h.listPorts)
+	r.Get("/port-labels", h.listLabels)
+	r.Put("/port-labels", auth.RequireRole("operator"), h.upsertLabel)
 	r.Get("/servers/:id/connectors", h.listByServer)
 
 	// Lifecycle: operator and above.

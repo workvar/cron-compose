@@ -3,6 +3,7 @@ import { INTERPRETERS } from "./types";
 import { SecretRefsField } from "./SecretRefsField";
 import { TemplatePicker } from "./TemplatePicker";
 import { IconChevronRight } from "@/components/icons";
+import { SearchableSelect } from "@/components/SearchableSelect";
 
 export function StepScript({ draft, set }: { draft: JobDraft; set: (p: Patch) => void }) {
   return (
@@ -55,12 +56,17 @@ export function StepScript({ draft, set }: { draft: JobDraft; set: (p: Patch) =>
               <input type="number" min={0} value={draft.timeoutSeconds} onChange={(e) => set({ timeoutSeconds: Number(e.target.value) })} />
             </div>
             <div className="field">
-              <label>Concurrency</label>
-              <select value={draft.concurrencyPolicy} onChange={(e) => set({ concurrencyPolicy: e.target.value as JobDraft["concurrencyPolicy"] })}>
-                <option value="skip">skip if running</option>
-                <option value="allow">allow overlap</option>
-                <option value="queue">queue</option>
-              </select>
+              <label htmlFor="job-concurrency">Concurrency</label>
+              <SearchableSelect
+                id="job-concurrency"
+                value={draft.concurrencyPolicy}
+                onChange={(v) => set({ concurrencyPolicy: v as JobDraft["concurrencyPolicy"] })}
+                options={[
+                  { value: "skip", label: "skip if running" },
+                  { value: "allow", label: "allow overlap" },
+                  { value: "queue", label: "queue" },
+                ]}
+              />
             </div>
             <div className="field">
               <label>Max retries</label>

@@ -86,7 +86,7 @@ export default async function ConnectorDetailPage({ params }: Props) {
     ...(showPorts ? [{
       id: "ports",
       label: "Ports",
-      content: <PortsPanel connectorId={c.id} canAct={canAct} />,
+      content: <PortsPanel connectorId={c.id} serverId={c.server_id} canAct={canAct} />,
     }] : []),
     ...(files.length > 0 ? [{
       id: "config",

@@ -5,8 +5,8 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  align-items: flex-start;
-  max-width: 560px;
+  align-items: stretch;
+  max-width: 640px;
 }
 
 /* Segmented shell/command toggle */
@@ -17,6 +17,7 @@
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+  align-self: flex-start;
 }
 .seg-btn {
   border: 0;
@@ -38,6 +39,35 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+.term-prompt-wrap { width: 100%; }
+.term-prompt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  background: #0b1220;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 0 12px;
+}
+.term-ps1 {
+  flex: none;
+  color: #8ed7ad;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+}
+.term-prompt .term-cmd {
+  border: 0;
+  background: transparent;
+  color: #dbe5d8;
+  min-height: 0;
+  padding: 11px 0;
+  box-shadow: none;
+}
+.term-prompt .term-cmd:focus { box-shadow: none; }
+.term-prompt .term-cmd::placeholder { color: #5d6f7e; }
+
 /* Live terminal */
 .term-wrap {
   border: 1px solid var(--border-strong);
@@ -48,16 +78,63 @@
 .term-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   padding: 10px 14px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border-strong);
+  background: #151d2e;
+  border-bottom: 1px solid #1e2a40;
+}
+.term-dots {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+.term-dots span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.term-dots span:nth-child(1) { background: #ff5f57; }
+.term-dots span:nth-child(2) { background: #febc2e; }
+.term-dots span:nth-child(3) { background: #28c840; }
+.term-title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #9bb0c3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .term-holder {
   height: min(64vh, 640px);
   padding: 10px 12px;
   background: #0b1220;
+}
+.term-log {
+  margin: 0;
+  padding: 12px 14px;
+  min-height: 240px;
+  max-height: min(64vh, 640px);
+  overflow: auto;
+  background: #0b1220;
+  color: #dbe5d8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.term-log-empty { color: #7fa893; }
+.term-stderr { color: #ff9b95; }
+.term-stdout { color: #dbe5d8; }
+.term-stream {
+  display: inline-block;
+  min-width: 3.6em;
+  margin-right: 8px;
+  color: #7fa893;
+  font-size: 11px;
 }
 /* xterm sizes itself to the holder via the fit addon. */
 .term-holder .xterm,

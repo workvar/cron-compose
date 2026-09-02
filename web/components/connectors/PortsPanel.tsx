@@ -2,14 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ConnectorPort, ListResponse } from "@/lib/types";
+import { PortLabelInput } from "./PortLabelInput";
 import { StepList } from "./StepList";
 import { useConnectorCommand } from "./useConnectorCommand";
 
 export function PortsPanel({
   connectorId,
+  serverId,
   canAct,
 }: {
   connectorId: string;
+  serverId: string;
   canAct: boolean;
 }) {
   const [items, setItems] = useState<ConnectorPort[]>([]);
@@ -75,6 +78,7 @@ export function PortsPanel({
             <thead>
               <tr>
                 <th>Port</th>
+                <th>Label</th>
                 <th>Address</th>
                 <th>Process</th>
                 <th>Owner</th>
@@ -86,6 +90,18 @@ export function PortsPanel({
               {items.map((row) => (
                 <tr key={`${row.pid}-${row.address}-${row.port}`}>
                   <td style={{ fontWeight: 600 }} className="mono">{row.port}</td>
+                  <td>
+                    <PortLabelInput
+                      serverId={serverId}
+                      row={row}
+                      disabled={!canAct}
+                      onSaved={(label) => setItems((prev) => prev.map((p) =>
+                        p.pid === row.pid && p.address === row.address && p.port === row.port
+                          ? { ...p, label }
+                          : p
+                      ))}
+                    />
+                  </td>
                   <td className="mono subtle" style={{ fontSize: 12 }}>{row.address}</td>
                   <td>{row.process}</td>
                   <td>

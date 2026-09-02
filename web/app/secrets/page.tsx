@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { ListResponse, Secret } from "@/lib/types";
+import { SearchableSelect } from "@/components/SearchableSelect";
 import { IconKey } from "@/components/icons";
 
 export default function SecretsPage() {
@@ -70,12 +71,17 @@ export default function SecretsPage() {
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="API_KEY" required />
             </div>
             <div className="field">
-              <label>Scope</label>
-              <select value={scope} onChange={(e) => setScope(e.target.value as typeof scope)}>
-                <option value="global">global</option>
-                <option value="server">server</option>
-                <option value="job">job</option>
-              </select>
+              <label htmlFor="secret-scope">Scope</label>
+              <SearchableSelect
+                id="secret-scope"
+                value={scope}
+                onChange={(v) => setScope(v as typeof scope)}
+                options={[
+                  { value: "global", label: "global" },
+                  { value: "server", label: "server" },
+                  { value: "job", label: "job" },
+                ]}
+              />
             </div>
           </div>
           {scope !== "global" && (

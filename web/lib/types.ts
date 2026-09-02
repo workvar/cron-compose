@@ -213,6 +213,7 @@ export type ConnectorPort = {
   ref: string;
   name: string;
   protected: boolean;
+  label?: string;
 };
 
 export type JobTemplate = {

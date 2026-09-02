@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { apiGet, ApiError } from "@/lib/api";
 import { getHealth } from "@/lib/health";
-import type { Me } from "@/lib/types";
+import type { ListResponse, Me, Server } from "@/lib/types";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { SetupBanner } from "./SetupBanner";
@@ -16,13 +16,16 @@ const UNKNOWN_ME: Me = { id: "", email: "", name: "Signed in", role: "viewer" };
 // is deliberately NOT treated as signed out: when the control plane is unreachable
 // the whole app would otherwise collapse into a 410px auth column.
 export async function Shell({ children }: { children: React.ReactNode }) {
-  const [meResult, health, cookieJar] = await Promise.all([
+  const [meResult, health, cookieJar, serverCount] = await Promise.all([
     apiGet<Me>("/me").then(
       (me) => ({ me, error: null as ApiError | null }),
       (error: unknown) => ({ me: null, error: error as ApiError }),
     ),
     getHealth(),
     cookies(),
+    apiGet<ListResponse<Server>>("/servers")
+      .then((r) => r.items.length)
+      .catch(() => 0),
   ]);
 
   const signedOut =
@@ -42,7 +45,7 @@ export async function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-shell">
-      <Sidebar me={meResult.me ?? UNKNOWN_ME} />
+      <Sidebar me={meResult.me ?? UNKNOWN_ME} serverCount={serverCount} />
       <div className="app-main">
         <Topbar me={meResult.me ?? UNKNOWN_ME} />
         <main className="content">

@@ -4,6 +4,7 @@ import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import type { LogLine, Run } from "@/lib/types";
 import { IconChevronLeft } from "@/components/icons";
+import { TerminalFrame } from "@/components/terminal/TerminalFrame";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -72,17 +73,20 @@ export default function RunDetailPage({ params }: Props) {
       </div>
 
       <h2>Logs <span className="subtle" style={{ fontSize: 13, fontWeight: 500 }}>· live</span></h2>
-      <pre className="review-script" style={{ maxHeight: 480 }}>
-        {logs.length === 0 ? (
-          <span style={{ color: "#7fa893" }}>(no output yet)</span>
-        ) : (
-          logs.map((l) => (
-            <div key={`${l.stream}-${l.seq}`}>
-              <span style={{ color: l.stream === "stderr" ? "#ff9b95" : "#7fa893" }}>[{l.stream}]</span> {l.chunk}
-            </div>
-          ))
-        )}
-      </pre>
+      <TerminalFrame title={`${run.trigger} run ${run.id.slice(0, 8)} · ${run.status}`}>
+        <pre className="term-log">
+          {logs.length === 0 ? (
+            <span className="term-log-empty">(no output yet)</span>
+          ) : (
+            logs.map((l) => (
+              <div key={`${l.stream}-${l.seq}`} className={l.stream === "stderr" ? "term-stderr" : "term-stdout"}>
+                <span className="term-stream">{l.stream}</span>
+                {l.chunk}
+              </div>
+            ))
+          )}
+        </pre>
+      </TerminalFrame>
     </>
   );
 }

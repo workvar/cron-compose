@@ -59,6 +59,19 @@ type PortRow struct {
 	Ref       string `json:"ref"`
 	Name      string `json:"name"`
 	Protected bool   `json:"protected"`
+	Label     string `json:"label,omitempty"`
+}
+
+// PortLabel is an operator-authored name for a listening socket, keyed by
+// server + bind address so it survives process restarts.
+type PortLabel struct {
+	ID        string    `json:"id"`
+	ServerID  string    `json:"server_id"`
+	Proto     string    `json:"proto"`
+	Address   string    `json:"address"`
+	Port      int       `json:"port"`
+	Label     string    `json:"label"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // LifecycleRequest is the body of POST /connectors/:id/actions.

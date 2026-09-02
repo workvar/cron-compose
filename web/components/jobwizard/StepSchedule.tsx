@@ -1,6 +1,7 @@
 import type { JobDraft, Patch } from "./types";
 import { CRON_PRESETS, COMMON_TZ, describeCron, isValidCron } from "./types";
 import { IconCalendarClock } from "@/components/icons";
+import { SearchableSelect } from "@/components/SearchableSelect";
 
 export function StepSchedule({ draft, set }: { draft: JobDraft; set: (p: Patch) => void }) {
   const valid = isValidCron(draft.scheduleCron);
@@ -28,11 +29,15 @@ export function StepSchedule({ draft, set }: { draft: JobDraft; set: (p: Patch) 
           {!valid && <p className="field-hint" style={{ color: "var(--danger)" }}>A cron expression has 5 fields (min hour day month weekday).</p>}
         </div>
         <div className="field">
-          <label>Timezone</label>
-          <input list="tz-list" value={draft.timezone} onChange={(e) => set({ timezone: e.target.value })} placeholder="UTC" />
-          <datalist id="tz-list">
-            {COMMON_TZ.map((tz) => <option key={tz} value={tz} />)}
-          </datalist>
+          <label htmlFor="job-tz">Timezone</label>
+          <SearchableSelect
+            id="job-tz"
+            value={draft.timezone}
+            onChange={(v) => set({ timezone: v })}
+            allowCustom
+            options={COMMON_TZ.map((tz) => ({ value: tz, label: tz }))}
+            placeholder="UTC"
+          />
         </div>
       </div>
 
@@ -45,12 +50,17 @@ export function StepSchedule({ draft, set }: { draft: JobDraft; set: (p: Patch) 
       </div>
 
       <div className="field" style={{ marginTop: 18 }}>
-        <label>Catch-up policy (missed runs while a server was offline)</label>
-        <select value={draft.catchupPolicy} onChange={(e) => set({ catchupPolicy: e.target.value as JobDraft["catchupPolicy"] })}>
-          <option value="skip">skip — don&apos;t run missed schedules</option>
-          <option value="once">once — run a single catch-up</option>
-          <option value="all">all — run every missed schedule</option>
-        </select>
+        <label htmlFor="job-catchup">Catch-up policy (missed runs while a server was offline)</label>
+        <SearchableSelect
+          id="job-catchup"
+          value={draft.catchupPolicy}
+          onChange={(v) => set({ catchupPolicy: v as JobDraft["catchupPolicy"] })}
+          options={[
+            { value: "skip", label: "skip — don't run missed schedules" },
+            { value: "once", label: "once — run a single catch-up" },
+            { value: "all", label: "all — run every missed schedule" },
+          ]}
+        />
       </div>
     </div>
   );
