@@ -111,6 +111,8 @@ Anything touching config bytes is admin, for reading as well as writing.
 | POST | `/connectors/:id/config` | admin | `{path, content, base_checksum, dry_run}`. |
 | GET | `/connectors/:id/snapshots?path=&limit=` | admin | Backup history, without the bytes. |
 | POST | `/connectors/:id/snapshots/:snapshotID/restore` | admin | |
+| GET | `/connectors/:id/ports` | viewer | Live listen sockets for systemd/pm2 connectors. Not cached; hits the agent each time. |
+| PUT | `/servers/:id/port-labels` | operator | Label a socket (`proto`, `address`, `port`, `label`). |
 
 Mutating calls return `{operation_id, status, message, steps}`. `status` is the agent's
 own verdict (`succeeded`, `failed`, `invalid`, `unauthorized`, `unsupported`) or a

@@ -520,8 +520,8 @@ arbitrary file read/write primitive wearing an nginx label.
 
 **Privilege.** The agent stays unprivileged by default. `privexec.go` escalates only
 through `sudo -n`, only for a closed list of binaries (systemctl, nginx, tee, cp, mv,
-install, ufw), and reports `unauthorized` rather than half-applying when the grant is
-missing. Docker is never escalated: daemon access is a group membership, and escalating
+install, ufw, ss, lsof), and reports `unauthorized` rather than half-applying when the
+grant is missing. Docker is never escalated: daemon access is a group membership, and escalating
 to root to reach a socket the operator deliberately did not grant would be the wrong
 default. Discovery reports capabilities honestly, so the UI disables what the agent
 genuinely cannot do.
@@ -532,6 +532,30 @@ and `connector_snapshots` (pre-apply bytes, pruned to the newest 20 per file). R
 travel back on the agent's EPHEMERAL direct-send path, not the durable outbox: a caller
 is blocked on an HTTP request, and a replayed result after a reconnect would resolve
 nothing.
+
+## Ports page
+
+The **Ports** sidebar item (and each connector's **Ports** tab) lists TCP listen sockets
+owned by **systemd** or **pm2** on enrolled servers. Labels are stored on the control
+plane (`0011_port_labels.sql`) and survive process restarts.
+
+Discovery path on the agent:
+
+1. Enumerate listen sockets with `ss -lntp`, falling back to `lsof` when `ss` omits
+   process columns (typical for unprivileged users).
+2. Retry with passwordless `sudo` for `ss` / `lsof` when the allowlist grants it.
+3. Map each socket PID to an owner:
+   - **systemd** — `systemctl show` for running units (MainPID, ControlPID, cgroup
+     `cgroup.procs`), plus cgroup fallback per PID.
+   - **pm2** — `pm2 jlist` PIDs and their descendant processes (cluster workers).
+
+**Close** on a port row stops the owning systemd unit or pm2 process; it does not send
+`kill` to a raw PID. Protected sockets (PID 1, the agent, `croncompose-agent.service`)
+are listed but cannot be closed from the UI.
+
+If connectors are present but the Ports page is empty, the agent user usually needs
+passwordless sudo for `/usr/bin/ss` and `/usr/bin/lsof`. See
+[operations.md](operations.md#agent-socket-inspection-ports-page).
 
 **Phase D, breadth.** apache, caddy, traefik, haproxy, system cron and ufw are designed
 above and have no providers yet. Adding one means a file in

@@ -1,15 +1,75 @@
-# CronCompose v0.0.2
+# CronCompose v0.0.3
 
-Installer, ports, and UI polish on top of v0.0.1.
+Reliable port discovery for systemd and pm2, plus in-app update visibility.
 
 ## Highlights
 
-- **Safer `.env` writing** — the installer quotes values only when needed (spaces, `#`, `$`, quotes). Ports, URLs, and hex secrets stay bare (`PORT=3107`) so PM2 and Next.js do not treat wrapper quotes as part of the value. Reinstalls unquote previously quoted secrets.
-- **Quoted env at runtime** — the control plane and `scripts/pm2-env.js` strip wrapping quotes from process env, so an already-quoted `.env` no longer crashes `PUBLIC_BASE_URL` parsing or binds the web UI to port 3000.
-- **Ports page** — new sidebar item listing listening sockets owned by systemd and pm2. Inline labels (saved on the control plane), full-width search, and Close still means stop (not kill). Labels also appear on the connector Ports tab.
-- **Searchable dropdowns** — native `<select>` controls (Secrets scope, job concurrency, catch-up, timezone, connector config path) are replaced with a combobox that matches input height and can be typed to filter.
-- **Sidebar** — the “Offline-first agents” promo hides once at least one server exists.
-- **Terminal chrome** — run logs and live sessions use a dark terminal frame; “Run a command” is a `$` prompt.
+- **Port discovery that works on real hosts** — the agent now falls back from `ss` to `lsof`, then retries with passwordless `sudo` when unprivileged `ss -p` omits process columns (common on Raspberry Pi and other boxes where the agent runs as an unprivileged user). systemd ownership is built from `systemctl show` (MainPID, cgroup PIDs) instead of relying only on per-socket cgroup reads. pm2 ownership includes child/worker PIDs, not just the top-level `jlist` pid.
+- **Agent installer sudoers** — `scripts/install-agent.sh` writes `/etc/sudoers.d/croncompose-agent` with grants for `ss` and `lsof` so the Ports page works out of the box on fresh agent installs.
+- **Clearer Ports empty state** — when systemd/pm2 connectors exist but no sockets are reported, the UI explains that services must be listening and socket inspection may need a sudo grant (instead of implying no connector was discovered).
+- **Updates panel (Settings)** — check for control-plane and agent updates from the UI, see what is current vs available, and trigger agent self-updates per server when policy allows.
+
+## Upgrade notes
+
+### Control plane (source install)
+
+```sh
+cd cron-compose
+git pull
+./croncompose-ctl.sh restart   # or rebuild if you changed Go/TS locally
+```
+
+No new database migrations in this release.
+
+### Agent (binary / package install)
+
+Reinstall or replace the agent binary, then restart the service:
+
+```sh
+# package install
+sudo dpkg -i croncompose-agent_v0.0.3_<arch>.deb
+sudo systemctl restart croncompose-agent
+
+# or curl installer
+curl -sSL ... AGENT_VERSION=v0.0.3 bash
+```
+
+### Agent (source / pm2 on the same host as the control plane)
+
+```sh
+cd cron-compose/agent
+go build -o bin/agent ./cmd/agent
+cd ..
+pm2 restart croncompose-agent
+# or: ./croncompose-ctl.sh restart
+```
+
+### Socket inspection sudo (existing installs)
+
+If the Ports page stays empty after upgrading the agent, grant the **user that runs the agent** passwordless sudo for socket tools. The standalone installer creates a `croncompose` user; a source install usually runs the agent as your login user (e.g. `pi`):
+
+```sh
+# standalone agent user (typical package install)
+sudo tee /etc/sudoers.d/croncompose-agent <<'EOF'
+croncompose ALL=(root) NOPASSWD: /usr/bin/ss, /usr/sbin/ss, /usr/bin/lsof
+EOF
+
+# source install as pi (Raspberry Pi dev box)
+sudo tee /etc/sudoers.d/croncompose-agent <<'EOF'
+pi ALL=(root) NOPASSWD: /usr/bin/ss, /usr/bin/lsof
+EOF
+
+sudo chmod 0440 /etc/sudoers.d/croncompose-agent
+sudo visudo -c
+```
+
+Test:
+
+```sh
+sudo -n ss -H -lntp | head
+```
+
+You should see `users:(("name",pid=...))` on listen lines.
 
 ## Agent binaries (this release)
 
@@ -19,10 +79,10 @@ Pre-built static Linux binaries are attached to this GitHub release:
 |-------|----------|
 | `croncompose-agent-linux-amd64` | Linux x86_64 |
 | `croncompose-agent-linux-arm64` | Linux ARM64 |
-| `croncompose-agent_v0.0.2_amd64.deb` | Debian/Ubuntu amd64 |
-| `croncompose-agent_v0.0.2_arm64.deb` | Debian/Ubuntu arm64 |
-| `croncompose-agent_v0.0.2_amd64.apk` | Alpine amd64 |
-| `croncompose-agent_v0.0.2_arm64.apk` | Alpine arm64 |
+| `croncompose-agent_v0.0.3_amd64.deb` | Debian/Ubuntu amd64 |
+| `croncompose-agent_v0.0.3_arm64.deb` | Debian/Ubuntu arm64 |
+| `croncompose-agent_v0.0.3_amd64.apk` | Alpine amd64 |
+| `croncompose-agent_v0.0.3_arm64.apk` | Alpine arm64 |
 
 Install on a remote server with the enrollment token from the UI:
 
@@ -31,27 +91,14 @@ curl -sSL https://raw.githubusercontent.com/workvar/cron-compose/main/scripts/in
   sudo TOKEN=<token> \
        CONTROL_PLANE_HTTP=https://<host>/api/v1 \
        CONTROL_PLANE_ADDR=<host>:9090 \
-       AGENT_VERSION=v0.0.2 bash
+       AGENT_VERSION=v0.0.3 bash
 ```
 
 Or download the binary directly from this release's assets.
 
-## Control plane install
-
-Clone the repo and run the interactive installer on the machine that will host the control plane:
-
-```sh
-git clone https://github.com/workvar/cron-compose.git
-cd cron-compose
-./install/install.sh
-```
-
-Requires Go 1.25+, Node 20+, and PostgreSQL (the installer can install Postgres for you on supported Linux distros). Existing installs: pull, rebuild the control plane so migration `0011_port_labels.sql` applies, then restart PM2.
-
 ## Documentation
 
-- [Architecture](docs/architecture.md)
-- [API reference](docs/api.md)
-- [Installer guide](install/README.md)
-- [Operations](docs/operations.md)
-- [Roadmap](docs/roadmap.md)
+- [Connectors — Ports](docs/connectors.md#ports-page)
+- [Operations — agent socket inspection](docs/operations.md#agent-socket-inspection-ports-page)
+- [Wiki — Connectors](https://github.com/workvar/cron-compose/wiki/Connectors)
+- [Wiki — Releases](https://github.com/workvar/cron-compose/wiki/Releases)

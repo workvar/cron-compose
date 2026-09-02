@@ -89,7 +89,40 @@ The unit hardens the runtime: `NoNewPrivileges`, `ProtectSystem=full`,
 `ProtectHome=true`, `PrivateTmp=true`.
 
 For a one-off install (no apt/apk available), the existing `scripts/install-agent.sh`
-still works.
+still works. On Linux it also writes `/etc/sudoers.d/croncompose-agent` with grants
+for `systemctl`, `systemd-analyze`, `ss`, and `lsof` when that file does not already
+exist.
+
+## Agent socket inspection (Ports page)
+
+The Ports page asks the agent to list TCP listen sockets and attribute them to systemd
+units or pm2 processes. Unprivileged `ss -p` often hides process columns; the agent
+falls back to `lsof` and then passwordless `sudo` for `ss` / `lsof` when configured.
+
+Grant the **user that runs the agent** (not necessarily root):
+
+| Install style | Typical agent user | Sudoers file |
+|---------------|-------------------|--------------|
+| `scripts/install-agent.sh` | `croncompose` | Created automatically |
+| Source install (`pm2` / `systemd-setup.sh`) | Your login user (e.g. `pi`) | Add manually |
+
+Example for a Raspberry Pi source install running the agent as `pi`:
+
+```sh
+sudo tee /etc/sudoers.d/croncompose-agent <<'EOF'
+pi ALL=(root) NOPASSWD: /usr/bin/ss, /usr/bin/lsof
+EOF
+sudo chmod 0440 /etc/sudoers.d/croncompose-agent
+sudo visudo -c
+```
+
+Verify:
+
+```sh
+sudo -n ss -H -lntp | head
+```
+
+Listen lines should include `users:(("process",pid=N,...))`.
 
 ## Metrics
 
