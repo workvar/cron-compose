@@ -13,6 +13,7 @@ const PORT_KINDS = new Set(["systemd", "pm2"]);
 
 export default function PortsPage() {
   const [rows, setRows] = useState<MappedPort[]>([]);
+  const [connectorCount, setConnectorCount] = useState(0);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -36,6 +37,7 @@ export default function PortsPage() {
         | null;
       if (!connRes.ok) throw new Error(body?.error?.message ?? `HTTP ${connRes.status}`);
       const connectors = (body?.items ?? []).filter((c) => PORT_KINDS.has(c.kind));
+      setConnectorCount(connectors.length);
 
       const groups = await Promise.all(connectors.map(async (c) => {
         const res = await fetch(`/api/connectors/${c.id}/ports`);
@@ -54,6 +56,7 @@ export default function PortsPage() {
       setRows(groups.flat());
     } catch (e) {
       setRows([]);
+      setConnectorCount(0);
       setLoadError((e as Error).message);
     } finally {
       setLoading(false);
@@ -111,8 +114,9 @@ export default function PortsPage() {
       {!loading && !loadError && rows.length === 0 && (
         <div className="panel">
           <div className="empty">
-            No listening ports yet. They appear once a systemd or pm2 connector is
-            discovered. <Link href="/connectors">Open connectors</Link>
+            {connectorCount > 0
+              ? "No listening ports reported for systemd or pm2 processes on your servers. Ensure services are running and the agent can inspect sockets (grant passwordless sudo for ss and lsof if needed)."
+              : <>No listening ports yet. They appear once a systemd or pm2 connector is discovered. <Link href="/connectors">Open connectors</Link></>}
           </div>
         </div>
       )}

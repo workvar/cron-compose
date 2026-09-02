@@ -124,6 +124,18 @@ EOF
     DATA_DIR="$DATA_DIR" \
     "$BIN_PATH" enroll --token="$TOKEN"
 
+  SUDOERS=/etc/sudoers.d/croncompose-agent
+  if [[ ! -f "$SUDOERS" ]]; then
+    echo "==> granting socket inspection for the Ports page"
+    cat >"$SUDOERS" <<'EOF'
+# CronCompose agent: lifecycle and config (extend as needed for nginx, etc.)
+croncompose ALL=(root) NOPASSWD: /usr/bin/systemctl, /usr/bin/systemd-analyze
+# Listening-port discovery for systemd/pm2 connectors
+croncompose ALL=(root) NOPASSWD: /usr/bin/ss, /usr/sbin/ss, /usr/bin/lsof
+EOF
+    chmod 0440 "$SUDOERS"
+  fi
+
   echo "==> starting service"
   systemctl daemon-reload
   systemctl enable --now croncompose-agent.service

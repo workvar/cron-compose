@@ -153,16 +153,7 @@ func pm2Object(p pm2Proc) Resource {
 }
 
 func (p *pm2Provider) Ports(ctx context.Context, inst Instance) Result {
-	owners := map[int]portOwner{}
-	for _, pr := range p.list(ctx) {
-		if pr.Pid <= 0 {
-			continue
-		}
-		name := pr.Name
-		if name == "" {
-			name = strconv.Itoa(pr.PmID)
-		}
-		owners[pr.Pid] = portOwner{Ref: strconv.Itoa(pr.PmID), Name: name}
-	}
+	procs := p.list(ctx)
+	owners := pm2OwnerMap(procs)
 	return portsResult(attachOwners(listeningSockets(ctx), owners, os.Getpid()))
 }

@@ -104,19 +104,6 @@ func (p *systemdProvider) listUnits(ctx context.Context) (string, error) {
 
 func (p *systemdProvider) Ports(ctx context.Context, inst Instance) Result {
 	socks := listeningSockets(ctx)
-	owners := map[int]portOwner{}
-	for _, s := range socks {
-		if s.PID <= 1 {
-			continue
-		}
-		unit := unitForPID(s.PID)
-		if unit == "" {
-			continue
-		}
-		owners[s.PID] = portOwner{
-			Ref:  unit,
-			Name: strings.TrimSuffix(unit, ".service"),
-		}
-	}
+	owners := systemdOwnerMap(ctx)
 	return portsResult(attachOwners(socks, owners, os.Getpid()))
 }

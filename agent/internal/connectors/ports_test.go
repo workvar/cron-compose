@@ -118,3 +118,38 @@ func TestAttachOwnersKeepsOnlyKnownPidsAndMarksProtected(t *testing.T) {
 		t.Errorf("agent row should be listed but protected: %+v", got[1])
 	}
 }
+
+func TestParseSystemctlShowOwners(t *testing.T) {
+	raw := strings.Join([]string{
+		"MainPID=823",
+		"ControlPID=0",
+		"ExecMainPID=823",
+		"Unit=ssh.service",
+		"ControlGroup=/system.slice/ssh.service",
+		"",
+		"MainPID=1452",
+		"ControlPID=0",
+		"ExecMainPID=1452",
+		"Unit=api.service",
+		"ControlGroup=/system.slice/api.service",
+	}, "\n")
+	got := parseSystemctlShowOwners(raw)
+	if len(got) < 2 {
+		t.Fatalf("expected at least 2 owners, got %d (%+v)", len(got), got)
+	}
+	if o, ok := got[823]; !ok || o.Ref != "ssh.service" || o.Name != "ssh" {
+		t.Errorf("ssh: %+v ok=%v", o, ok)
+	}
+	if o, ok := got[1452]; !ok || o.Ref != "api.service" || o.Name != "api" {
+		t.Errorf("api: %+v ok=%v", o, ok)
+	}
+}
+
+func TestSystemdDisplayName(t *testing.T) {
+	if systemdDisplayName("nginx.service") != "nginx" {
+		t.Fatal("service suffix")
+	}
+	if systemdDisplayName("docker.socket") != "docker" {
+		t.Fatal("socket suffix")
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -141,6 +142,11 @@ func systemdUnitFromCgroup(raw string) string {
 	return ""
 }
 
+func systemdDisplayName(unit string) string {
+	name := strings.TrimSuffix(unit, ".service")
+	return strings.TrimSuffix(name, ".socket")
+}
+
 func portIsProtected(s listenSock, unit string, selfPID int) bool {
 	if s.PID <= 1 || (selfPID > 0 && s.PID == selfPID) {
 		return true
@@ -158,7 +164,11 @@ func attachOwners(socks []listenSock, owners map[int]portOwner, selfPID int) []L
 	for _, s := range socks {
 		o, ok := owners[s.PID]
 		if !ok {
-			continue
+			unit := unitForPID(s.PID)
+			if unit == "" {
+				continue
+			}
+			o = portOwner{Ref: unit, Name: systemdDisplayName(unit)}
 		}
 		out = append(out, ListenPort{
 			Proto:     s.Proto,
@@ -177,25 +187,60 @@ func attachOwners(socks []listenSock, owners map[int]portOwner, selfPID int) []L
 	return out
 }
 
-func listeningSockets(ctx context.Context) []listenSock {
-	if has("ss") {
-		out, err := run(ctx, "ss", "-H", "-lntp")
+func ssListen(ctx context.Context, privileged bool) []listenSock {
+	if !has("ss") {
+		return nil
+	}
+	var out string
+	var err error
+	if privileged {
+		out, _, err = privRun(ctx, "ss", "-H", "-lntp")
+		if err != nil || out == "" {
+			out, _, err = privRun(ctx, "ss", "-lntp")
+		}
+	} else {
+		out, err = run(ctx, "ss", "-H", "-lntp")
 		if err != nil || out == "" {
 			out, err = run(ctx, "ss", "-lntp")
 		}
-		if err == nil {
-			if socks := parseSsListen(out); len(socks) > 0 {
-				return socks
-			}
-		}
 	}
-	if has("lsof") {
-		out, err := run(ctx, "lsof", "-nP", "-iTCP", "-sTCP:LISTEN")
-		if err == nil {
-			return parseLsofListen(out)
-		}
+	if err != nil {
+		return nil
 	}
-	return nil
+	return parseSsListen(out)
+}
+
+func lsofListen(ctx context.Context, privileged bool) []listenSock {
+	if !has("lsof") {
+		return nil
+	}
+	var out string
+	var err error
+	if privileged {
+		out, _, err = privRun(ctx, "lsof", "-nP", "-iTCP", "-sTCP:LISTEN")
+	} else {
+		out, err = run(ctx, "lsof", "-nP", "-iTCP", "-sTCP:LISTEN")
+	}
+	if err != nil {
+		return nil
+	}
+	return parseLsofListen(out)
+}
+
+// listeningSockets enumerates TCP listen sockets on the host. Unprivileged `ss -p`
+// often omits process columns, so we fall back to lsof and then privileged retries
+// when the agent has a sudo grant for ss or lsof.
+func listeningSockets(ctx context.Context) []listenSock {
+	if socks := ssListen(ctx, false); len(socks) > 0 {
+		return socks
+	}
+	if socks := lsofListen(ctx, false); len(socks) > 0 {
+		return socks
+	}
+	if socks := ssListen(ctx, true); len(socks) > 0 {
+		return socks
+	}
+	return lsofListen(ctx, true)
 }
 
 func unitForPID(pid int) string {
@@ -204,6 +249,147 @@ func unitForPID(pid int) string {
 		return ""
 	}
 	return systemdUnitFromCgroup(string(b))
+}
+
+func pidsInCgroup(controlGroup string) []int {
+	if controlGroup == "" || controlGroup == "/" {
+		return nil
+	}
+	rel := strings.TrimPrefix(controlGroup, "/")
+	paths := []string{
+		filepath.Join("/sys/fs/cgroup", rel, "cgroup.procs"),
+	}
+	if rel != "" {
+		paths = append(paths, filepath.Join("/sys/fs/cgroup/unified", rel, "cgroup.procs"))
+	}
+	for _, path := range paths {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var pids []int
+		for _, line := range strings.Split(string(b), "\n") {
+			pid, err := strconv.Atoi(strings.TrimSpace(line))
+			if err == nil && pid > 1 {
+				pids = append(pids, pid)
+			}
+		}
+		if len(pids) > 0 {
+			return pids
+		}
+	}
+	return nil
+}
+
+func readChildPIDs(pid int) []int {
+	path := filepath.Join("/proc", strconv.Itoa(pid), "task", strconv.Itoa(pid), "children")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var out []int
+	for _, field := range strings.Fields(string(b)) {
+		child, err := strconv.Atoi(field)
+		if err == nil && child > 1 {
+			out = append(out, child)
+		}
+	}
+	return out
+}
+
+// descendantPIDs returns root and every descendant process, best-effort.
+func descendantPIDs(root int) []int {
+	if root <= 1 {
+		return nil
+	}
+	seen := map[int]bool{root: true}
+	queue := []int{root}
+	var out []int
+	for len(queue) > 0 && len(out) < 500 {
+		pid := queue[0]
+		queue = queue[1:]
+		out = append(out, pid)
+		for _, child := range readChildPIDs(pid) {
+			if !seen[child] {
+				seen[child] = true
+				queue = append(queue, child)
+			}
+		}
+	}
+	return out
+}
+
+func parseSystemctlShowOwners(raw string) map[int]portOwner {
+	owners := map[int]portOwner{}
+	var block []string
+	flush := func() {
+		if len(block) == 0 {
+			return
+		}
+		props := map[string]string{}
+		for _, line := range block {
+			k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
+			if ok {
+				props[k] = strings.TrimSpace(v)
+			}
+		}
+		block = nil
+		unit := props["Unit"]
+		if unit == "" {
+			return
+		}
+		o := portOwner{Ref: unit, Name: systemdDisplayName(unit)}
+		for _, key := range []string{"MainPID", "ControlPID", "ExecMainPID"} {
+			pid, _ := strconv.Atoi(props[key])
+			if pid > 1 {
+				owners[pid] = o
+			}
+		}
+		for _, pid := range pidsInCgroup(props["ControlGroup"]) {
+			owners[pid] = o
+		}
+	}
+	for _, line := range strings.Split(raw, "\n") {
+		if strings.TrimSpace(line) == "" {
+			flush()
+			continue
+		}
+		block = append(block, line)
+	}
+	flush()
+	return owners
+}
+
+func systemdOwnerMap(ctx context.Context) map[int]portOwner {
+	if !systemdAvailable() {
+		return map[int]portOwner{}
+	}
+	out, err := run(ctx, "systemctl", "show",
+		"--type=service", "--type=socket",
+		"-p", "MainPID", "-p", "ControlPID", "-p", "ExecMainPID",
+		"-p", "Unit", "-p", "ControlGroup")
+	if err != nil {
+		return map[int]portOwner{}
+	}
+	return parseSystemctlShowOwners(out)
+}
+
+func pm2OwnerMap(procs []pm2Proc) map[int]portOwner {
+	owners := map[int]portOwner{}
+	for _, pr := range procs {
+		if pr.Pid <= 0 {
+			continue
+		}
+		name := pr.Name
+		if name == "" {
+			name = strconv.Itoa(pr.PmID)
+		}
+		o := portOwner{Ref: strconv.Itoa(pr.PmID), Name: name}
+		for _, pid := range descendantPIDs(pr.Pid) {
+			owners[pid] = o
+		}
+	}
+	return owners
 }
 
 func portsResult(ports []ListenPort) Result {
