@@ -144,6 +144,11 @@ restart_source() {
   step "Restarting services (croncompose-ctl.sh restart)"
   [ -x "$REPO_ROOT/croncompose-ctl.sh" ] || die "croncompose-ctl.sh not found or not executable"
   "$REPO_ROOT/croncompose-ctl.sh" restart || die "croncompose-ctl.sh restart failed"
+  if [ "${CC_ENABLE_AGENT:-0}" = 1 ] && [ "$(uname -s)" = "Linux" ]; then
+    # shellcheck source=install/lib/agent_sudoers.sh
+    . "$REPO_ROOT/install/lib/agent_sudoers.sh"
+    install_agent_sudoers "$(id -un)" || true
+  fi
 }
 
 run_source() {

@@ -168,6 +168,17 @@ one-time token, enrolls, and starts the agent). On Windows the installer sets up
 control plane only; run agents on Linux/macOS hosts and point them at this control
 plane (see `scripts/install-agent.sh`).
 
+On Linux, installers also write `/etc/sudoers.d/croncompose-agent` so the agent can
+inspect listen sockets (Ports page) and drive connectors (`systemctl`, `nginx`, …).
+The helper is `install/lib/agent_sudoers.sh`; run it manually to refresh:
+
+```sh
+sudo ./install/lib/agent_sudoers.sh "$(whoami)"    # source install (pm2 user)
+sudo ./install/lib/agent_sudoers.sh croncompose    # standalone agent package
+```
+
+`./update.sh` re-applies this when `CC_ENABLE_AGENT=1`.
+
 ## Non-interactive install
 
 Pass `--non-interactive` (PowerShell: `-NonInteractive`) to take defaults without

@@ -13,6 +13,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LIB_DIR="$SCRIPT_DIR/lib"
+# shellcheck source=lib/agent_sudoers.sh
+. "$LIB_DIR/agent_sudoers.sh"
+
 ENV_FILE="$REPO_ROOT/.env"
 SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
 
@@ -83,6 +87,9 @@ if [ "$CC_ENABLE_AGENT" = "1" ]; then
   } > "$SYSTEMD_DIR/croncompose-agent.service"
   echo "  + croncompose-agent.service"
   UNITS="$UNITS croncompose-agent.service"
+  if [ "$writing_to_etc" = "1" ]; then
+    install_agent_sudoers "$SVC_USER" || true
+  fi
 fi
 
 if [ "${NO_ENABLE:-0}" = "1" ] || ! command -v systemctl >/dev/null 2>&1; then

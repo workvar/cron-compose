@@ -553,8 +553,8 @@ Discovery path on the agent:
 `kill` to a raw PID. Protected sockets (PID 1, the agent, `croncompose-agent.service`)
 are listed but cannot be closed from the UI.
 
-If connectors are present but the Ports page is empty, the agent user usually needs
-passwordless sudo for `/usr/bin/ss` and `/usr/bin/lsof`. See
+If connectors are present but the Ports page is empty, re-run the installer or
+`sudo ./install/lib/agent_sudoers.sh <agent-user>` on the server. See
 [operations.md](operations.md#agent-socket-inspection-ports-page).
 
 **Phase D, breadth.** apache, caddy, traefik, haproxy, system cron and ufw are designed

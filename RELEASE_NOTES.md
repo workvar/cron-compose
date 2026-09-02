@@ -46,30 +46,13 @@ pm2 restart croncompose-agent
 
 ### Socket inspection sudo (existing installs)
 
-If the Ports page stays empty after upgrading the agent, grant the **user that runs the agent** passwordless sudo for socket tools. The standalone installer creates a `croncompose` user; a source install usually runs the agent as your login user (e.g. `pi`):
+Re-run any installer path to refresh `/etc/sudoers.d/croncompose-agent`, or:
 
 ```sh
-# standalone agent user (typical package install)
-sudo tee /etc/sudoers.d/croncompose-agent <<'EOF'
-croncompose ALL=(root) NOPASSWD: /usr/bin/ss, /usr/sbin/ss, /usr/bin/lsof
-EOF
-
-# source install as pi (Raspberry Pi dev box)
-sudo tee /etc/sudoers.d/croncompose-agent <<'EOF'
-pi ALL=(root) NOPASSWD: /usr/bin/ss, /usr/bin/lsof
-EOF
-
-sudo chmod 0440 /etc/sudoers.d/croncompose-agent
-sudo visudo -c
+sudo ./install/lib/agent_sudoers.sh <agent-user>   # e.g. pi or croncompose
 ```
 
-Test:
-
-```sh
-sudo -n ss -H -lntp | head
-```
-
-You should see `users:(("name",pid=...))` on listen lines.
+Test: `sudo -n ss -H -lntp | head` should show `users:(("name",pid=...))` on listen lines.
 
 ## Agent binaries (this release)
 
