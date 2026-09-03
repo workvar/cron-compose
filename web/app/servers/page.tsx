@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { apiGet } from "@/lib/api";
+import { apiGet, ApiError } from "@/lib/api";
 import type { ListResponse, Server } from "@/lib/types";
 import { ServerCard } from "@/components/ServerCard";
 import { IconPlus } from "@/components/icons";
@@ -7,10 +7,12 @@ import { IconPlus } from "@/components/icons";
 export default async function ServersPage() {
   let servers: Server[] = [];
   let error: string | null = null;
+  let unauthorized = false;
   try {
     const data = await apiGet<ListResponse<Server>>("/servers");
     servers = data.items;
   } catch (e) {
+    unauthorized = e instanceof ApiError && e.unauthorized;
     error = (e as Error).message;
   }
 
@@ -27,7 +29,11 @@ export default async function ServersPage() {
       </div>
 
       {error && (
-        <div className="form-error">Could not reach the control plane: <code>{error}</code></div>
+        <div className="form-error">
+          {unauthorized
+            ? <>Your session expired. <Link href="/login">Sign in</Link> and try again.</>
+            : <>Could not reach the control plane: <code>{error}</code></>}
+        </div>
       )}
 
       {!error && servers.length === 0 && (

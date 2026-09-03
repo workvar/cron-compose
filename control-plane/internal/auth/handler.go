@@ -85,13 +85,7 @@ func (h *handler) login(c fiber.Ctx) error {
 }
 
 func (h *handler) logout(c fiber.Ctx) error {
-	c.Cookie(&fiber.Cookie{
-		Name:     cookieName,
-		Value:    "",
-		Path:     "/",
-		Expires:  time.Unix(0, 0),
-		HTTPOnly: true,
-	})
+	clearSession(c)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 

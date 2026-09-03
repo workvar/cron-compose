@@ -4,6 +4,12 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const PUBLIC_PATHS = ["/login"];
 
+function next(req: NextRequest) {
+  const headers = new Headers(req.headers);
+  headers.set("x-cc-pathname", req.nextUrl.pathname);
+  return NextResponse.next({ request: { headers } });
+}
+
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -17,7 +23,7 @@ export function proxy(req: NextRequest) {
     pathname.startsWith("/apple-icon") ||
     pathname.includes(".")
   ) {
-    return NextResponse.next();
+    return next(req);
   }
 
   const hasSession = req.cookies.has("cc_session");
@@ -27,13 +33,10 @@ export function proxy(req: NextRequest) {
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }
-  if (hasSession && pathname === "/login") {
-    const url = req.nextUrl.clone();
-    url.pathname = "/";
-    url.search = "";
-    return NextResponse.redirect(url);
-  }
-  return NextResponse.next();
+  // Do not bounce /login just because a cookie exists: after a restart the cookie
+  // is often stale (bad HMAC). Forcing /login → / would loop and POST /servers
+  // would keep returning 401. The login page redirects itself once /me succeeds.
+  return next(req);
 }
 
 export const config = {

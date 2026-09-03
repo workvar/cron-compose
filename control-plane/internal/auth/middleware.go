@@ -1,7 +1,9 @@
 package auth
 
 import (
+	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -23,27 +25,43 @@ const (
 	ctxRole   ctxKey = "role"
 )
 
+func clearSession(c fiber.Ctx) {
+	c.Cookie(&fiber.Cookie{
+		Name:     cookieName,
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		HTTPOnly: true,
+		SameSite: "Lax",
+	})
+}
+
+func unauthenticated(c fiber.Ctx, message string) error {
+	clearSession(c)
+	return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+		"error": fiber.Map{"code": "unauthenticated", "message": message},
+	})
+}
+
 // RequireAuth verifies the session cookie and attaches user_id + role into Locals.
-// Unauthenticated requests get 401.
+// Unauthenticated requests get 401 and the stale cookie is cleared so the next
+// visit can reach /login.
 func RequireAuth(secret []byte, store *Store, log *slog.Logger) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		cookie := c.Cookies(cookieName)
 		if cookie == "" {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": fiber.Map{"code": "unauthenticated", "message": "missing session"},
-			})
+			return unauthenticated(c, "missing session")
 		}
 		sess, err := ParseSession(secret, cookie)
 		if err != nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": fiber.Map{"code": "unauthenticated", "message": err.Error()},
-			})
+			return unauthenticated(c, err.Error())
 		}
 		u, err := store.GetByID(c.Context(), sess.UserID)
 		if err != nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": fiber.Map{"code": "unauthenticated", "message": "unknown user"},
-			})
+			if log != nil && !errors.Is(err, ErrNotFound) {
+				log.Warn("session user lookup failed", "user_id", sess.UserID, "err", err)
+			}
+			return unauthenticated(c, "unknown user")
 		}
 		c.Locals(ctxUserID, u.ID)
 		c.Locals(ctxRole, u.Role)

@@ -22,11 +22,14 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/auth/config")
+    fetch("/api/me", { credentials: "include" })
+      .then((r) => { if (r.ok) router.replace(next); })
+      .catch(() => {});
+    fetch("/api/auth/config", { credentials: "include" })
       .then((r) => r.json() as Promise<AuthConfig>)
       .then(setAuthCfg)
       .catch(() => setAuthCfg({ password_login: true, oidc_enabled: false, oidc_start_url: "" }));
-  }, []);
+  }, [next, router]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -35,6 +38,7 @@ function LoginForm() {
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, password }),
       });

@@ -21,10 +21,14 @@ export default function NewServerPage() {
     try {
       const res = await fetch("/api/servers", {
         method: "POST",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name, description }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
+      }
       setResult((await res.json()) as CreateServerResponse);
     } catch (e) {
       setError((e as Error).message);

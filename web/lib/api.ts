@@ -42,7 +42,12 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   }
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    throw new ApiError(res.status, `${method} ${path}: ${res.status} ${txt}`);
+    let detail = txt;
+    try {
+      const parsed = JSON.parse(txt) as { error?: { message?: string } };
+      if (parsed?.error?.message) detail = parsed.error.message;
+    } catch { /* keep raw body */ }
+    throw new ApiError(res.status, `${method} ${path}: ${res.status} ${detail}`.trim());
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
