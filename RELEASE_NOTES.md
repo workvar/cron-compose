@@ -1,79 +1,30 @@
-# CronCompose v0.0.3
+# CronCompose v0.0.4
 
-Reliable port discovery for systemd and pm2, plus in-app update visibility.
+Releases no longer ship prebuilt binaries. Hosts clone the tag and build locally, and Settings can update a live stack without GitHub Actions minutes.
 
 ## Highlights
 
-- **Port discovery that works on real hosts** — the agent now falls back from `ss` to `lsof`, then retries with passwordless `sudo` when unprivileged `ss -p` omits process columns (common on Raspberry Pi and other boxes where the agent runs as an unprivileged user). systemd ownership is built from `systemctl show` (MainPID, cgroup PIDs) instead of relying only on per-socket cgroup reads. pm2 ownership includes child/worker PIDs, not just the top-level `jlist` pid.
-- **Agent installer sudoers** — `scripts/install-agent.sh` writes `/etc/sudoers.d/croncompose-agent` with grants for `ss` and `lsof` so the Ports page works out of the box on fresh agent installs.
-- **Clearer Ports empty state** — when systemd/pm2 connectors exist but no sockets are reported, the UI explains that services must be listening and socket inspection may need a sudo grant (instead of implying no connector was discovered).
-- **Updates panel (Settings)** — check for control-plane and agent updates from the UI, see what is current vs available, and trigger agent self-updates per server when policy allows.
+- **Notes-only GitHub releases** — tagging `v*` publishes `RELEASE_NOTES.md` plus a baked `install-agent.sh` (and a Windows stub). No agent binaries, `.deb`, or `.apk` packages are built in CI.
+- **Source agent installer** — `install-agent.sh` clones the release tag, `go build`s the agent, enrolls it, installs the service, then deletes the source tree. Needs `git` and Go 1.25+ on the target.
+- **In-place stack updates** — Settings polls GitHub about once a day (or **Check now**). **Update** on the control-plane host checks out the tag, rebuilds web + control plane + agent, restarts, and strips leftover build inputs. A fullscreen overlay stays up until the stack is back.
+- **Remote agents rebuild themselves** — the same Update button tells a standalone agent to clone the tag, rebuild its binary, swap it, and discard the clone.
 
 ## Upgrade notes
 
 ### Control plane (source install)
 
+From Settings → Updates, click **Update** on this host. Or by hand:
+
 ```sh
 cd cron-compose
-git pull
-./croncompose-ctl.sh restart   # or rebuild if you changed Go/TS locally
+git fetch --tags
+git checkout --force v0.0.4
+./update.sh --no-pull
 ```
 
 No new database migrations in this release.
 
-### Agent (binary / package install)
-
-Reinstall or replace the agent binary, then restart the service:
-
-```sh
-# package install
-sudo dpkg -i croncompose-agent_v0.0.3_<arch>.deb
-sudo systemctl restart croncompose-agent
-
-# or curl installer
-curl -sSL ... AGENT_VERSION=v0.0.3 bash
-```
-
-### Agent (source / pm2 on the same host as the control plane)
-
-```sh
-cd cron-compose/agent
-go build -o bin/agent ./cmd/agent
-cd ..
-pm2 restart croncompose-agent
-# or: ./croncompose-ctl.sh restart
-```
-
-### Socket inspection sudo (existing installs)
-
-If the Ports page stays empty after upgrading the agent, grant the **user that runs the agent** passwordless sudo for socket tools. The standalone installer creates a `croncompose` user; a source install usually runs the agent as your login user (e.g. `pi`):
-
-```sh
-# standalone agent user (typical package install)
-sudo tee /etc/sudoers.d/croncompose-agent <<'EOF'
-croncompose ALL=(root) NOPASSWD: /usr/bin/ss, /usr/sbin/ss, /usr/bin/lsof
-EOF
-
-# source install as pi (Raspberry Pi dev box)
-sudo tee /etc/sudoers.d/croncompose-agent <<'EOF'
-pi ALL=(root) NOPASSWD: /usr/bin/ss, /usr/bin/lsof
-EOF
-
-sudo chmod 0440 /etc/sudoers.d/croncompose-agent
-sudo visudo -c
-```
-
-Test:
-
-```sh
-sudo -n ss -H -lntp | head
-```
-
-You should see `users:(("name",pid=...))` on listen lines.
-
-## Agent binaries (this release)
-
-This release is **notes-only**: no prebuilt agent binaries. Install with:
+### Agent (Linux / macOS)
 
 ```sh
 curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh | \
@@ -83,11 +34,22 @@ curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/insta
        bash
 ```
 
-Or clone the tag and `go build` the agent yourself.
+Windows is not supported for the agent (Unix process APIs). `install-agent.ps1` only says so.
+
+### Existing installs
+
+Set these if they are not already in `.env` (new installs write them automatically):
+
+```
+GITHUB_RELEASE_REPO=workvar/cron-compose
+INSTALL_SCRIPT_URL=https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh
+AGENT_UPDATE_POLL_MINUTES=1440
+CC_SOURCE_ROOT=<path-to-checkout>
+```
+
+The local control-plane agent needs label `croncompose.role=stack` for the updating overlay (new installer enrollments set this).
 
 ## Documentation
 
-- [Connectors — Ports](docs/connectors.md#ports-page)
-- [Operations — agent socket inspection](docs/operations.md#agent-socket-inspection-ports-page)
-- [Wiki — Connectors](https://github.com/workvar/cron-compose/wiki/Connectors)
-- [Wiki — Releases](https://github.com/workvar/cron-compose/wiki/Releases)
+- [Operations — agent packaging](docs/operations.md#agent-packaging)
+- [Deployment — updates](DEPLOYMENT.md#updates-source-builds)
