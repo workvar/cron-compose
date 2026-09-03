@@ -20,13 +20,13 @@ func TestPublicBaseURLDerivesEverything(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got, want := c.PublicHTTPURL, "https://cron.example.com/api/v1"; got != want {
+	if got, want := c.PublicHTTPURL, "https://cron.example.com/api"; got != want {
 		t.Errorf("PublicHTTPURL = %q, want %q", got, want)
 	}
 	if got, want := c.PublicGRPCAddr, "cron.example.com:9443"; got != want {
 		t.Errorf("PublicGRPCAddr = %q, want %q", got, want)
 	}
-	if got, want := c.OIDCRedirectURL, "https://cron.example.com/api/v1/auth/oidc/callback"; got != want {
+	if got, want := c.OIDCRedirectURL, "https://cron.example.com/api/auth/oidc/callback"; got != want {
 		t.Errorf("OIDCRedirectURL = %q, want %q", got, want)
 	}
 	if !contains(c.TLSHosts, "cron.example.com") {
@@ -46,7 +46,7 @@ func TestPublicBaseURLWithPort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got, want := c.PublicHTTPURL, "http://raspberrypi.local:8080/api/v1"; got != want {
+	if got, want := c.PublicHTTPURL, "http://raspberrypi.local:8080/api"; got != want {
 		t.Errorf("PublicHTTPURL = %q, want %q", got, want)
 	}
 	if got, want := c.PublicGRPCAddr, "raspberrypi.local:9090"; got != want {
@@ -78,7 +78,7 @@ func TestNoBaseURLKeepsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got, want := c.PublicHTTPURL, "http://localhost:8080/api/v1"; got != want {
+	if got, want := c.PublicHTTPURL, "http://localhost:8080/api"; got != want {
 		t.Errorf("PublicHTTPURL = %q, want default %q", got, want)
 	}
 }
@@ -103,7 +103,7 @@ func TestPublicBaseURLStripsWrapperQuotes(t *testing.T) {
 	if got, want := c.HTTPAddr, ":8787"; got != want {
 		t.Errorf("HTTPAddr = %q, want %q", got, want)
 	}
-	if got, want := c.PublicHTTPURL, "https://admin.example.com/api/v1"; got != want {
+	if got, want := c.PublicHTTPURL, "https://admin.example.com/api"; got != want {
 		t.Errorf("PublicHTTPURL = %q, want %q", got, want)
 	}
 }

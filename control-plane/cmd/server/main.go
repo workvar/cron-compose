@@ -205,11 +205,14 @@ func run(seedAndExit bool) error {
 }
 
 // publicUIBase is the origin notifications link back to. PublicHTTPURL points at the
-// REST API (it ends in /api/v1), so deep links have to be built from the base URL, not
+// REST API (/api or /api/v1), so deep links have to be built from the base URL, not
 // from it. An unset base yields an empty string and links are simply omitted.
 func publicUIBase(cfg config.Config) string {
 	if cfg.PublicBaseURL != "" {
 		return strings.TrimSuffix(cfg.PublicBaseURL, "/")
 	}
-	return strings.TrimSuffix(strings.TrimSuffix(cfg.PublicHTTPURL, "/"), "/api/v1")
+	u := strings.TrimSuffix(cfg.PublicHTTPURL, "/")
+	u = strings.TrimSuffix(u, "/api/v1")
+	u = strings.TrimSuffix(u, "/api")
+	return u
 }

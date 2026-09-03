@@ -38,9 +38,10 @@ type Config struct {
 	PublicBaseURL string
 
 	// PublicHTTPURL is the externally reachable URL for the REST API (used in the
-	// install command shown after creating a server). PublicGRPCAddr is the same for
-	// the mTLS gRPC endpoint. InstallScriptURL is the agent installer URL. These are
-	// derived from PublicBaseURL when it is set, unless explicitly overridden.
+	// install command shown after creating a server). Public form is …/api (rewritten
+	// to …/api/v1). PublicGRPCAddr is the same for the mTLS gRPC endpoint.
+	// InstallScriptURL is the agent installer URL. These are derived from
+	// PublicBaseURL when it is set, unless explicitly overridden.
 	PublicHTTPURL    string
 	PublicGRPCAddr   string
 	InstallScriptURL string
@@ -111,7 +112,9 @@ func Load() (Config, error) {
 		SeedAdminPassword: env("SEED_ADMIN_PASSWORD", ""),
 
 		PublicBaseURL:    env("PUBLIC_BASE_URL", ""),
-		PublicHTTPURL:    env("PUBLIC_HTTP_URL", "http://localhost:8080/api/v1"),
+		// Public path is /api (rewritten to /api/v1). Using /api/v1 here breaks enroll
+		// when a tunnel fronts Next.js, which would proxy to /api/v1/v1/….
+		PublicHTTPURL: env("PUBLIC_HTTP_URL", "http://localhost:8080/api"),
 		PublicGRPCAddr:   env("PUBLIC_GRPC_ADDR", "localhost:9090"),
 		InstallScriptURL: env("INSTALL_SCRIPT_URL", "https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh"),
 
@@ -168,13 +171,13 @@ func (c *Config) applyPublicBaseURL() error {
 	host := u.Hostname()
 
 	if os.Getenv("PUBLIC_HTTP_URL") == "" {
-		c.PublicHTTPURL = base + "/api/v1"
+		c.PublicHTTPURL = base + "/api"
 	}
 	if os.Getenv("PUBLIC_GRPC_ADDR") == "" {
 		c.PublicGRPCAddr = net.JoinHostPort(host, portOf(c.GRPCAddr, "9090"))
 	}
 	if c.OIDCIssuerURL != "" && os.Getenv("OIDC_REDIRECT_URL") == "" {
-		c.OIDCRedirectURL = base + "/api/v1/auth/oidc/callback"
+		c.OIDCRedirectURL = base + "/api/auth/oidc/callback"
 	}
 	c.TLSHosts = ensureHost(c.TLSHosts, host)
 	return nil

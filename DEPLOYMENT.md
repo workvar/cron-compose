@@ -308,7 +308,7 @@ ports for CronCompose. Install on Linux/macOS via the `.deb` / `.apk` packages o
 
 ```sh
 CONTROL_PLANE_ADDR=cc.example.com:9090        # mTLS gRPC endpoint
-CONTROL_PLANE_HTTP=https://cc.example.com/api/v1   # one-time enroll call
+CONTROL_PLANE_HTTP=https://cc.example.com/api   # one-time enroll call (public /api, not /api/v1)
 CONTROL_PLANE_SNI=cc.example.com              # server name verified in TLS
 DATA_DIR=/var/lib/croncompose                 # identity, certs, job cache, outbox
 ```

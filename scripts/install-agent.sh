@@ -6,7 +6,8 @@
 #
 # Required env (or flags):
 #   TOKEN                 one-time enrollment token from the UI (required)
-#   CONTROL_PLANE_HTTP    base URL for the REST enroll call, e.g. https://cc.example.com/api/v1
+#   CONTROL_PLANE_HTTP    public REST base for enroll, e.g. https://cc.example.com/api
+#                         (not …/api/v1 — that doubles under a Next.js front and 401s)
 #   CONTROL_PLANE_ADDR    host:port of the mTLS gRPC endpoint, e.g. cc.example.com:9090
 #   CONTROL_PLANE_SNI     server name to verify against (defaults to host portion of ADDR)
 #   AGENT_VERSION         release tag to build; defaults to this script's baked tag (or latest)
@@ -15,7 +16,7 @@
 #
 # Run example:
 #   curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh | \
-#     sudo TOKEN=abc CONTROL_PLANE_HTTP=https://cc.example.com/api/v1 \
+#     sudo TOKEN=abc CONTROL_PLANE_HTTP=https://cc.example.com/api \
 #          CONTROL_PLANE_ADDR=cc.example.com:9090 bash
 #
 # Needs git and Go 1.25+ on the target. This file stays a single self-contained script
