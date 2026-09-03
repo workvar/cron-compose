@@ -37,7 +37,17 @@ const empty: UpdateStatus = { items: [] };
   assert.equal(s.pending.length, 1);
   assert.equal(s.updatable.length, 1);
   assert.equal(s.current.length, 1);
-  assert.match(s.headline, /1 server/);
+  assert.match(s.headline, /1 agent can build v0.0.2 from source/);
+}
+
+{
+  const s = summarizeUpdates({
+    latest_version: "v0.0.2",
+    items: [
+      { server_id: "a", server_name: "alpha", status: "online", current_version: "v0.0.1", update_available: true, can_update: true, stack: true },
+    ],
+  });
+  assert.match(s.headline, /1 host can build v0.0.2 from source/);
 }
 
 {
@@ -47,7 +57,7 @@ const empty: UpdateStatus = { items: [] };
       { server_id: "a", server_name: "alpha", status: "online", current_version: "v0.0.2", update_available: false, can_update: false },
     ],
   });
-  assert.equal(s.headline, "All agents are on v0.0.2.");
+  assert.equal(s.headline, "Everything is on v0.0.2.");
 }
 
 {
@@ -57,7 +67,7 @@ const empty: UpdateStatus = { items: [] };
       { server_id: "a", server_name: "alpha", status: "pending", update_available: false, can_update: false },
     ],
   });
-  assert.equal(s.headline, "Latest release is v0.0.2. Agents have not reported a version yet.");
+  assert.equal(s.headline, "Latest release is v0.0.2. Hosts have not reported a version yet.");
 }
 
 {

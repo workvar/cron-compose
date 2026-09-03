@@ -73,28 +73,17 @@ You should see `users:(("name",pid=...))` on listen lines.
 
 ## Agent binaries (this release)
 
-Pre-built static Linux binaries are attached to this GitHub release:
-
-| Asset | Platform |
-|-------|----------|
-| `croncompose-agent-linux-amd64` | Linux x86_64 |
-| `croncompose-agent-linux-arm64` | Linux ARM64 |
-| `croncompose-agent_v0.0.3_amd64.deb` | Debian/Ubuntu amd64 |
-| `croncompose-agent_v0.0.3_arm64.deb` | Debian/Ubuntu arm64 |
-| `croncompose-agent_v0.0.3_amd64.apk` | Alpine amd64 |
-| `croncompose-agent_v0.0.3_arm64.apk` | Alpine arm64 |
-
-Install on a remote server with the enrollment token from the UI:
+This release is **notes-only**: no prebuilt agent binaries. Install with:
 
 ```sh
-curl -sSL https://raw.githubusercontent.com/workvar/cron-compose/main/scripts/install-agent.sh | \
+curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh | \
   sudo TOKEN=<token> \
        CONTROL_PLANE_HTTP=https://<host>/api/v1 \
        CONTROL_PLANE_ADDR=<host>:9090 \
-       AGENT_VERSION=v0.0.3 bash
+       bash
 ```
 
-Or download the binary directly from this release's assets.
+Or clone the tag and `go build` the agent yourself.
 
 ## Documentation
 

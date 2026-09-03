@@ -79,28 +79,75 @@ func Apply(ctx context.Context, req Request, currentVersion string) (string, err
 		return "", err
 	}
 	defer os.Remove(tmp) // no-op once renamed
+	return InstallFile(tmp)
+}
+
+// InstallFile swaps built into the running executable's path, keeping a .old backup.
+func InstallFile(built string) (string, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("locate self: %w", err)
+	}
+	self, err = filepath.EvalSymlinks(self)
+	if err != nil {
+		return "", fmt.Errorf("resolve self: %w", err)
+	}
 
 	info, err := os.Stat(self)
 	if err != nil {
 		return "", err
 	}
+	tmp := built
+	copied := false
+	if filepath.Dir(built) != filepath.Dir(self) {
+		dst := filepath.Join(filepath.Dir(self), filepath.Base(self)+".new")
+		if err := copyFile(built, dst); err != nil {
+			return "", err
+		}
+		tmp = dst
+		copied = true
+	}
 	if err := os.Chmod(tmp, info.Mode().Perm()); err != nil {
+		if copied {
+			os.Remove(tmp)
+		}
 		return "", err
 	}
 
-	// Keep the old binary. On Unix the running process holds its inode open, so this
-	// rename is safe while we are executing.
 	backup := self + ".old"
 	_ = os.Remove(backup)
 	if err := os.Rename(self, backup); err != nil {
+		if copied {
+			os.Remove(tmp)
+		}
 		return "", fmt.Errorf("set aside current binary: %w", err)
 	}
 	if err := os.Rename(tmp, self); err != nil {
-		// Put the old one back rather than leaving the agent with no binary at all.
 		_ = os.Rename(backup, self)
+		if copied {
+			os.Remove(tmp)
+		}
 		return "", fmt.Errorf("install new binary: %w", err)
 	}
 	return self, nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(dst)
+		return err
+	}
+	return out.Close()
 }
 
 // download fetches the binary into a temp file beside the target, verifying the digest

@@ -7,25 +7,21 @@ import (
 	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
 )
 
-// UpdatePolicy describes the agent build this control plane wants its fleet to run.
+// UpdatePolicy describes the release this control plane can offer to agents.
 //
-// It is deliberately configuration rather than a service: a self-hosted control plane
-// should not need to reach an upstream release feed to keep its own agents current,
-// and the operator who builds the agents is the one who knows where they live.
-//
-// A policy with no version is inert, which is the default. Nothing updates until an
-// operator says what to update to.
+// Source updates (Version + Repo) tell the agent to git-checkout that tag and build
+// locally. Binary updates (Version + URLTemplate + checksums) stay available as a
+// manual AGENT_UPDATE_* override.
 type UpdatePolicy struct {
 	// Version is the target agent version string, matched against Hello.agent_version.
 	Version string
-	// URLTemplate builds the download URL. {version}, {os}, {arch}, {target} and {repo}
-	// are replaced. Example:
-	// https://github.com/{repo}/releases/download/{version}/croncompose-agent-{target}
+	// URLTemplate builds a binary download URL. {version}, {os}, {arch}, {target} and
+	// {repo} are replaced. Unused for source updates.
 	URLTemplate string
-	// Repo is substituted for {repo} in URLTemplate (e.g. workvar/cron-compose).
+	// Repo is the GitHub owner/repo agents clone for a source update
+	// (e.g. workvar/cron-compose). Also substituted for {repo} in URLTemplate.
 	Repo string
-	// Checksums maps "os/arch" to a sha256 hex digest. A single-entry map keyed "*"
-	// covers a homogeneous fleet.
+	// Checksums maps "os/arch" to a sha256 hex digest. Required only for binary updates.
 	Checksums map[string]string
 	// Restart tells the agent to exit after swapping the binary so its supervisor
 	// brings it back on the new one. Off means the swap takes effect on next restart.
@@ -55,17 +51,30 @@ func ParseUpdatePolicy(version, urlTemplate, checksumsJSON string, restart bool)
 
 // Active reports whether the policy is complete enough to act on.
 func (p UpdatePolicy) Active() bool {
-	return p.Version != "" && p.URLTemplate != "" && len(p.Checksums) > 0
+	if strings.TrimSpace(p.Version) == "" {
+		return false
+	}
+	if strings.TrimSpace(p.Repo) != "" {
+		return true
+	}
+	return p.URLTemplate != "" && len(p.Checksums) > 0
+}
+
+func (p UpdatePolicy) source() bool {
+	return strings.TrimSpace(p.Repo) != "" && (p.URLTemplate == "" || len(p.Checksums) == 0)
 }
 
 // For builds the update message for one agent, or nil if there is nothing to send.
-//
-// Nothing is sent when the agent already runs the target version, when the platform
-// has no pinned checksum, or when the policy is incomplete. Sending an update without
-// a checksum is not a degraded mode we offer.
 func (p UpdatePolicy) For(agentVersion, os, arch string) *agentv1.UpdateAgent {
 	if !p.Active() || VersionsEqual(agentVersion, p.Version) {
 		return nil
+	}
+	if p.source() {
+		return &agentv1.UpdateAgent{
+			TargetVersion: p.Version,
+			DownloadUrl:   "https://github.com/" + strings.TrimSpace(p.Repo),
+			Restart:       p.Restart,
+		}
 	}
 	sum := p.checksumFor(os, arch)
 	if sum == "" {

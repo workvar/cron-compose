@@ -7,6 +7,7 @@ import "./terminal.css";
 import "./connectors.css";
 import type { Metadata } from "next";
 import { Shell } from "@/components/Shell";
+import { UpdatingOverlay } from "@/components/UpdatingOverlay";
 
 export const metadata: Metadata = {
   title: "CronCompose",
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <Shell>{children}</Shell>
+        <UpdatingOverlay />
       </body>
     </html>
   );

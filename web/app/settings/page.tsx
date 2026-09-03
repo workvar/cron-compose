@@ -64,7 +64,7 @@ export default async function SettingsPage() {
 
       <h2>Updates</h2>
       <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
-        When a new GitHub tag is published, update agents from here.
+        Checks GitHub about once a day. Click Update to build the release from source on each host.
       </p>
       <UpdatesPanel initial={updates} canUpdate={isAdmin} />
 

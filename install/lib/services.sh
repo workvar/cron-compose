@@ -23,7 +23,7 @@ enroll_local_agent() {
 
   local resp token
   resp="$(curl -fsS -b "$cookie" -X POST "$api/servers" -H 'content-type: application/json' \
-    -d "{\"name\":\"$hostname_label\",\"description\":\"local agent (installer)\"}" 2>/dev/null || true)"
+    -d "{\"name\":\"$hostname_label\",\"description\":\"local agent (installer)\",\"labels\":{\"croncompose.role\":\"stack\"}}" 2>/dev/null || true)"
   token="$(json_string "$resp" token)"
   [ -n "$token" ] || { warn "no enrollment token returned; skipping agent."; return 0; }
 

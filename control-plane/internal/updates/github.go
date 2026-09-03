@@ -114,9 +114,6 @@ func loadChecksums(ctx context.Context, assets []ghAsset) (map[string]string, er
 		out[key] = sum
 	}
 
-	if len(out) == 0 {
-		return nil, fmt.Errorf("release has no agent binaries or checksums.json")
-	}
 	return out, nil
 }
 

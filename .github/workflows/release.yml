@@ -1,5 +1,8 @@
 name: Release
 
+# Notes-only GitHub release: publish RELEASE_NOTES.md and a tag-baked install-agent
+# script. No Go/Node matrix builds — hosts clone the tag and build locally.
+
 on:
   push:
     tags: ["v*"]
@@ -8,110 +11,33 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build ${{ matrix.target }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: linux-amd64
-            goarch: amd64
-            pkg_arch: amd64
-          - target: linux-arm64
-            goarch: arm64
-            pkg_arch: arm64
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25"
-          cache: true
-          cache-dependency-path: agent/go.sum
-
-      - name: Build static Linux binary
-        working-directory: agent
-        env:
-          GOOS: linux
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "0"
-          VERSION: ${{ github.ref_name }}
-        run: |
-          ver="${VERSION#v}"
-          mkdir -p ../dist
-          go build -trimpath \
-            -ldflags="-s -w -X github.com/croncompose/croncompose/agent/internal/config.buildVersion=${ver}" \
-            -o "../dist/croncompose-agent-${{ matrix.target }}" \
-            ./cmd/agent
-
-      - name: Install nfpm
-        run: |
-          curl -sSLo /tmp/nfpm.tar.gz \
-            https://github.com/goreleaser/nfpm/releases/download/v2.40.0/nfpm_2.40.0_Linux_x86_64.tar.gz
-          mkdir -p /tmp/nfpm && tar -xzf /tmp/nfpm.tar.gz -C /tmp/nfpm
-          sudo install /tmp/nfpm/nfpm /usr/local/bin/nfpm
-
-      - name: Build .deb and .apk
-        env:
-          PKG_VERSION: ${{ github.ref_name }}
-          PKG_ARCH: ${{ matrix.pkg_arch }}
-        run: |
-          cp "dist/croncompose-agent-${{ matrix.target }}" dist/croncompose-agent
-          mkdir -p artifacts
-          nfpm pkg --config packaging/nfpm.yaml --packager deb \
-            --target "artifacts/croncompose-agent_${PKG_VERSION}_${PKG_ARCH}.deb"
-          nfpm pkg --config packaging/nfpm.yaml --packager apk \
-            --target "artifacts/croncompose-agent_${PKG_VERSION}_${PKG_ARCH}.apk"
-
-      - name: Stage release artifacts
-        run: |
-          mkdir -p artifacts
-          cp "dist/croncompose-agent-${{ matrix.target }}" artifacts/
-          (cd artifacts && sha256sum "croncompose-agent-${{ matrix.target }}" \
-            > "SHA256SUMS-${{ matrix.target }}.txt")
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: packages-${{ matrix.target }}
-          path: artifacts/*
-
   release:
     name: Publish GitHub release
     runs-on: ubuntu-latest
-    needs: build
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Flatten artifacts and build checksums.json
+      - name: Bake install scripts for this tag
+        env:
+          VERSION: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
         run: |
           mkdir -p out
-          find artifacts -type f -exec cp {} out/ \;
-          python3 - <<'PY'
-          import hashlib, json, pathlib
-          out = pathlib.Path("out")
-          sums = {}
-          for path in sorted(out.glob("croncompose-agent-*")):
-              if path.suffix:
-                  continue
-              target = path.name.removeprefix("croncompose-agent-")
-              key = {
-                  "linux-amd64": "linux/amd64",
-                  "linux-arm64": "linux/arm64",
-                  "linux-armv7": "linux/arm",
-                  "darwin-amd64": "darwin/amd64",
-                  "darwin-arm64": "darwin/arm64",
-              }.get(target, target.replace("-", "/", 1))
-              sums[key] = hashlib.sha256(path.read_bytes()).hexdigest()
-          (out / "checksums.json").write_text(json.dumps(sums, indent=2) + "\n")
-          PY
-          ls -la out/
+          sed -e "s|__VERSION__|${VERSION}|g" \
+              -e "s|__REPO__|${REPO}|g" \
+              scripts/install-agent.sh > out/install-agent.sh
+          chmod 0755 out/install-agent.sh
+          sed -e "s|__VERSION__|${VERSION}|g" \
+              -e "s|__REPO__|${REPO}|g" \
+              scripts/install-agent.ps1 > out/install-agent.ps1
+          # Sanity: placeholders must be gone from the published shell installer.
+          ! grep -q '__VERSION__\|__REPO__' out/install-agent.sh
+          head -n 40 out/install-agent.sh
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: out/*
+          files: |
+            out/install-agent.sh
+            out/install-agent.ps1
           body_path: RELEASE_NOTES.md
+          generate_release_notes: false

@@ -32,12 +32,17 @@ export function summarizeUpdates(status: UpdateStatus | null): UpdatePanelSummar
   } else if (status.latest_version && pending.length === 0 && status.items.length > 0) {
     const unversioned = status.items.filter((s) => !s.current_version).length;
     if (unversioned === status.items.length) {
-      headline = `Latest release is ${status.latest_version}. Agents have not reported a version yet.`;
+      headline = `Latest release is ${status.latest_version}. Hosts have not reported a version yet.`;
     } else {
-      headline = `All agents are on ${status.latest_version}.`;
+      headline = `Everything is on ${status.latest_version}.`;
     }
   } else if (pending.length > 0) {
-    headline = `${pending.length} server${pending.length === 1 ? "" : "s"} can be updated to ${status.latest_version}.`;
+    const stacks = pending.filter((s) => s.stack).length;
+    if (stacks > 0) {
+      headline = `${pending.length} host${pending.length === 1 ? "" : "s"} can build ${status.latest_version} from source.`;
+    } else {
+      headline = `${pending.length} agent${pending.length === 1 ? "" : "s"} can build ${status.latest_version} from source.`;
+    }
   } else if (status.latest_version) {
     headline = `Latest release is ${status.latest_version}.`;
   } else {

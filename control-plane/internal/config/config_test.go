@@ -110,12 +110,20 @@ func TestPublicBaseURLStripsWrapperQuotes(t *testing.T) {
 
 func TestGitHubReleaseRepoDefaultsToThisProject(t *testing.T) {
 	t.Setenv("GITHUB_RELEASE_REPO", "")
+	t.Setenv("INSTALL_SCRIPT_URL", "")
+	t.Setenv("AGENT_UPDATE_POLL_MINUTES", "")
 	c, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got, want := c.GitHubReleaseRepo, "workvar/cron-compose"; got != want {
-		t.Errorf("GitHubReleaseRepo = %q, want %q", got, want)
+	if c.GitHubReleaseRepo != "workvar/cron-compose" {
+		t.Errorf("GitHubReleaseRepo = %q, want %q", c.GitHubReleaseRepo, "workvar/cron-compose")
+	}
+	if c.AgentUpdatePollMinutes != 1440 {
+		t.Errorf("AgentUpdatePollMinutes = %d, want 1440 (24h)", c.AgentUpdatePollMinutes)
+	}
+	if got, want := c.InstallScriptURL, "https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh"; got != want {
+		t.Errorf("InstallScriptURL = %q, want %q", got, want)
 	}
 }
 

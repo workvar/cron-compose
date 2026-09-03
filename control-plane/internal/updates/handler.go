@@ -30,6 +30,7 @@ type ServerStatus struct {
 	CurrentVersion  string `json:"current_version,omitempty"`
 	UpdateAvailable bool   `json:"update_available"`
 	CanUpdate       bool   `json:"can_update"`
+	Stack           bool   `json:"stack,omitempty"`
 }
 
 // StatusResponse is returned by GET /updates.
@@ -71,6 +72,7 @@ func (h *handler) status(c fiber.Ctx) error {
 			Status:         srv.Status,
 			CurrentVersion: srv.AgentVersion,
 		}
+		item.Stack = srv.Labels["croncompose.role"] == "stack"
 		if policy.Active() && srv.AgentVersion != "" {
 			item.UpdateAvailable = !agentgw.VersionsEqual(srv.AgentVersion, policy.Version) &&
 				agentgw.VersionNewer(srv.AgentVersion, policy.Version)
@@ -108,16 +110,16 @@ func (h *handler) triggerServerUpdate(c fiber.Ctx) error {
 	policy := h.effectivePolicy()
 	if !policy.Active() {
 		return jsonError(c, fiber.StatusServiceUnavailable, "no_release",
-			errors.New("no agent release is available to update to"))
+			errors.New("no release is available to update to"))
 	}
 	up := policy.For(srv.AgentVersion, srv.OS, srv.Arch)
 	if up == nil {
 		if agentgw.VersionsEqual(srv.AgentVersion, policy.Version) {
 			return jsonError(c, fiber.StatusConflict, "already_current",
-				errors.New("agent is already on the latest version"))
+				errors.New("already on the latest version"))
 		}
-		return jsonError(c, fiber.StatusConflict, "unsupported_platform",
-			errors.New("no checksum is available for this server's platform"))
+		return jsonError(c, fiber.StatusConflict, "no_offer",
+			errors.New("this server cannot be updated to the latest release"))
 	}
 
 	if err := h.gateway.SendAgentUpdate(serverID, up); err != nil {
