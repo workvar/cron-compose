@@ -35,6 +35,11 @@ contents:
     file_info:
       mode: 0644
 
+  - src: ./install/lib/agent_sudoers.sh
+    dst: /usr/share/croncompose/agent_sudoers.sh
+    file_info:
+      mode: 0755
+
 scripts:
   postinstall: ./packaging/postinstall.sh
   preremove:   ./packaging/preremove.sh

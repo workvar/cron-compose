@@ -18,6 +18,10 @@ fi
 install -d -o "$USER" -g "$USER" -m 0700 "$DATA_DIR"
 install -d -m 0755 /etc/croncompose
 
+if [ -f /usr/share/croncompose/agent_sudoers.sh ]; then
+  /usr/share/croncompose/agent_sudoers.sh "$USER" || true
+fi
+
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload || true
   echo "edit /etc/croncompose/agent.env then run: systemctl enable --now croncompose-agent"

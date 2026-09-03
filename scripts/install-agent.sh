@@ -114,6 +114,32 @@ build_from_source() {
   trap - EXIT
 }
 
+# Load install/lib/agent_sudoers.sh from a checkout, or fetch it when this script is
+# piped from curl (no repo on disk).
+_source_agent_sudoers_lib() {
+  local lib ref="${AGENT_VERSION:-main}" tmp
+  [[ "$ref" == "latest" ]] && ref=main
+  if [[ -n "${CRONCOMPOSE_REPO_ROOT:-}" && -f "${CRONCOMPOSE_REPO_ROOT}/install/lib/agent_sudoers.sh" ]]; then
+    # shellcheck source=../install/lib/agent_sudoers.sh
+    . "${CRONCOMPOSE_REPO_ROOT}/install/lib/agent_sudoers.sh"
+    return 0
+  fi
+  local script_path="${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}"
+  if [[ -n "$script_path" && "$script_path" != bash && -f "$script_path" ]]; then
+    lib="$(cd "$(dirname "$script_path")/../install/lib" 2>/dev/null && pwd)/agent_sudoers.sh"
+    if [[ -f "$lib" ]]; then
+      # shellcheck source=/dev/null
+      . "$lib"
+      return 0
+    fi
+  fi
+  tmp="$(mktemp)"
+  curl -fsSL "${RAW_BASE:-https://raw.githubusercontent.com/workvar/cron-compose}/${ref}/install/lib/agent_sudoers.sh" -o "$tmp"
+  # shellcheck source=/dev/null
+  . "$tmp"
+  rm -f "$tmp"
+}
+
 # --- Linux -----------------------------------------------------------------
 
 install_linux() {
@@ -159,17 +185,8 @@ EOF
     AGENT_VERSION="$AGENT_VERSION" \
     "$BIN_PATH" enroll --token="$TOKEN"
 
-  SUDOERS=/etc/sudoers.d/croncompose-agent
-  if [[ ! -f "$SUDOERS" ]]; then
-    echo "==> granting socket inspection for the Ports page"
-    cat >"$SUDOERS" <<'EOF'
-# CronCompose agent: lifecycle and config (extend as needed for nginx, etc.)
-croncompose ALL=(root) NOPASSWD: /usr/bin/systemctl, /usr/bin/systemd-analyze
-# Listening-port discovery for systemd/pm2 connectors
-croncompose ALL=(root) NOPASSWD: /usr/bin/ss, /usr/sbin/ss, /usr/bin/lsof
-EOF
-    chmod 0440 "$SUDOERS"
-  fi
+  _source_agent_sudoers_lib
+  install_agent_sudoers croncompose
 
   echo "==> starting service"
   systemctl daemon-reload

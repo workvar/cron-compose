@@ -115,7 +115,7 @@ export default function PortsPage() {
         <div className="panel">
           <div className="empty">
             {connectorCount > 0
-              ? "No listening ports reported for systemd or pm2 processes on your servers. Ensure services are running and the agent can inspect sockets (grant passwordless sudo for ss and lsof if needed)."
+              ? "No listening ports reported for systemd or pm2 processes on your servers. Ensure services are running. Re-run ./install/install.sh or ./update.sh to refresh agent sudoers, or sudo ./install/lib/agent_sudoers.sh $(whoami) on the server."
               : <>No listening ports yet. They appear once a systemd or pm2 connector is discovered. <Link href="/connectors">Open connectors</Link></>}
           </div>
         </div>

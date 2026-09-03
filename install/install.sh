@@ -68,6 +68,8 @@ export NONINTERACTIVE ENABLE_AGENT ENABLE_WEB ADVANCED
 . "$LIB_DIR/cleanup.sh"
 # shellcheck source=lib/pm2.sh
 . "$LIB_DIR/pm2.sh"       # process management: pm2 + ecosystem.config.js
+# shellcheck source=lib/agent_sudoers.sh
+. "$LIB_DIR/agent_sudoers.sh"
 # shellcheck source=lib/services.sh
 . "$LIB_DIR/services.sh"
 

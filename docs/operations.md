@@ -82,33 +82,28 @@ exist.
 ## Agent socket inspection (Ports page)
 
 The Ports page asks the agent to list TCP listen sockets and attribute them to systemd
-units or pm2 processes. Unprivileged `ss -p` often hides process columns; the agent
+units or pm2 processes. Unprivileged `ss -p` often omits process columns; the agent
 falls back to `lsof` and then passwordless `sudo` for `ss` / `lsof` when configured.
 
-Grant the **user that runs the agent** (not necessarily root):
+**Installers configure this automatically** on Linux:
 
-| Install style | Typical agent user | Sudoers file |
-|---------------|-------------------|--------------|
-| `scripts/install-agent.sh` | `croncompose` | Created automatically |
-| Source install (`pm2` / `systemd-setup.sh`) | Your login user (e.g. `pi`) | Add manually |
+| Path | What runs |
+|------|-----------|
+| `./install/install.sh` | `install/lib/agent_sudoers.sh` for the user running pm2 |
+| `sudo ./install/systemd-setup.sh` | same for the service unit user |
+| `scripts/install-agent.sh` | `croncompose` system user |
+| `.deb` / `.apk` postinstall | `croncompose` via `/usr/share/croncompose/agent_sudoers.sh` |
+| `./update.sh` | refreshes sudoers when `CC_ENABLE_AGENT=1` |
 
-Example for a Raspberry Pi source install running the agent as `pi`:
-
-```sh
-sudo tee /etc/sudoers.d/croncompose-agent <<'EOF'
-pi ALL=(root) NOPASSWD: /usr/bin/ss, /usr/bin/lsof
-EOF
-sudo chmod 0440 /etc/sudoers.d/croncompose-agent
-sudo visudo -c
-```
-
-Verify:
+To install or refresh manually:
 
 ```sh
-sudo -n ss -H -lntp | head
+sudo ./install/lib/agent_sudoers.sh <agent-user>
 ```
 
-Listen lines should include `users:(("process",pid=N,...))`.
+The file written is `/etc/sudoers.d/croncompose-agent` (managed marker in the file).
+If you already have a custom sudoers drop-in with another name, merge the paths from
+`install/lib/agent_sudoers.sh` or remove the conflict.
 
 ## Metrics
 
