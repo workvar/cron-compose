@@ -28,6 +28,10 @@ export function filterSelectOptions(options: SelectOption[], query: string): Sel
   );
 }
 
+export function secretNeedsScopeId(scope: string): boolean {
+  return scope === "server" || scope === "job";
+}
+
 export function filterMappedPorts(rows: MappedPort[], query: string): MappedPort[] {
   const q = query.trim().toLowerCase();
   if (!q) return rows;

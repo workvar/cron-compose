@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import type { ListResponse, Secret } from "@/lib/types";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { IconKey } from "@/components/icons";
+import { secretNeedsScopeId } from "@/lib/ui-helpers";
 
 export default function SecretsPage() {
   const [items, setItems] = useState<Secret[]>([]);
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
-  const [scope, setScope] = useState<"global" | "server" | "job">("global");
+  const [scope, setScope] = useState<"global" | "server" | "job" | "">("");
   const [scopeID, setScopeID] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +36,7 @@ export default function SecretsPage() {
         body: JSON.stringify({ name, value, scope, scope_id: scopeID || undefined }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setName(""); setValue(""); setScopeID("");
+      setName(""); setValue(""); setScope(""); setScopeID("");
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -76,6 +77,7 @@ export default function SecretsPage() {
                 id="secret-scope"
                 value={scope}
                 onChange={(v) => setScope(v as typeof scope)}
+                placeholder="Select…"
                 options={[
                   { value: "global", label: "global" },
                   { value: "server", label: "server" },
@@ -84,7 +86,7 @@ export default function SecretsPage() {
               />
             </div>
           </div>
-          {scope !== "global" && (
+          {secretNeedsScopeId(scope) && (
             <div className="field">
               <label>Scope ID ({scope})</label>
               <input value={scopeID} onChange={(e) => setScopeID(e.target.value)} placeholder={`${scope}_id`} required />
@@ -95,7 +97,7 @@ export default function SecretsPage() {
             <input type="password" value={value} onChange={(e) => setValue(e.target.value)} required />
           </div>
           {error && <div className="form-error" style={{ marginBottom: 14 }}>{error}</div>}
-          <button type="submit" className="button" disabled={busy || !name || !value}>
+          <button type="submit" className="button" disabled={busy || !name || !value || !scope}>
             {busy ? "Adding…" : "Add secret"}
           </button>
         </form>

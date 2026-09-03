@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { filterMappedPorts, filterSelectOptions, shouldShowServerPromo } from "./ui-helpers.ts";
+import { filterMappedPorts, filterSelectOptions, secretNeedsScopeId, shouldShowServerPromo } from "./ui-helpers.ts";
 
 {
   const opts = [
@@ -16,6 +16,11 @@ import { filterMappedPorts, filterSelectOptions, shouldShowServerPromo } from ".
 assert.equal(shouldShowServerPromo(0), true);
 assert.equal(shouldShowServerPromo(1), false);
 assert.equal(shouldShowServerPromo(3), false);
+
+assert.equal(secretNeedsScopeId(""), false);
+assert.equal(secretNeedsScopeId("global"), false);
+assert.equal(secretNeedsScopeId("server"), true);
+assert.equal(secretNeedsScopeId("job"), true);
 
 {
   const rows = [
