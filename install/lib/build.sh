@@ -44,6 +44,7 @@ build_web() {
 }
 
 run_build() {
+  restore_source_tree "$REPO_ROOT"
   build_go
   build_web
 }

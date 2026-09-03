@@ -72,10 +72,18 @@ cd "$REPO_ROOT"
 # ---------------------------------------------------------------------------
 
 pull_source() {
-  [ "$DO_PULL" = 1 ] || { warn "skipping git pull (--no-pull)"; return 0; }
-  step "Updating source (git pull --ff-only)"
   command -v git >/dev/null 2>&1 || die "git not found"
   [ -d .git ] || die "$REPO_ROOT is not a git checkout"
+  if [ -f "$REPO_ROOT/install/lib/cleanup.sh" ]; then
+    # shellcheck source=install/lib/cleanup.sh
+    . "$REPO_ROOT/install/lib/cleanup.sh"
+    restore_source_tree "$REPO_ROOT"
+  else
+    step "Restoring source from git"
+    git checkout --force HEAD -- . || die "git checkout failed"
+  fi
+  [ "$DO_PULL" = 1 ] || { warn "skipping git pull (--no-pull)"; return 0; }
+  step "Updating source (git pull --ff-only)"
   local before after
   before="$(git rev-parse HEAD 2>/dev/null || echo none)"
   git pull --ff-only \
@@ -158,7 +166,9 @@ run_source() {
   load_env
   if [ "$DO_BUILD" = 1 ]; then build_go_source; build_web_source; else warn "skipping build (--no-build)"; fi
   migrate_source
-  if [ -f "$REPO_ROOT/install/lib/cleanup.sh" ]; then
+  if type cleanup_build_tree >/dev/null 2>&1; then
+    cleanup_build_tree "$REPO_ROOT"
+  elif [ -f "$REPO_ROOT/install/lib/cleanup.sh" ]; then
     # shellcheck source=install/lib/cleanup.sh
     . "$REPO_ROOT/install/lib/cleanup.sh"
     cleanup_build_tree "$REPO_ROOT"

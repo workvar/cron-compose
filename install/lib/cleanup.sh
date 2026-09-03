@@ -1,9 +1,24 @@
 #!/usr/bin/env bash
 # Drop compiler inputs that are not needed at runtime so a source install stays small.
-# Safe to re-run. Next update restores tracked files with `git checkout --force <tag>`.
+# Safe to re-run. Next install/update restores tracked files with restore_source_tree.
 #
-# Usage: cleanup_build_tree "$REPO_ROOT"
-# Relies on: warn, ok, dim from install/lib/common.sh or update.sh.
+# Usage:
+#   restore_source_tree "$REPO_ROOT"
+#   cleanup_build_tree "$REPO_ROOT"
+# Relies on: step, ok, die from install/lib/common.sh or update.sh.
+
+restore_source_tree() {
+  local root="${1:?restore_source_tree needs the repo root}"
+  [ -d "$root/.git" ] || die "$root is not a git checkout; cannot restore source after cleanup"
+  command -v git >/dev/null 2>&1 || die "git not found"
+  step "Restoring source from git (needed after a previous cleanup)"
+  git -C "$root" checkout --force HEAD -- . \
+    || die "git checkout failed; cannot rebuild from a stripped tree"
+  if [ ! -f "$root/control-plane/go.mod" ]; then
+    die "control-plane/go.mod is still missing after git checkout"
+  fi
+  ok "tracked files restored"
+}
 
 cleanup_build_tree() {
   local root="${1:?cleanup_build_tree needs the repo root}"
