@@ -1,10 +1,10 @@
-// Edge middleware: bounce unauthenticated requests to /login. The real auth check
+// Request proxy: bounce unauthenticated requests to /login. The real auth check
 // happens server-side; this just keeps the UI from rendering forbidden pages.
 import { NextResponse, type NextRequest } from "next/server";
 
 const PUBLIC_PATHS = ["/login"];
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Always allow next-internal, static assets, and /api. /api reaches the control

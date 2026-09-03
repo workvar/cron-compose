@@ -8,21 +8,23 @@ export function UpdateBanner({ status }: { status: UpdateStatus }) {
   if (!status.latest_version || pending.length === 0) return null;
 
   const online = pending.filter((s) => s.can_update).length;
+  const hasStack = pending.some((s) => s.stack);
 
   return (
     <div className="setup-banner" role="status">
       <div className="setup-banner-head">
         <span className="setup-banner-dot" style={{ background: "var(--warn)" }} />
         <div>
-          <strong>Agent update available — {status.latest_version}</strong>
+          <strong>Update available — {status.latest_version}</strong>
           <p>
-            {pending.length} server{pending.length === 1 ? "" : "s"} running an older agent.
+            {pending.length} host{pending.length === 1 ? "" : "s"} can build this release from source
+            {hasStack ? " (includes this control-plane stack)" : ""}.
             {online > 0
-              ? ` ${online} can be updated now from Settings.`
+              ? ` ${online} online — update from Settings.`
               : " Connect agents to apply the update."}
           </p>
           <div className="setup-banner-actions">
-            <Link href="/settings#updates" className="button sm">Update agents</Link>
+            <Link href="/settings#updates" className="button sm">Open Updates</Link>
             <Link href="/servers" className="button ghost sm">Review servers</Link>
             {status.release_url && (
               <a href={status.release_url} className="button ghost sm" target="_blank" rel="noreferrer">

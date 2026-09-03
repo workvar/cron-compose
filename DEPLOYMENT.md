@@ -88,12 +88,13 @@ beside it. The most important variables:
 | `RETENTION_RUN_DAYS` | Delete runs older than this. `0` (default) never prunes. Set it longer than the log window: runs are small and answer "has this been failing all month". |
 | `RETENTION_AUDIT_DAYS` | Delete audit entries older than this. `0` (default) never prunes. |
 | `RETENTION_OPERATION_DAYS` | Delete connector operations older than this. `0` (default) never prunes. |
-| `AGENT_UPDATE_VERSION` | Target agent version. Agents reporting a different version on connect are offered an update. Empty (default) disables agent self-update entirely. |
-| `AGENT_UPDATE_URL`   | Download URL template. `{version}`, `{os}` and `{arch}` are substituted. Must be `https`. |
-| `AGENT_UPDATE_SHA256` | Pinned sha256 of the binary: a bare hex digest, or a JSON object mapping `"os/arch"` to a digest. **Required** for updates to be offered; there is no unverified path. |
-| `AGENT_UPDATE_RESTART` | `1` (default) tells the agent to exit after swapping so its supervisor restarts it. `0` leaves the new binary to take effect on the next restart. |
-| `GITHUB_RELEASE_REPO` | GitHub `owner/repo` to poll for agent releases (default `workvar/cron-compose`). Disabled when a manual `AGENT_UPDATE_*` policy is configured. |
-| `AGENT_UPDATE_POLL_MINUTES` | How often to check GitHub for a new tag (default `15`). |
+| `AGENT_UPDATE_VERSION` | Optional manual pin. When set with `AGENT_UPDATE_URL` + `AGENT_UPDATE_SHA256`, offers a binary download instead of a source build. |
+| `AGENT_UPDATE_URL`   | Binary download URL template. `{version}`, `{os}` and `{arch}` are substituted. Must be `https`. Used only with a manual pin. |
+| `AGENT_UPDATE_SHA256` | Pinned sha256 for a manual binary update: bare hex, or JSON mapping `"os/arch"` to a digest. |
+| `AGENT_UPDATE_RESTART` | `1` (default) tells the agent to exit after a binary/agent swap so its supervisor restarts it. |
+| `GITHUB_RELEASE_REPO` | GitHub `owner/repo` to poll for releases (default `workvar/cron-compose`). A new tag is offered as a **source** update (hosts build locally). |
+| `AGENT_UPDATE_POLL_MINUTES` | How often to check GitHub for a new tag (default `1440` = 24h). |
+| `INSTALL_SCRIPT_URL` | Agent installer URL shown in the UI (default: latest release asset `install-agent.sh`). |
 
 `PUBLIC_BASE_URL` is the easiest knob: set it once (for example
 `https://cc.example.com`) and the control plane derives `PUBLIC_HTTP_URL`
@@ -370,19 +371,18 @@ tiny and are the thing you most regret having deleted.
 Watch `cc_retention_deleted_total` to confirm the pruner is doing something, and
 `cc_run_log_bytes_total` against the database size to see the cap working.
 
-## Agent self-update
+## Updates (source builds)
 
-Off unless all three of `AGENT_UPDATE_VERSION`, `AGENT_UPDATE_URL` and
-`AGENT_UPDATE_SHA256` are set. There is deliberately no unverified path: downloading a
-binary and running it as whatever the agent runs as is the most dangerous thing this
-system does, and the pinned checksum is what makes it a controlled action rather than a
-remote code execution primitive.
+By default the control plane polls `GITHUB_RELEASE_REPO` about once a day. A new
+GitHub tag shows up under Settings → Updates. Clicking **Update** tells the agent to:
 
-    AGENT_UPDATE_VERSION=1.4.0
-    AGENT_UPDATE_URL=https://dl.example.com/croncompose/{version}/agent-{os}-{arch}
-    AGENT_UPDATE_SHA256='{"linux/amd64":"<hex>","linux/arm64":"<hex>"}'
+- **Control-plane host** (label `croncompose.role=stack`): `git checkout` the tag, run
+  `update.sh` (rebuild web + control plane + agent, migrate, strip build inputs, restart).
+- **Standalone agent**: clone the tag, `go build`, swap the binary, delete the clone.
 
-The offer is made when an agent says hello with a different version. The agent verifies
-the digest as it streams the download, keeps the old binary as `<name>.old`, swaps
-atomically, and exits 0 so its supervisor restarts it. On a box where nothing would
-bring the agent back, set `AGENT_SELF_UPDATE=0` on the agent and update it by hand.
+Manual binary updates still work if you set all three of `AGENT_UPDATE_VERSION`,
+`AGENT_UPDATE_URL` and `AGENT_UPDATE_SHA256` (checksum required). That path overrides the
+GitHub source catalog.
+
+On a box where nothing would bring the agent back, set `AGENT_SELF_UPDATE=0` on the agent
+and update it by hand.

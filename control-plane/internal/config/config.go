@@ -113,7 +113,7 @@ func Load() (Config, error) {
 		PublicBaseURL:    env("PUBLIC_BASE_URL", ""),
 		PublicHTTPURL:    env("PUBLIC_HTTP_URL", "http://localhost:8080/api/v1"),
 		PublicGRPCAddr:   env("PUBLIC_GRPC_ADDR", "localhost:9090"),
-		InstallScriptURL: env("INSTALL_SCRIPT_URL", "https://raw.githubusercontent.com/croncompose/croncompose/main/scripts/install-agent.sh"),
+		InstallScriptURL: env("INSTALL_SCRIPT_URL", "https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh"),
 
 		// 32-byte hex. Default is a clearly-marked dev key so local dev works; prod
 		// MUST set this to a real value generated with `openssl rand -hex 32`.
@@ -130,7 +130,7 @@ func Load() (Config, error) {
 		AgentUpdateRestart: env("AGENT_UPDATE_RESTART", "1") != "0",
 
 		GitHubReleaseRepo:      env("GITHUB_RELEASE_REPO", "workvar/cron-compose"),
-		AgentUpdatePollMinutes: envInt("AGENT_UPDATE_POLL_MINUTES", 15),
+		AgentUpdatePollMinutes: envInt("AGENT_UPDATE_POLL_MINUTES", 1440),
 
 		SecretsMasterKey: env("SECRETS_MASTER_KEY", "0000000000000000000000000000000000000000000000000000000000000000"),
 

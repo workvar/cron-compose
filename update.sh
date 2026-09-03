@@ -105,11 +105,14 @@ build_go_source() {
   step "Building Go binaries"
   command -v go >/dev/null 2>&1 || die "go not found (needed to rebuild from source)"
   export GOTOOLCHAIN=local   # never let `go build` fetch a different toolchain
+  local ver ldflags=""
+  ver="$(git -C "$REPO_ROOT" describe --tags --always 2>/dev/null || true)"
+  [ -n "$ver" ] && ldflags="-X github.com/croncompose/croncompose/agent/internal/config.buildVersion=${ver#v}"
   ( cd control-plane && go build -o bin/control-plane ./cmd/server ) || die "control-plane build failed"; ok "control-plane"
   ( cd control-plane && go build -o bin/migrate       ./cmd/migrate ) || die "migrate build failed";       ok "migrate"
   ( cd cli           && go build -o bin/cc            ./cmd/cc      ) || die "cli build failed";           ok "cc"
   if [ "${CC_ENABLE_AGENT:-0}" = 1 ] && [ -d agent ]; then
-    ( cd agent && go build -o bin/agent ./cmd/agent ) || die "agent build failed"; ok "agent"
+    ( cd agent && go build -ldflags "$ldflags" -o bin/agent ./cmd/agent ) || die "agent build failed"; ok "agent"
   fi
 }
 
@@ -155,6 +158,13 @@ run_source() {
   load_env
   if [ "$DO_BUILD" = 1 ]; then build_go_source; build_web_source; else warn "skipping build (--no-build)"; fi
   migrate_source
+  if [ -f "$REPO_ROOT/install/lib/cleanup.sh" ]; then
+    # shellcheck source=install/lib/cleanup.sh
+    . "$REPO_ROOT/install/lib/cleanup.sh"
+    cleanup_build_tree "$REPO_ROOT"
+  else
+    warn "install/lib/cleanup.sh missing; leaving source in place"
+  fi
   restart_source
 }
 

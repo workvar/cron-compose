@@ -75,6 +75,7 @@ export default async function ServerDetailPage({ params }: Props) {
           targetVersion={updates?.latest_version}
           canUpdate={updateInfo.can_update}
           updateAvailable={updateInfo.update_available}
+          stack={!!updateInfo.stack}
         />
       )}
 

@@ -11,6 +11,9 @@ build_go() {
   # Use only the locally installed Go; never let `go build` download a different Go
   # toolchain onto the system (preflight already verified the local version is new enough).
   export GOTOOLCHAIN=local
+  local ver ldflags=""
+  ver="$(git -C "$REPO_ROOT" describe --tags --always 2>/dev/null || true)"
+  [ -n "$ver" ] && ldflags="-X github.com/croncompose/croncompose/agent/internal/config.buildVersion=${ver#v}"
   ( cd "$REPO_ROOT/control-plane" && go build -o bin/control-plane ./cmd/server ) || die "control-plane build failed"
   ok "control-plane"
   ( cd "$REPO_ROOT/control-plane" && go build -o bin/migrate ./cmd/migrate ) || die "migrate tool build failed"
@@ -18,7 +21,7 @@ build_go() {
   ( cd "$REPO_ROOT/cli" && go build -o bin/cc ./cmd/cc ) || die "cli build failed"
   ok "cc CLI"
   if [ "${ENABLE_AGENT:-0}" = "1" ]; then
-    ( cd "$REPO_ROOT/agent" && go build -o bin/agent ./cmd/agent ) || die "agent build failed"
+    ( cd "$REPO_ROOT/agent" && go build -ldflags "$ldflags" -o bin/agent ./cmd/agent ) || die "agent build failed"
     ok "agent"
   fi
 }

@@ -189,6 +189,11 @@ write_env_file() {
     env_line CC_ENABLE_AGENT "${ENABLE_AGENT:-0}"
     env_line CC_ENABLE_WEB "${ENABLE_WEB:-1}"
     env_line CC_DB_METHOD "${DB_METHOD:-existing}"
+    env_line GITHUB_RELEASE_REPO "workvar/cron-compose"
+    env_line INSTALL_SCRIPT_URL "https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh"
+    env_line AGENT_UPDATE_POLL_MINUTES "1440"
+    env_line CRONCOMPOSE_ROOT "$REPO_ROOT"
+    env_line CC_SOURCE_ROOT "$REPO_ROOT"
     if [ -n "$EXTRA_ENV_LINES" ]; then
       echo "# extra vars"
       printf '%s' "$EXTRA_ENV_LINES"

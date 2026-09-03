@@ -2,6 +2,39 @@ package agentgw
 
 import "testing"
 
+func TestSourcePolicyForwardsRepoWithoutChecksums(t *testing.T) {
+	p := UpdatePolicy{Version: "v0.0.4", Repo: "workvar/cron-compose", Restart: true}
+	if !p.Active() {
+		t.Fatal("source policy should be active with version + repo")
+	}
+	up := p.For("v0.0.3", "linux", "arm64")
+	if up == nil {
+		t.Fatal("expected an update offer")
+	}
+	if up.GetTargetVersion() != "v0.0.4" {
+		t.Errorf("target = %q", up.GetTargetVersion())
+	}
+	if up.GetDownloadUrl() != "https://github.com/workvar/cron-compose" {
+		t.Errorf("url = %q", up.GetDownloadUrl())
+	}
+	if up.GetSha256() != "" {
+		t.Errorf("sha256 = %q, want empty for source updates", up.GetSha256())
+	}
+	if !up.GetRestart() {
+		t.Error("want restart")
+	}
+	if p.For("v0.0.4", "linux", "amd64") != nil {
+		t.Fatal("already-current agent should not be offered an update")
+	}
+}
+
+func TestBinaryPolicyStillRequiresChecksum(t *testing.T) {
+	p := ParseUpdatePolicy("v1.0.0", "https://example.test/{version}", "", true)
+	if p.Active() {
+		t.Fatal("binary policy without checksums must stay inert")
+	}
+}
+
 func TestVersionsEqual(t *testing.T) {
 	if !VersionsEqual("v1.2.0", "1.2.0") {
 		t.Fatal("expected equal")

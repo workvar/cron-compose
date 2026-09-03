@@ -43,7 +43,7 @@ End-to-end flow:
 
 1. Open <http://localhost:3000/app>. The UI lives under `/app` (Next.js `basePath`); bare
    `/` is only redirected there by the control plane in prod, so in `next dev` go to `/app`
-   directly. You'll be bounced to `/app/login` (the middleware sees no session). Sign in
+   directly. You'll be bounced to `/app/login` (the request proxy sees no session). Sign in
    with the seeded admin.
 2. **Add server**, copy the install command (with a one-time token).
 3. On the target: `agent enroll --token=...` generates an ed25519 keypair + CSR, POSTs
@@ -168,5 +168,5 @@ Agent:
     ├── components/          <- Nav, ServerCard, JobRow, RunRow, LogoutButton
     ├── lib/                 <- api client (forwards session cookie), types
     ├── next.config.ts       <- standalone build + basePath /app + /api -> control plane rewrite
-    └── middleware.ts        <- redirect unauthenticated users to /login (paths are basePath-relative)
+    └── proxy.ts             <- redirect unauthenticated users to /login (paths are basePath-relative)
 ```

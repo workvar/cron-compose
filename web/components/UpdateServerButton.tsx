@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { beginUpdating } from "@/lib/updating";
 
 type Props = {
   serverId: string;
@@ -9,6 +10,7 @@ type Props = {
   targetVersion?: string;
   canUpdate: boolean;
   updateAvailable: boolean;
+  stack?: boolean;
 };
 
 export function UpdateServerButton({
@@ -17,6 +19,7 @@ export function UpdateServerButton({
   targetVersion,
   canUpdate,
   updateAvailable,
+  stack = false,
 }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -35,7 +38,11 @@ export function UpdateServerButton({
         throw new Error(body?.error?.message ?? `Update failed (${res.status})`);
       }
       setDone(true);
-      router.refresh();
+      if (stack) {
+        beginUpdating(targetVersion!, { stack: true, serverIds: [serverId] });
+      } else {
+        router.refresh();
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -43,15 +50,20 @@ export function UpdateServerButton({
     }
   }
 
+  const title = stack ? "Stack update available" : "Agent update available";
+  const detail = stack
+    ? "This host will git-checkout the release, rebuild web + control plane + agent, then restart."
+    : "This agent will clone the release tag, rebuild itself from source, and restart.";
+
   return (
     <div className="panel" style={{ marginBottom: 18 }}>
       <div className="row" style={{ alignItems: "flex-start" }}>
         <div>
-          <div style={{ fontWeight: 700, color: "var(--text)" }}>Agent update available</div>
+          <div style={{ fontWeight: 700, color: "var(--text)" }}>{title}</div>
           <p className="subtle" style={{ margin: "6px 0 0", fontSize: 13 }}>
             {currentVersion ? `Running ${currentVersion}. ` : ""}
-            Version {targetVersion} is available.
-            {done && " Update offered — the agent will restart when it applies the new binary."}
+            Version {targetVersion} is available. {detail}
+            {done && !stack && " Update started."}
           </p>
           {error && <p className="form-error" style={{ marginTop: 8 }}>{error}</p>}
         </div>
@@ -61,7 +73,7 @@ export function UpdateServerButton({
           disabled={!canUpdate || busy || done}
           onClick={() => void update()}
         >
-          {busy ? "Updating…" : done ? "Update offered" : "Update agent"}
+          {busy ? "Updating…" : done ? "Started" : "Update"}
         </button>
       </div>
       {!canUpdate && !done && (

@@ -134,18 +134,6 @@ func (s *service) onHello(ctx context.Context, serverID string, h *agentv1.Hello
 		return err
 	}
 
-	// Hello is the only moment we reliably know this agent's version, os and arch,
-	// so it is where the update offer belongs. Best effort: an agent that cannot be
-	// reached right now will say hello again on its next connect.
-	if up := s.update.For(h.GetAgentVersion(), h.GetOs(), h.GetArch()); up != nil {
-		s.log.Info("offering agent update", "server_id", serverID,
-			"from", h.GetAgentVersion(), "to", up.GetTargetVersion())
-		if sendErr := s.registry.Send(serverID, &agentv1.ServerMessage{
-			Body: &agentv1.ServerMessage_UpdateAgent{UpdateAgent: up},
-		}); sendErr != nil {
-			s.log.Warn("agent update offer not delivered", "server_id", serverID, "err", sendErr)
-		}
-	}
 	return nil
 }
 

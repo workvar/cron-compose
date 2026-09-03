@@ -64,6 +64,8 @@ export NONINTERACTIVE ENABLE_AGENT ENABLE_WEB ADVANCED
 . "$LIB_DIR/codegen.sh"   # needs need_root/db_run from database.sh, PKG_MGR from preflight
 # shellcheck source=lib/build.sh
 . "$LIB_DIR/build.sh"
+# shellcheck source=lib/cleanup.sh
+. "$LIB_DIR/cleanup.sh"
 # shellcheck source=lib/pm2.sh
 . "$LIB_DIR/pm2.sh"       # process management: pm2 + ecosystem.config.js
 # shellcheck source=lib/agent_sudoers.sh
@@ -98,6 +100,7 @@ main() {
   provision_database   # create/start the DB (no-op for an existing DSN)
   run_build            # go binaries + web
   apply_migrations     # uses the freshly built migrate tool
+  cleanup_build_tree "$REPO_ROOT"
   run_services         # generate ctl script, start stack, enroll agent, summary
 }
 

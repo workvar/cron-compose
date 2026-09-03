@@ -28,6 +28,8 @@ export type UpdateServerStatus = {
   current_version?: string;
   update_available: boolean;
   can_update: boolean;
+  /** True when this agent runs on the control-plane host (full stack rebuild). */
+  stack?: boolean;
 };
 
 export type UpdateStatus = {

@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { UpdateStatus } from "@/lib/types";
 import { summarizeUpdates } from "@/lib/update-helpers";
+import { beginUpdating } from "@/lib/updating";
 import { IconArrowUpRight, IconDownload, IconServer } from "@/components/icons";
 
 type Props = {
@@ -42,20 +43,23 @@ export function UpdatesPanel({ initial, canUpdate }: Props) {
     }
   }
 
-  async function updateServer(id: string) {
+  async function updateServer(id: string, stack: boolean) {
     const res = await fetch(`/api/servers/${id}/update`, { method: "POST" });
     const body = await readJson(res);
     if (!res.ok) {
       throw new Error(body && "error" in body ? body.error?.message ?? `Update failed (${res.status})` : `Update failed (${res.status})`);
     }
     setDone((d) => ({ ...d, [id]: true }));
+    if (stack && view.latest) {
+      beginUpdating(view.latest, { stack: true, serverIds: [id] });
+    }
   }
 
-  async function updateOne(id: string) {
+  async function updateOne(id: string, stack: boolean) {
     setBusy(id);
     setError(null);
     try {
-      await updateServer(id);
+      await updateServer(id, stack);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -67,9 +71,14 @@ export function UpdatesPanel({ initial, canUpdate }: Props) {
     setBusy("all");
     setError(null);
     try {
+      const stackIds: string[] = [];
       for (const s of view.updatable) {
         if (offered[s.server_id]) continue;
-        await updateServer(s.server_id);
+        await updateServer(s.server_id, false);
+        if (s.stack) stackIds.push(s.server_id);
+      }
+      if (stackIds.length > 0 && view.latest) {
+        beginUpdating(view.latest, { stack: true, serverIds: stackIds });
       }
     } catch (e) {
       setError((e as Error).message);
@@ -83,7 +92,7 @@ export function UpdatesPanel({ initial, canUpdate }: Props) {
       <div className="card-head" style={{ alignItems: "flex-start" }}>
         <div>
           <p className="subtle" style={{ margin: 0, fontSize: 13 }}>
-            GitHub releases for agent binaries
+            GitHub releases — each host builds from the tag
             {view.repo ? <> · <span className="mono">{view.repo}</span></> : null}
           </p>
         </div>
@@ -114,7 +123,7 @@ export function UpdatesPanel({ initial, canUpdate }: Props) {
             onClick={() => void updateAll()}
           >
             <IconDownload />
-            {busy === "all" ? "Updating…" : `Update ${view.updatable.length} agent${view.updatable.length === 1 ? "" : "s"}`}
+            {busy === "all" ? "Updating…" : `Update ${view.updatable.length}`}
           </button>
         )}
       </div>
@@ -125,7 +134,7 @@ export function UpdatesPanel({ initial, canUpdate }: Props) {
       {error && <p className="form-error" style={{ marginTop: 14 }}>{error}</p>}
 
       {status && status.items.length === 0 ? (
-        <div className="empty" style={{ marginTop: 16 }}>No servers enrolled yet. Add a server to update its agent.</div>
+        <div className="empty" style={{ marginTop: 16 }}>No servers enrolled yet. Add a server to update it.</div>
       ) : status && status.items.length > 0 ? (
         <div className="table-wrap" style={{ marginTop: 16 }}>
           <table className="table">
@@ -148,6 +157,7 @@ export function UpdatesPanel({ initial, canUpdate }: Props) {
                       <Link href={`/servers/${s.server_id}`} className="cluster" style={{ color: "inherit", flexWrap: "nowrap" }}>
                         <span className="mini-icon"><IconServer /></span>
                         <span style={{ fontWeight: 600 }}>{s.server_name}</span>
+                        {s.stack ? <span className="pill" style={{ fontSize: 11 }}>stack</span> : null}
                       </Link>
                     </td>
                     <td className="mono">{s.current_version || "unknown"}</td>
@@ -158,9 +168,9 @@ export function UpdatesPanel({ initial, canUpdate }: Props) {
                           type="button"
                           className="button sm"
                           disabled={!s.can_update || busy !== null || done}
-                          onClick={() => void updateOne(s.server_id)}
+                          onClick={() => void updateOne(s.server_id, !!s.stack)}
                         >
-                          {busy === s.server_id ? "Updating…" : done ? "Offered" : "Update"}
+                          {busy === s.server_id ? "Updating…" : done ? "Started" : "Update"}
                         </button>
                       ) : (
                         <span className="subtle" style={{ fontSize: 12 }}>

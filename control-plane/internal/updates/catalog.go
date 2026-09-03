@@ -122,11 +122,10 @@ func (c *Catalog) Policy() agentgw.UpdatePolicy {
 		return agentgw.UpdatePolicy{}
 	}
 	return agentgw.UpdatePolicy{
-		Version:     c.latest.Version,
-		URLTemplate: DefaultGitHubURLTemplate,
-		Repo:        c.repo,
-		Checksums:   c.latest.Checksums,
-		Restart:     c.restart,
+		Version:  c.latest.Version,
+		Repo:     c.repo,
+		Restart:  c.restart,
+		Checksums: c.latest.Checksums,
 	}
 }
 

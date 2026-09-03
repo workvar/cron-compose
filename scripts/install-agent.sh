@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
 # CronCompose agent installer for Linux (systemd) and macOS (launchd).
 #
-# Downloads the agent binary for this OS and architecture, enrolls it against the
-# control plane, and installs it as a service that starts at boot.
+# Clones the release tag, builds the agent from source, enrolls it against the
+# control plane, installs it as a service, then deletes the source tree.
 #
 # Required env (or flags):
 #   TOKEN                 one-time enrollment token from the UI (required)
 #   CONTROL_PLANE_HTTP    base URL for the REST enroll call, e.g. https://cc.example.com/api/v1
 #   CONTROL_PLANE_ADDR    host:port of the mTLS gRPC endpoint, e.g. cc.example.com:9090
 #   CONTROL_PLANE_SNI     server name to verify against (defaults to host portion of ADDR)
-#   AGENT_VERSION         release tag to download, defaults to "latest"
-#   DOWNLOAD_BASE         base URL for the binary; default points at GitHub releases
+#   AGENT_VERSION         release tag to build; defaults to this script's baked tag (or latest)
+#   GITHUB_REPO           owner/repo to clone; default workvar/cron-compose
 #   DATA_DIR              agent state directory; defaults per platform (see below)
 #
 # Run example:
-#   curl -sSL https://cc.example.com/agent.sh | \
+#   curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh | \
 #     sudo TOKEN=abc CONTROL_PLANE_HTTP=https://cc.example.com/api/v1 \
 #          CONTROL_PLANE_ADDR=cc.example.com:9090 bash
 #
-# This file stays a single self-contained script on purpose: it is fetched and piped
-# straight into bash, so it cannot source helper files the way install/install.sh does.
+# Needs git and Go 1.25+ on the target. This file stays a single self-contained script
+# on purpose: it is fetched and piped straight into bash.
 
 set -euo pipefail
 
@@ -27,8 +27,12 @@ set -euo pipefail
 : "${CONTROL_PLANE_HTTP:?CONTROL_PLANE_HTTP env var is required}"
 : "${CONTROL_PLANE_ADDR:?CONTROL_PLANE_ADDR env var is required}"
 
-AGENT_VERSION="${AGENT_VERSION:-latest}"
-DOWNLOAD_BASE="${DOWNLOAD_BASE:-https://github.com/croncompose/croncompose/releases}"
+# CI replaces __VERSION__ / __REPO__ when attaching this file to a GitHub release.
+AGENT_VERSION="${AGENT_VERSION:-__VERSION__}"
+GITHUB_REPO="${GITHUB_REPO:-__REPO__}"
+if [ "$GITHUB_REPO" = "__REPO__" ] || [ -z "$GITHUB_REPO" ]; then
+  GITHUB_REPO="workvar/cron-compose"
+fi
 SNI="${CONTROL_PLANE_SNI:-${CONTROL_PLANE_ADDR%%:*}}"
 BIN_PATH=/usr/local/bin/croncompose-agent
 
@@ -42,6 +46,9 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
+command -v git >/dev/null 2>&1 || { echo "git is required to build the agent from source" >&2; exit 1; }
+command -v go >/dev/null 2>&1 || { echo "Go 1.25+ is required to build the agent from source" >&2; exit 1; }
+
 # --- platform detection ----------------------------------------------------
 
 os="$(uname -s)"
@@ -50,22 +57,18 @@ arch="$(uname -m)"
 case "$os" in
   Linux)
     case "$arch" in
-      x86_64|amd64) target="linux-amd64" ;;
-      aarch64|arm64) target="linux-arm64" ;;
-      armv7l) target="linux-armv7" ;;
+      x86_64|amd64) ;;
+      aarch64|arm64) ;;
+      armv7l) ;;
       *) echo "unsupported arch: $arch" >&2; exit 1 ;;
     esac
     DATA_DIR="${DATA_DIR:-/var/lib/croncompose}"
     ;;
   Darwin)
     case "$arch" in
-      arm64) target="darwin-arm64" ;;
-      x86_64) target="darwin-amd64" ;;
+      arm64|x86_64) ;;
       *) echo "unsupported arch: $arch" >&2; exit 1 ;;
     esac
-    # /var/lib is not a macOS location. This must match defaultDataDir in
-    # agent/internal/config/datadir_darwin.go, or the service starts with an empty
-    # store and re-enrolls.
     DATA_DIR="${DATA_DIR:-/usr/local/var/croncompose}"
     ;;
   *)
@@ -74,14 +77,41 @@ case "$os" in
     ;;
 esac
 
-# --- shared ----------------------------------------------------------------
+resolve_version() {
+  if [ "$AGENT_VERSION" != "__VERSION__" ] && [ "$AGENT_VERSION" != "latest" ] && [ -n "$AGENT_VERSION" ]; then
+    return 0
+  fi
+  echo "==> resolving latest release of $GITHUB_REPO"
+  AGENT_VERSION="$(curl -fsSL -H 'Accept: application/vnd.github+json' \
+    "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
+    | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)"
+  if [ -z "$AGENT_VERSION" ]; then
+    echo "could not read the latest GitHub release tag for $GITHUB_REPO" >&2
+    exit 1
+  fi
+}
 
-download_binary() {
-  echo "==> downloading agent ($AGENT_VERSION / $target)"
-  local url="${DOWNLOAD_BASE}/${AGENT_VERSION}/download/croncompose-agent-${target}"
-  curl -fSL --retry 3 -o "$BIN_PATH.tmp" "$url"
+build_from_source() {
+  resolve_version
+  echo "==> cloning $GITHUB_REPO @$AGENT_VERSION"
+  SRC="$(mktemp -d /tmp/croncompose-agent.XXXXXX)"
+  trap 'rm -rf "$SRC"' EXIT
+  git clone --depth 1 --branch "$AGENT_VERSION" "https://github.com/${GITHUB_REPO}.git" "$SRC"
+  echo "==> building agent"
+  local ver="${AGENT_VERSION#v}"
+  mkdir -p "$SRC/agent/bin"
+  (
+    cd "$SRC/agent"
+    export GOTOOLCHAIN=local
+    go build -trimpath \
+      -ldflags="-s -w -X github.com/croncompose/croncompose/agent/internal/config.buildVersion=${ver}" \
+      -o "$BIN_PATH.tmp" \
+      ./cmd/agent
+  )
   chmod 0755 "$BIN_PATH.tmp"
   mv "$BIN_PATH.tmp" "$BIN_PATH"
+  rm -rf "$SRC"
+  trap - EXIT
 }
 
 # Load install/lib/agent_sudoers.sh from a checkout, or fetch it when this script is
@@ -118,7 +148,10 @@ install_linux() {
     useradd --system --home-dir "$DATA_DIR" --shell /usr/sbin/nologin croncompose
   install -d -o croncompose -g croncompose -m 0700 "$DATA_DIR"
 
-  download_binary
+  build_from_source
+  chown root:root "$BIN_PATH"
+  # Let the service user replace the binary on later source updates.
+  chown croncompose:croncompose "$BIN_PATH"
 
   echo "==> writing systemd unit"
   cat >"$UNIT_PATH" <<EOF
@@ -134,6 +167,7 @@ Environment=CONTROL_PLANE_ADDR=${CONTROL_PLANE_ADDR}
 Environment=CONTROL_PLANE_HTTP=${CONTROL_PLANE_HTTP}
 Environment=CONTROL_PLANE_SNI=${SNI}
 Environment=DATA_DIR=${DATA_DIR}
+Environment=AGENT_VERSION=${AGENT_VERSION}
 ExecStart=${BIN_PATH} run
 Restart=always
 RestartSec=5s
@@ -148,6 +182,7 @@ EOF
     CONTROL_PLANE_HTTP="$CONTROL_PLANE_HTTP" \
     CONTROL_PLANE_SNI="$SNI" \
     DATA_DIR="$DATA_DIR" \
+    AGENT_VERSION="$AGENT_VERSION" \
     "$BIN_PATH" enroll --token="$TOKEN"
 
   _source_agent_sudoers_lib
@@ -164,18 +199,11 @@ EOF
 # --- macOS -----------------------------------------------------------------
 
 install_darwin() {
-  # No dedicated service account: macOS has no useradd, and creating a system user
-  # through dscl means hand-picking a free UID in the reserved range. The daemon runs
-  # as root, which is also what run_as_user needs in order to switch users at all.
   echo "==> creating data and log dirs"
   install -d -o root -g wheel -m 0700 "$DATA_DIR"
   install -d -o root -g wheel -m 0755 "$(dirname "$MAC_LOG")"
 
-  download_binary
-
-  # A binary fetched with curl carries no quarantine attribute, but one copied off a
-  # browser download or an AirDrop does, and Gatekeeper then kills it on exec with a
-  # message launchd reports only as "Killed: 9". Stripping it is a no-op when absent.
+  build_from_source
   xattr -d com.apple.quarantine "$BIN_PATH" 2>/dev/null || true
 
   echo "==> writing launchd daemon"
@@ -201,6 +229,8 @@ install_darwin() {
         <string>${SNI}</string>
         <key>DATA_DIR</key>
         <string>${DATA_DIR}</string>
+        <key>AGENT_VERSION</key>
+        <string>${AGENT_VERSION}</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
@@ -219,9 +249,6 @@ install_darwin() {
 EOF
   chown root:wheel "$PLIST_PATH"
   chmod 0644 "$PLIST_PATH"
-  # launchd refuses to load a plist it cannot parse, with an error that does not say
-  # which key is wrong. Catching it here, against the file we just wrote, is cheaper
-  # than reading it out of the system log later.
   plutil -lint "$PLIST_PATH" >/dev/null
 
   echo "==> enrolling"
@@ -229,11 +256,10 @@ EOF
   CONTROL_PLANE_HTTP="$CONTROL_PLANE_HTTP" \
   CONTROL_PLANE_SNI="$SNI" \
   DATA_DIR="$DATA_DIR" \
+  AGENT_VERSION="$AGENT_VERSION" \
     "$BIN_PATH" enroll --token="$TOKEN"
 
   echo "==> starting service"
-  # bootstrap fails outright if the label is already loaded, which is exactly what a
-  # re-run of this installer hits, so unload first and ignore "not loaded".
   launchctl bootout "system/${PLIST_LABEL}" 2>/dev/null || true
   launchctl bootstrap system "$PLIST_PATH"
   launchctl enable "system/${PLIST_LABEL}"
@@ -242,10 +268,6 @@ EOF
   echo "done. follow logs with: tail -f ${MAC_LOG}"
   echo "status:               sudo launchctl print system/${PLIST_LABEL}"
   echo "stop and remove:      sudo launchctl bootout system/${PLIST_LABEL} && sudo rm ${PLIST_PATH}"
-  echo
-  echo "note: resource limits (cpu_quota, memory_max, tasks_max, io_weight) are not"
-  echo "      enforced on macOS. There is no launchd equivalent of a systemd transient"
-  echo "      scope, so jobs that declare them run unlimited and say so in the run log."
 }
 
 case "$os" in

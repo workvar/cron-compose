@@ -53,43 +53,29 @@ alongside SSO.
 
 ## Agent packaging
 
-`.deb` and `.apk` packages are built on tag push by
-`.github/workflows/release.yml` for `linux/amd64` and `linux/arm64`:
+GitHub Releases for CronCompose are **notes-only**: tagging `v*` publishes
+`RELEASE_NOTES.md` plus a baked `install-agent.sh` (and a Windows stub). No agent
+binaries or `.deb`/`.apk` packages are built in CI.
 
-```
-croncompose-agent_<version>_<arch>.deb
-croncompose-agent_<version>_<arch>.apk
-SHA256SUMS-<arch>.txt
-```
-
-Install:
+Install an agent on Linux or macOS (needs `git` and Go 1.25+):
 
 ```sh
-# Debian / Ubuntu
-sudo dpkg -i croncompose-agent_v0.1.0_amd64.deb
-sudo systemctl edit /etc/croncompose/agent.env   # set CONTROL_PLANE_*
-sudo systemctl enable --now croncompose-agent
-
-# Alpine
-sudo apk add --allow-untrusted croncompose-agent_v0.1.0_amd64.apk
-sudo vi /etc/croncompose/agent.env
-sudo rc-service croncompose-agent start
+curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh | \
+  sudo TOKEN=<token> \
+       CONTROL_PLANE_HTTP=https://<host>/api/v1 \
+       CONTROL_PLANE_ADDR=<host>:9090 \
+       bash
 ```
 
-Each package:
+The script clones the release tag, builds the agent, enrolls it, installs the
+service, then deletes the source tree.
 
-- Installs `/usr/local/bin/croncompose-agent`.
-- Installs the systemd unit at `/lib/systemd/system/croncompose-agent.service`.
-- Drops `/etc/croncompose/agent.env.example` as a config template.
-- Postinstall creates the `croncompose` system user and `/var/lib/croncompose`
-  (mode 0700) if they don't exist.
-- Preremove stops + disables the service.
+The control-plane host (from `install/install.sh`) keeps a git checkout. Settings →
+Updates polls GitHub about once a day; **Update** tells the local agent to check out
+the tag, rebuild web + control plane + agent via `update.sh`, restart, and strip
+build inputs again.
 
-The unit hardens the runtime: `NoNewPrivileges`, `ProtectSystem=full`,
-`ProtectHome=true`, `PrivateTmp=true`.
-
-For a one-off install (no apt/apk available), the existing `scripts/install-agent.sh`
-still works. On Linux it also writes `/etc/sudoers.d/croncompose-agent` with grants
+On Linux the installer also writes `/etc/sudoers.d/croncompose-agent` with grants
 for `systemctl`, `systemd-analyze`, `ss`, and `lsof` when that file does not already
 exist.
 
