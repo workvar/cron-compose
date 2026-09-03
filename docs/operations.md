@@ -27,15 +27,27 @@ Scrape config:
 
 ## OIDC SSO
 
-Opt in by setting the four `OIDC_*` env vars on the control plane:
+The default installer does not ask for SSO. Use **`--advanced`** (or edit `.env` after
+install) to put in an identity provider's client id and secret:
+
+```sh
+./install/install.sh --advanced
+```
+
+When prompted **Configure OIDC single sign-on now?**, enter:
 
 | Variable             | Purpose                                                   |
 |----------------------|-----------------------------------------------------------|
-| `OIDC_ISSUER_URL`    | e.g. `https://login.example.com`. Discovery doc is read at startup. |
-| `OIDC_CLIENT_ID`     | OIDC client id.                                           |
-| `OIDC_CLIENT_SECRET` | OIDC client secret (omit for public clients).            |
-| `OIDC_REDIRECT_URL`  | e.g. `https://cc.example.com/api/v1/auth/oidc/callback`. |
+| `OIDC_ISSUER_URL`    | e.g. `https://gitlab.com` or `https://login.example.com`. Discovery doc is read at startup. |
+| `OIDC_CLIENT_ID`     | Application / client id from the IdP.                     |
+| `OIDC_CLIENT_SECRET` | Application secret (omit for public clients).            |
+| `OIDC_REDIRECT_URL`  | Register `https://<host>/api/v1/auth/oidc/callback` with the IdP. Derived from `PUBLIC_BASE_URL` if unset. |
 | `OIDC_DEFAULT_ROLE`  | role assigned on first SSO login. Default `viewer`.       |
+
+GitLab Applications work as OIDC. GitHub OAuth Apps / GitHub Apps do not (not OIDC).
+
+You can set the same keys in the repo-root `.env` (mode `600`) and restart
+(`./croncompose-ctl.sh restart`) instead of re-running the installer.
 
 Flow:
 

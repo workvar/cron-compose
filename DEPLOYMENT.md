@@ -168,7 +168,13 @@ git clone <repo> && cd croncompose
 ```
 
 The installer asks four questions (public URL, HTTP port, database, admin login) and
-derives the rest; `--advanced` asks the long form. It generates secrets, builds the binaries
+derives the rest. Pass **`--advanced`** for the long form: runtime directory, each
+port, the database method menu (including package-manager and Docker Postgres), log
+level, **OIDC SSO** (issuer, client id, client secret), and extra `KEY=VALUE` lines.
+Those OIDC values land in `.env`; you can also add them later and restart. Full flag
+reference: [install/README.md](install/README.md#advanced).
+
+It generates secrets, builds the binaries
 and the UI, applies migrations, and writes a `0600` `.env`. Everything runs under
 **pm2** (installed automatically if missing), defined by `ecosystem.config.js`.
 `croncompose-ctl.sh` is a thin wrapper over it:

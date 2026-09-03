@@ -73,10 +73,32 @@ the log level, and the TLS SANs. `SESSION_SECRET` and `SECRETS_MASTER_KEY` are g
 with a CSPRNG, or **reused from an existing `.env`** so re-running the installer never
 orphans your stored secrets. It all lands in a `.env` (mode `600`) at the repo root.
 
-Run `./install/install.sh --advanced` to be asked the long form instead: runtime
-directory, all three ports, the database method menu, log level, OIDC SSO, and free-form
-`KEY=VALUE` extras. Every one of those is also settable non-interactively through a
-`CC_*` environment variable.
+Run `./install/install.sh --advanced` to be asked the long form instead. Every one of
+those answers is also settable non-interactively through a `CC_*` environment variable
+(see [Non-interactive install](#non-interactive-install)).
+
+## `--advanced`
+
+The default installer asks four questions. `--advanced` adds the rest:
+
+```sh
+./install/install.sh --advanced
+```
+
+| Prompt | What it writes |
+|--------|----------------|
+| Runtime directory | `CC_RUNTIME_DIR` (logs, TLS, local agent data; default `./.run`) |
+| HTTP, web, and gRPC ports | asked individually instead of deriving web/gRPC from the first free port |
+| Database method menu | local `psql`, remote DSN, **install Postgres via the OS package manager**, or **Docker Postgres** |
+| Log level | `LOG_LEVEL` |
+| **OIDC SSO** | `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, redirect URL, default role |
+| Extra `KEY=VALUE` lines | appended to `.env` as-is |
+
+OIDC is the place to put a **GitLab** (or other OIDC) application's client id and secret.
+Register the callback `https://<your-host>/api/v1/auth/oidc/callback` with the provider.
+GitHub OAuth Apps are not OIDC; they will not enable “Sign in with SSO.” You can also
+edit these keys in `.env` later and `./croncompose-ctl.sh restart` — see
+[operations.md](../docs/operations.md#oidc-sso).
 
 ## Database options
 
