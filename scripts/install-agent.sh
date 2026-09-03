@@ -46,8 +46,57 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
+# sudo's default PATH is often /usr/sbin:/usr/bin and does not include a user
+# install of Go (e.g. /usr/local/go/bin). Search the usual places, then the
+# invoking user's PATH.
+find_go() {
+  local candidate home
+  if command -v go >/dev/null 2>&1; then
+    command -v go
+    return 0
+  fi
+  for candidate in \
+      /usr/local/go/bin/go \
+      /usr/lib/go/bin/go \
+      /opt/go/bin/go \
+      /usr/lib/go-1.25/bin/go \
+      /usr/lib/go-1.26/bin/go; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+    home="$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6)"
+    [[ -z "$home" ]] && home="$(eval echo "~$SUDO_USER")"
+    for candidate in \
+        "$home/go/bin/go" \
+        "$home/.go/bin/go" \
+        "$home/.local/go/bin/go" \
+        "$home/sdk/go/bin/go"; do
+      if [[ -x "$candidate" ]]; then
+        printf '%s\n' "$candidate"
+        return 0
+      fi
+    done
+    candidate="$(sudo -u "$SUDO_USER" -H bash -lc 'command -v go' 2>/dev/null || true)"
+    if [[ -n "$candidate" && -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+  return 1
+}
+
 command -v git >/dev/null 2>&1 || { echo "git is required to build the agent from source" >&2; exit 1; }
-command -v go >/dev/null 2>&1 || { echo "Go 1.25+ is required to build the agent from source" >&2; exit 1; }
+GO_BIN="$(find_go)" || {
+  echo "Go 1.25+ is required to build the agent from source." >&2
+  echo "sudo does not use your user PATH; install Go system-wide or rerun with:" >&2
+  echo "  curl ... | sudo env PATH=\"\$PATH\" TOKEN=... CONTROL_PLANE_HTTP=... CONTROL_PLANE_ADDR=... bash" >&2
+  exit 1
+}
+export PATH="$(dirname "$GO_BIN"):$PATH"
+echo "==> using $($GO_BIN version)"
 
 # --- platform detection ----------------------------------------------------
 
