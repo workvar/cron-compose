@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { apiGet, ApiError } from "@/lib/api";
 import { getHealth } from "@/lib/health";
 import type { ListResponse, Me, Server } from "@/lib/types";
+import { AppShell } from "./AppShell";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { SetupBanner } from "./SetupBanner";
@@ -51,7 +52,7 @@ export async function Shell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="app-shell">
+    <AppShell>
       <Sidebar me={meResult.me ?? UNKNOWN_ME} serverCount={serverCount} />
       <div className="app-main">
         <Topbar me={meResult.me ?? UNKNOWN_ME} />
@@ -60,6 +61,6 @@ export async function Shell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
-    </div>
+    </AppShell>
   );
 }

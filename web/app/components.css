@@ -280,3 +280,27 @@ table.data th {
 }
 table.data td { padding: 12px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
 table.data tr:last-child td { border-bottom: 0; }
+
+/* Copy button (used over code blocks such as the install command) */
+.code-block { position: relative; }
+.code-block > .copy-btn { position: absolute; top: 8px; right: 8px; }
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  color: #d7ecdf;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.copy-btn:hover { background: rgba(255, 255, 255, 0.16); color: #fff; }
+.copy-btn:active { transform: translateY(1px); }
+.copy-btn:focus-visible { outline: 2px solid var(--green-strong); outline-offset: 2px; }
+.copy-btn svg { width: 14px; height: 14px; }
+.code-block > pre { padding-right: 96px; }

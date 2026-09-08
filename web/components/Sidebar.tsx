@@ -1,21 +1,36 @@
+"use client";
+
 import Link from "next/link";
 import type { Me } from "@/lib/types";
 import { Brand } from "./Brand";
 import { NavLink } from "./NavLink";
-import { LogoutButton } from "./LogoutButton";
+import { useSidebar } from "./AppShell";
 import { shouldShowServerPromo } from "@/lib/ui-helpers";
 import {
   IconDashboard, IconServer, IconJobs, IconKey, IconShield,
   IconSettings, IconZap, IconPlus, IconPlug, IconPorts,
+  IconChevronLeft, IconChevronRight,
 } from "./icons";
 
 export function Sidebar({ me, serverCount }: { me: Me; serverCount: number }) {
   const isAdmin = me.role === "admin" || me.role === "owner";
   const showPromo = shouldShowServerPromo(serverCount);
+  const { collapsed, toggle } = useSidebar();
 
   return (
-    <aside className="sidebar">
-      <Brand href="/" />
+    <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
+      <div className="sidebar-top">
+        <Brand href="/" />
+        <button
+          type="button"
+          className="sidebar-toggle"
+          onClick={toggle}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? <IconChevronRight /> : <IconChevronLeft />}
+        </button>
+      </div>
 
       <div className="nav-section">
         <div className="nav-label">Menu</div>
@@ -31,7 +46,6 @@ export function Sidebar({ me, serverCount }: { me: Me; serverCount: number }) {
       <div className="nav-section">
         <div className="nav-label">General</div>
         <NavLink href="/settings" icon={<IconSettings />}>Settings</NavLink>
-        <LogoutButton variant="nav" />
       </div>
 
       {showPromo && (

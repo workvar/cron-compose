@@ -9,6 +9,7 @@
   min-height: 100vh;
   min-height: 100dvh;
   width: 100%;
+  transition: grid-template-columns 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ---------- Sidebar ---------- */
@@ -23,7 +24,35 @@
   background: var(--surface);
   border-right: 1px solid var(--border);
 }
-.sidebar .brand { padding: 6px 8px 14px; }
+.sidebar .brand { padding: 0; }
+
+.sidebar-top {
+  position: relative;
+  min-height: 74px;
+  padding: 6px 8px 14px;
+}
+/* Anchored with plain px left/top (never "auto" or "right") so both states
+   interpolate cleanly and the button glides rather than jumping. */
+.sidebar-toggle {
+  position: absolute;
+  top: 6px;
+  left: 198px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-md);
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  transition: top 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    left 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    background 0.12s ease, color 0.12s ease;
+}
+.sidebar-toggle:hover { background: var(--surface-2); color: var(--text); }
+.sidebar-toggle svg { width: 14px; height: 14px; }
 
 .nav-section { display: flex; flex-direction: column; gap: 2px; }
 .nav-label {
@@ -145,10 +174,38 @@
   max-width: none;
   margin: 0 0 18px;
 }
-.profile { display: flex; align-items: center; gap: 10px; padding-left: 6px; }
-.profile .who { line-height: 1.2; }
-.profile .who .name { font-weight: 700; color: var(--text); font-size: 13px; }
-.profile .who .mail { font-size: 12px; color: var(--muted); }
+.profile { position: relative; display: flex; align-items: center; padding-left: 6px; }
+.profile-trigger {
+  display: inline-flex;
+  background: none;
+  border: none;
+  padding: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.profile-trigger:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+
+/* Name, email and sign-out live in this collapsible dropdown instead of
+   sitting inline next to the avatar. */
+.profile-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 220px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 6px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+}
+.profile-dropdown-who { padding: 8px 10px 10px; line-height: 1.3; }
+.profile-dropdown-who .name { font-weight: 700; color: var(--text); font-size: 13px; }
+.profile-dropdown-who .mail { font-size: 12px; color: var(--muted); margin-top: 2px; word-break: break-all; }
+.profile-dropdown-sep { height: 1px; background: var(--border); margin: 2px 4px 6px; }
+.profile-dropdown .nav-item { margin-left: 0; }
 
 .content { flex: 1; min-width: 0; width: 100%; padding: 6px 28px 56px; }
 
@@ -247,6 +304,15 @@
 .brand .mark img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .auth-card .brand .mark { width: 44px; height: 44px; border-radius: 13px; }
 
+/* ---------- Manual collapse (sidebar toggle button) ---------- */
+.app-shell.sidebar-collapsed { grid-template-columns: 76px minmax(0, 1fr); }
+.app-shell.sidebar-collapsed .sidebar .brand span:not(.mark),
+.app-shell.sidebar-collapsed .nav-item span,
+.app-shell.sidebar-collapsed .nav-label,
+.app-shell.sidebar-collapsed .sidebar-foot { display: none; }
+.app-shell.sidebar-collapsed .nav-item { justify-content: center; }
+.app-shell.sidebar-collapsed .sidebar-toggle { top: 46px; left: 9px; }
+
 /* ---------- Responsive: collapse sidebar to icons, then stack ---------- */
 @media (max-width: 1040px) {
   :root { --sidebar-w: 76px; }
@@ -259,7 +325,6 @@
   .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border); }
   .topbar { padding: 14px 18px; }
   .content { padding: 6px 18px 48px; }
-  .profile .who { display: none; }
 }
 
 /* ---------- Full-stack update overlay ---------- */

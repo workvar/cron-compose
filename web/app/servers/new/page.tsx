@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { CreateServerResponse } from "@/lib/types";
 import { IconChevronLeft, IconCheck } from "@/components/icons";
+import CopyButton from "@/components/CopyButton";
 
 export default function NewServerPage() {
   const router = useRouter();
@@ -49,7 +50,10 @@ export default function NewServerPage() {
         </div>
         <div className="panel" style={{ maxWidth: 640 }}>
           <label>Install command</label>
-          <pre className="review-script" style={{ marginTop: 6 }}>{result.install_command}</pre>
+          <div className="code-block" style={{ marginTop: 6 }}>
+            <pre className="review-script" style={{ marginTop: 0 }}>{result.install_command}</pre>
+            <CopyButton value={result.install_command} label="Copy" />
+          </div>
           <button className="button" style={{ marginTop: 16 }} onClick={() => router.push("/servers")}>
             <IconCheck /> Done
           </button>
