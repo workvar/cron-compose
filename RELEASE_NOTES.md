@@ -1,13 +1,14 @@
-# CronCompose v0.0.4
+# CronCompose v0.0.5
 
-Releases no longer ship prebuilt binaries. Hosts clone the tag and build locally, and Settings can update a live stack without GitHub Actions minutes.
+Import a GitHub or GitLab repo onto an agent, sign in with those providers, and point installers at `/api` instead of `/api/v1`.
 
 ## Highlights
 
-- **Notes-only GitHub releases** — tagging `v*` publishes `RELEASE_NOTES.md` plus a baked `install-agent.sh` (and a Windows stub). No agent binaries, `.deb`, or `.apk` packages are built in CI.
-- **Source agent installer** — `install-agent.sh` clones the release tag, `go build`s the agent, enrolls it, installs the service, then deletes the source tree. Needs `git` and Go 1.25+ on the target.
-- **In-place stack updates** — Settings polls GitHub about once a day (or **Check now**). **Update** on the control-plane host checks out the tag, rebuilds web + control plane + agent, restarts, and strips leftover build inputs. A fullscreen overlay stays up until the stack is back.
-- **Remote agents rebuild themselves** — the same Update button tells a standalone agent to clone the tag, rebuild its binary, swap it, and discard the clone.
+- **Deploys** — Connect a GitHub or GitLab grant under Settings → Git, then **Deploy → Import git** to clone a repo onto a chosen agent and run its installer with a live PTY log. Attach PM2, systemd, or Docker Compose afterwards. Import can commit `croncompose.yml` plus GitHub Actions / GitLab CI and register a push webhook so later pushes start a run. Redeploy from the project page.
+- **GitHub / GitLab login** — Optional OAuth apps power “Sign in with GitHub/GitLab”. Login and git-connect are separate (`purpose=login` vs `purpose=git`). Register `<PUBLIC_BASE_URL>/api/auth/github/callback` and `…/gitlab/callback` on the OAuth app. Git clone needs repo scope.
+- **Public REST is `/api`** — `PUBLIC_HTTP_URL` and agent `CONTROL_PLANE_HTTP` should be `https://<host>/api`, not `/api/v1`. Using `/api/v1` behind the Next.js front doubles the prefix and 401s enrollment.
+- **Installer and updates** — The source installer, systemd setup, standalone agent install, and `update.sh` write agent sudoers for the Ports page. `install-agent.sh` finds Go when sudo strips `PATH`. `./install/install.sh --advanced` prompts for OIDC client credentials. Source-tree restore after an update is more reliable.
+- **UI** — Collapsible sidebar (width persisted), copy button on the new-server install command, account details in the avatar menu, and `scope_id` on the secrets form.
 
 ## Upgrade notes
 
@@ -18,38 +19,39 @@ From Settings → Updates, click **Update** on this host. Or by hand:
 ```sh
 cd cron-compose
 git fetch --tags
-git checkout --force v0.0.4
+git checkout --force v0.0.5
 ./update.sh --no-pull
 ```
 
-No new database migrations in this release.
+This release applies migration `0012_deploys.sql` (git connections, OAuth identities, deploy projects). `update.sh` runs migrations; back up Postgres first if you want a rollback path.
 
 ### Agent (Linux / macOS)
 
 ```sh
 curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh | \
   sudo TOKEN=<token> \
-       CONTROL_PLANE_HTTP=https://<host>/api/v1 \
+       CONTROL_PLANE_HTTP=https://<host>/api \
        CONTROL_PLANE_ADDR=<host>:9090 \
        bash
 ```
 
-Windows is not supported for the agent (Unix process APIs). `install-agent.ps1` only says so.
+Use `/api`, not `/api/v1`. Windows is not supported for the agent (Unix process APIs). `install-agent.ps1` only says so.
 
 ### Existing installs
 
-Set these if they are not already in `.env` (new installs write them automatically):
+Optional, for GitHub/GitLab login and Deploy. Set these in `.env` and restart:
 
 ```
-GITHUB_RELEASE_REPO=workvar/cron-compose
-INSTALL_SCRIPT_URL=https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh
-AGENT_UPDATE_POLL_MINUTES=1440
-CC_SOURCE_ROOT=<path-to-checkout>
+GITHUB_OAUTH_CLIENT_ID=
+GITHUB_OAUTH_CLIENT_SECRET=
+GITLAB_OAUTH_CLIENT_ID=
+GITLAB_OAUTH_CLIENT_SECRET=
 ```
 
-The local control-plane agent needs label `croncompose.role=stack` for the updating overlay (new installer enrollments set this).
+If `PUBLIC_HTTP_URL` is still `…/api/v1`, change it to `…/api` (or unset it and let `PUBLIC_BASE_URL` derive it) and restart so new enroll commands use `/api`. Existing agents keep working over gRPC; re-run the installer only when adding a server.
 
 ## Documentation
 
-- [Operations — agent packaging](docs/operations.md#agent-packaging)
+- [REST API — Deploys](docs/api.md#deploys)
 - [Deployment — updates](DEPLOYMENT.md#updates-source-builds)
+- [Operations — OIDC](docs/operations.md#oidc-sso)
