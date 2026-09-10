@@ -49,6 +49,7 @@ message AgentMessage {
     ConnectorEvent  connector_event  = 7; // unsolicited connector discovery push
     ConnectorResult connector_result = 8; // reply to a ConnectorCommand
     TerminalOutput  terminal_output  = 9; // web terminal: pty / command output
+    DeployEvent     deploy_event     = 10; // git clone / install progress
   }
 }
 
@@ -60,6 +61,7 @@ message ServerMessage {
     UpdateAgent update_agent = 4;
     ConnectorCommand connector_command = 5; // targeted connector op (read/validate/apply/lifecycle)
     TerminalInput    terminal_input    = 6; // web terminal: open / stdin / resize / close
+    DeployCommand    deploy_command    = 7; // clone + install on the target host
   }
 }
 
@@ -261,3 +263,46 @@ message TerminalOutput {
   int32  exit_code  = 4;  // exit: process exit code
   string message    = 5;  // error / exit: human-readable detail
 }
+
+// ---- Git deploys ----
+//
+// Clone a repository onto the target host and run the install script. Installers that
+// prompt on stdin run inside a PTY; stdin is forwarded as DeployCommand op=stdin.
+// Output is EPHEMERAL (same path as the web terminal), plus a finished event.
+
+message DeployApp {
+  string name             = 1;
+  string root_directory    = 2;
+  string install_script   = 3;
+  string language         = 4;
+  int32  port             = 5;
+  string process_manager  = 6; // none | pm2 | systemd | docker
+  map<string, string> env  = 7;
+}
+
+message DeployCommand {
+  string run_id          = 1;
+  string op              = 2; // start | stdin | cancel
+  string clone_url       = 3;
+  string clone_token     = 4; // never logged
+  string dest_path       = 5;
+  string branch          = 6;
+  string install_script  = 7;
+  string root_directory  = 8;
+  map<string, string> env = 9;
+  int32  port             = 10;
+  string process_manager = 11; // none | pm2 | systemd | docker
+  repeated DeployApp apps = 12;
+  bytes  stdin            = 13;
+}
+
+message DeployEvent {
+  string run_id      = 1;
+  string kind        = 2; // log | started | finished | error
+  bytes  data        = 3;
+  string message     = 4;
+  int32  exit_code    = 5;
+  string status      = 6; // running | succeeded | failed | canceled
+  int32  seq          = 7;
+}
+

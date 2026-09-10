@@ -1,5 +1,5 @@
 import Link from "next/link";
-import logo from "../public/logo.png";
+import { LogoMark } from "./LogoMark";
 
 type BrandProps = {
   /** When set, the wordmark is a link. Login uses no href. */
@@ -10,7 +10,7 @@ export function Brand({ href }: BrandProps) {
   const inner = (
     <>
       <span className="mark">
-        <img src={logo.src} alt="" width={34} height={34} />
+        <LogoMark />
       </span>
       <span>CronCompose</span>
     </>
@@ -18,7 +18,7 @@ export function Brand({ href }: BrandProps) {
 
   if (href) {
     return (
-      <Link href={href} className="brand" aria-label="CronCompose">
+      <Link href={href} className="brand" aria-label="CronCompose home">
         {inner}
       </Link>
     );

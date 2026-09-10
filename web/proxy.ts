@@ -21,6 +21,8 @@ export function proxy(req: NextRequest) {
     pathname.startsWith("/api") ||
     pathname.startsWith("/icon") ||
     pathname.startsWith("/apple-icon") ||
+    pathname.startsWith("/opengraph-image") ||
+    pathname.startsWith("/twitter-image") ||
     pathname.includes(".")
   ) {
     return next(req);
@@ -40,5 +42,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|ico|webp)$).*)"],
 };

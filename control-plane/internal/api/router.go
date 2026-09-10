@@ -2,6 +2,7 @@ package api
 
 import (
 	"log/slog"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,6 +13,7 @@ import (
 	"github.com/croncompose/croncompose/control-plane/internal/auth"
 	"github.com/croncompose/croncompose/control-plane/internal/connectors"
 	"github.com/croncompose/croncompose/control-plane/internal/cryptobox"
+	"github.com/croncompose/croncompose/control-plane/internal/deploys"
 	"github.com/croncompose/croncompose/control-plane/internal/jobs"
 	"github.com/croncompose/croncompose/control-plane/internal/notify"
 	"github.com/croncompose/croncompose/control-plane/internal/pki"
@@ -39,6 +41,10 @@ type Deps struct {
 	Crypto           *cryptobox.Box
 	OIDC             *auth.OIDC
 	OIDCPostPath     string // where to send the browser after a successful SSO login
+	GitHubOAuth      auth.OAuthProvider
+	GitLabOAuth      auth.OAuthProvider
+	GitLabOrigin     string
+	OIDCDefaultRole  string
 	// Notifier delivers run-failure notifications. The notify routes need it for the
 	// test-delivery endpoint.
 	Notifier *notify.Notifier
@@ -69,14 +75,20 @@ func New(d Deps) *fiber.App {
 
 	userStore := auth.NewStore(d.Pool)
 	writer := audit.NewWriter(d.Pool, d.Log)
+	conns := auth.NewConnStore(d.Pool, d.Crypto)
 
 	v1 := app.Group("/api/v1")
-	auth.Register(v1, d.Log, userStore, d.SessionSecret, d.OIDC != nil)
+	auth.Register(v1, d.Log, userStore, d.SessionSecret, d.OIDC != nil, d.GitHubOAuth.Enabled(), d.GitLabOAuth.Enabled())
 	postPath := d.OIDCPostPath
 	if postPath == "" {
 		postPath = "/"
 	}
 	auth.RegisterOIDC(v1, userStore, d.SessionSecret, d.OIDC, postPath)
+	defaultRole := d.OIDCDefaultRole
+	if defaultRole == "" {
+		defaultRole = "viewer"
+	}
+	auth.RegisterOAuth(v1, userStore, conns, d.SessionSecret, d.GitHubOAuth, d.GitLabOAuth, postPath, defaultRole)
 	agentenroll.Register(v1, d.Log, d.Pool, d.PKI, d.GRPCAddr)
 	setup.Register(v1, setup.NewHandler(
 		d.Log, d.Env, d.DatabaseURL, d.ProjectRoot, d.MigrationsDir, d.BootstrapMode,
@@ -99,6 +111,11 @@ func New(d Deps) *fiber.App {
 	secrets.Register(authed, d.Log, d.Pool, d.Crypto, writer)
 	notify.Register(authed, d.Log, d.Pool, writer, d.Notifier)
 	updates.Register(authed, d.Log, d.Pool, d.Updates, d.ManualUpdatePolicy, d.Gateway, writer)
+	publicOrigin := strings.TrimSuffix(d.PublicHTTPURL, "/")
+	publicOrigin = strings.TrimSuffix(publicOrigin, "/api/v1")
+	publicOrigin = strings.TrimSuffix(publicOrigin, "/api")
+	deployH := deploys.Register(authed, d.Log, d.Pool, d.Gateway, writer, conns, publicOrigin, d.GitLabOrigin)
+	deploys.RegisterPublic(v1, deployH, auth.OptionalAuth(d.SessionSecret, userStore, d.Log))
 
 	// Single entry point: serve the UI under /app (and bounce / into it) when an
 	// upstream is configured. With no upstream, / is an nginx-style welcome page.

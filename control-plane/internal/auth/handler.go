@@ -9,18 +9,24 @@ import (
 )
 
 type handler struct {
-	log         *slog.Logger
-	store       *Store
-	secret      []byte
-	ttl         time.Duration
-	oidcEnabled bool
+	log           *slog.Logger
+	store         *Store
+	secret        []byte
+	ttl           time.Duration
+	oidcEnabled   bool
+	githubEnabled bool
+	gitlabEnabled bool
 }
 
 func (h *handler) config(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{
-		"password_login": true,
-		"oidc_enabled":   h.oidcEnabled,
-		"oidc_start_url": "/api/v1/auth/oidc/start",
+		"password_login":   true,
+		"oidc_enabled":     h.oidcEnabled,
+		"oidc_start_url":   "/api/v1/auth/oidc/start",
+		"github_enabled":   h.githubEnabled,
+		"github_start_url": "/api/v1/auth/github/start",
+		"gitlab_enabled":   h.gitlabEnabled,
+		"gitlab_start_url": "/api/v1/auth/gitlab/start",
 	})
 }
 
@@ -30,8 +36,8 @@ func (h *handler) config(c fiber.Ctx) error {
 // /me is deliberately NOT here. It reads the caller's identity out of the request
 // locals, which only RequireAuth populates, so it has to be registered on the
 // authenticated group instead. See RegisterMe.
-func Register(r fiber.Router, log *slog.Logger, store *Store, secret []byte, oidcEnabled bool) {
-	h := newHandler(log, store, secret, oidcEnabled)
+func Register(r fiber.Router, log *slog.Logger, store *Store, secret []byte, oidcEnabled, githubEnabled, gitlabEnabled bool) {
+	h := newHandler(log, store, secret, oidcEnabled, githubEnabled, gitlabEnabled)
 	r.Post("/auth/login", h.login)
 	r.Post("/auth/logout", h.logout)
 	r.Get("/auth/config", h.config)
@@ -43,12 +49,12 @@ func Register(r fiber.Router, log *slog.Logger, store *Store, secret []byte, oid
 // on the public group would shadow the authenticated one, and the handler would then
 // see an empty user id on every request.
 func RegisterMe(r fiber.Router, log *slog.Logger, store *Store, secret []byte, oidcEnabled bool) {
-	h := newHandler(log, store, secret, oidcEnabled)
+	h := newHandler(log, store, secret, oidcEnabled, false, false)
 	r.Get("/me", h.me)
 }
 
-func newHandler(log *slog.Logger, store *Store, secret []byte, oidcEnabled bool) *handler {
-	return &handler{log: log, store: store, secret: secret, ttl: 7 * 24 * time.Hour, oidcEnabled: oidcEnabled}
+func newHandler(log *slog.Logger, store *Store, secret []byte, oidcEnabled, githubEnabled, gitlabEnabled bool) *handler {
+	return &handler{log: log, store: store, secret: secret, ttl: 7 * 24 * time.Hour, oidcEnabled: oidcEnabled, githubEnabled: githubEnabled, gitlabEnabled: gitlabEnabled}
 }
 
 type loginInput struct {

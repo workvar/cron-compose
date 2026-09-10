@@ -121,6 +121,8 @@ func (s *service) handleAgentMessage(ctx context.Context, serverID string, msg *
 	case *agentv1.AgentMessage_TerminalOutput:
 		s.terminals.Deliver(body.TerminalOutput)
 		return nil
+	case *agentv1.AgentMessage_DeployEvent:
+		return s.onDeployEvent(ctx, body.DeployEvent)
 	}
 	return nil
 }
@@ -203,6 +205,62 @@ func (s *service) onRunFinished(ctx context.Context, serverID string, r *agentv1
 		}
 	}
 	return err
+}
+
+func (s *service) onDeployEvent(ctx context.Context, ev *agentv1.DeployEvent) error {
+	runID := ev.GetRunId()
+	kind := ev.GetKind()
+	if kind == "log" || len(ev.GetData()) > 0 {
+		chunk := &agentv1.LogChunk{
+			RunId:  runID,
+			Stream: "stdout",
+			Seq:    ev.GetSeq(),
+			Data:   ev.GetData(),
+		}
+		if len(ev.GetData()) == 0 && ev.GetMessage() != "" {
+			chunk.Data = []byte(ev.GetMessage())
+		}
+		s.broker.Publish(runID, chunk)
+		_, _ = s.pool.Exec(ctx, `
+			insert into deploy_run_logs (run_id, stream, seq, chunk)
+			values ($1, 'stdout', $2, $3)
+			on conflict (run_id, stream, seq) do nothing
+		`, runID, ev.GetSeq(), string(chunk.GetData()))
+	}
+	switch kind {
+	case "started":
+		_, err := s.pool.Exec(ctx, `
+			update deploy_runs set status = 'running', started_at = coalesce(started_at, now())
+			where id = $1
+		`, runID)
+		return err
+	case "finished", "error":
+		status := ev.GetStatus()
+		if status == "" {
+			if kind == "error" || ev.GetExitCode() != 0 {
+				status = "failed"
+			} else {
+				status = "succeeded"
+			}
+		}
+		_, err := s.pool.Exec(ctx, `
+			update deploy_runs set
+			  status = $2,
+			  exit_code = $3,
+			  error = nullif($4, ''),
+			  started_at = coalesce(started_at, now()),
+			  finished_at = now()
+			where id = $1
+		`, runID, status, ev.GetExitCode(), ev.GetMessage())
+		s.broker.PublishFinished(runID, &agentv1.RunFinished{
+			RunId:    runID,
+			Status:   status,
+			ExitCode: ev.GetExitCode(),
+			Error:    ev.GetMessage(),
+		})
+		return err
+	}
+	return nil
 }
 
 // sendFullSync loads every enabled job for the server and pushes one SyncJobs.

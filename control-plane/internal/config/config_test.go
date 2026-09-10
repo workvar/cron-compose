@@ -29,6 +29,12 @@ func TestPublicBaseURLDerivesEverything(t *testing.T) {
 	if got, want := c.OIDCRedirectURL, "https://cron.example.com/api/auth/oidc/callback"; got != want {
 		t.Errorf("OIDCRedirectURL = %q, want %q", got, want)
 	}
+	if got, want := c.GitHubOAuthRedirectURL, "https://cron.example.com/api/auth/github/callback"; got != want {
+		t.Errorf("GitHubOAuthRedirectURL = %q, want %q", got, want)
+	}
+	if got, want := c.GitLabOAuthRedirectURL, "https://cron.example.com/api/auth/gitlab/callback"; got != want {
+		t.Errorf("GitLabOAuthRedirectURL = %q, want %q", got, want)
+	}
 	if !contains(c.TLSHosts, "cron.example.com") {
 		t.Errorf("TLSHosts %v missing derived host", c.TLSHosts)
 	}

@@ -8,6 +8,10 @@ type AuthConfig = {
   password_login: boolean;
   oidc_enabled: boolean;
   oidc_start_url: string;
+  github_enabled?: boolean;
+  github_start_url?: string;
+  gitlab_enabled?: boolean;
+  gitlab_start_url?: string;
 };
 
 function LoginForm() {
@@ -55,13 +59,16 @@ function LoginForm() {
     }
   }
 
-  function startSSO() {
-    if (!authCfg?.oidc_start_url) return;
-    // Hand the browser to the control plane directly so the OIDC redirect chain stays
-    // server-to-server clean.
-    const u = new URL(authCfg.oidc_start_url, window.location.origin);
-    u.searchParams.set("next", next);
+  function startOAuth(url?: string) {
+    if (!url) return;
+    const u = new URL(url, window.location.origin);
+    const dest = next.startsWith("/app") ? next : (next === "/" ? "/app" : `/app${next}`);
+    u.searchParams.set("next", dest);
     window.location.href = u.toString();
+  }
+
+  function startSSO() {
+    startOAuth(authCfg?.oidc_start_url);
   }
 
   return (
@@ -72,11 +79,23 @@ function LoginForm() {
           Welcome back to your control plane.
         </p>
 
-        {authCfg?.oidc_enabled && (
+        {(authCfg?.oidc_enabled || authCfg?.github_enabled || authCfg?.gitlab_enabled) && (
           <div className="stack" style={{ marginTop: 20 }}>
-            <button className="button block secondary" onClick={startSSO} type="button">
-              Sign in with SSO
-            </button>
+            {authCfg.oidc_enabled && (
+              <button className="button block secondary" onClick={startSSO} type="button">
+                Sign in with SSO
+              </button>
+            )}
+            {authCfg.github_enabled && (
+              <button className="button block secondary" onClick={() => startOAuth(authCfg.github_start_url)} type="button">
+                Sign in with GitHub
+              </button>
+            )}
+            {authCfg.gitlab_enabled && (
+              <button className="button block secondary" onClick={() => startOAuth(authCfg.gitlab_start_url)} type="button">
+                Sign in with GitLab
+              </button>
+            )}
             <div className="divider">or with email</div>
           </div>
         )}

@@ -98,3 +98,11 @@ export const IconPlug = (p: P) => (
 export const IconDownload = (p: P) => (
   <svg {...base(p)}><path d="M12 3v12M7 11l5 5 5-5M5 21h14" /></svg>
 );
+export const IconGit = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="6" cy="6" r="2.5" />
+    <circle cx="6" cy="18" r="2.5" />
+    <circle cx="18" cy="12" r="2.5" />
+    <path d="M6 8.5v7M8.2 7.2 16 11.2" />
+  </svg>
+);

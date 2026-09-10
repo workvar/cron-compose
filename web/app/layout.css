@@ -299,9 +299,9 @@
   position: relative;
   width: 34px; height: 34px; border-radius: 11px;
   overflow: hidden; flex: none;
-  background: #003311;
+  background: var(--green-deep);
 }
-.brand .mark img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.brand .mark svg { width: 100%; height: 100%; display: block; }
 .auth-card .brand .mark { width: 44px; height: 44px; border-radius: 13px; }
 
 /* ---------- Manual collapse (sidebar toggle button) ---------- */

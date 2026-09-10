@@ -26,6 +26,8 @@ func (r *Runtime) handleServerMessage(ctx context.Context, msg *agentv1.ServerMe
 		go r.handleConnectorCommand(ctx, body.ConnectorCommand)
 	case *agentv1.ServerMessage_TerminalInput:
 		r.terminals.Handle(body.TerminalInput)
+	case *agentv1.ServerMessage_DeployCommand:
+		r.deploys.Handle(ctx, body.DeployCommand)
 	}
 }
 

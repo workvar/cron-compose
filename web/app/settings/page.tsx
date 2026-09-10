@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { apiGet } from "@/lib/api";
-import type { ListResponse, Me, NotificationTarget, UpdateStatus } from "@/lib/types";
+import type { DeploySettings, GitConnection, ListResponse, Me, NotificationTarget, UpdateStatus } from "@/lib/types";
 import { LogoutButton } from "@/components/LogoutButton";
 import { IconKey, IconShield } from "@/components/icons";
 import { TargetManager } from "@/components/notify/TargetManager";
 import { UpdatesPanel } from "@/components/UpdatesPanel";
+import { GitConnections } from "@/components/deploys/GitConnections";
+import { LanguagePaths } from "@/components/deploys/LanguagePaths";
 
 function initials(me: Me): string {
   const src = me.name?.trim() || me.email;
@@ -17,6 +19,8 @@ export default async function SettingsPage() {
   let me: Me | null = null;
   let targets: NotificationTarget[] = [];
   let updates: UpdateStatus | null = null;
+  let git: GitConnection[] = [];
+  let deploySettings: DeploySettings | null = null;
   try {
     me = await apiGet<Me>("/me");
   } catch { /* shown below */ }
@@ -26,6 +30,12 @@ export default async function SettingsPage() {
   try {
     updates = await apiGet<UpdateStatus>("/updates");
   } catch { /* control plane unreachable */ }
+  try {
+    git = (await apiGet<ListResponse<GitConnection>>("/git/connections")).items;
+  } catch { /* ignore */ }
+  try {
+    deploySettings = await apiGet<DeploySettings>("/deploy-settings");
+  } catch { /* ignore */ }
 
   const isAdmin = me?.role === "admin" || me?.role === "owner";
 
@@ -52,6 +62,22 @@ export default async function SettingsPage() {
           </div>
           <div style={{ marginTop: 16 }}><LogoutButton /></div>
         </div>
+      )}
+
+      <h2>Git</h2>
+      <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
+        Link GitHub or GitLab so Deploy can list and clone your repositories. This grant is separate from sign-in.
+      </p>
+      <GitConnections initial={git} next="/app/settings" />
+
+      {isAdmin && deploySettings && (
+        <>
+          <h2>Clone paths</h2>
+          <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
+            Default directories on each agent, by language. Per-deploy overrides still win.
+          </p>
+          <LanguagePaths initial={deploySettings} />
+        </>
       )}
 
       <h2>Notifications</h2>

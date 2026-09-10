@@ -219,6 +219,93 @@ export type ConnectorPort = {
   label?: string;
 };
 
+export type GitConnection = {
+  id: string;
+  provider: "github" | "gitlab" | string;
+  purpose: string;
+  login: string;
+  email: string;
+  provider_user_id: string;
+  created_at: string;
+};
+
+export type GitRepo = {
+  id: string;
+  full_name: string;
+  description?: string;
+  default_branch: string;
+  clone_url: string;
+  private: boolean;
+};
+
+export type DeployDetection = {
+  language: string;
+  install_script: string;
+  has_pm2_ecosystem: boolean;
+  supports_port: boolean;
+  workspaces: string[];
+  root_directory: string;
+};
+
+export type DeployInspect = DeployDetection & {
+  clone_url: string;
+  default_branch: string;
+  clone_path: string;
+  process_manager: string;
+};
+
+export type DeployApp = {
+  name: string;
+  root: string;
+  language?: string;
+  install?: string;
+  port?: number;
+  process_manager?: string;
+};
+
+export type DeployProject = {
+  id: string;
+  name: string;
+  provider: string;
+  repo_full_name: string;
+  repo_id?: string;
+  clone_url: string;
+  default_branch: string;
+  server_id: string;
+  language: string;
+  install_script: string;
+  root_directory: string;
+  clone_path: string;
+  port: number;
+  process_manager: string;
+  env: Record<string, string>;
+  apps: DeployApp[];
+  write_spec: boolean;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  deploy_token?: string;
+};
+
+export type DeployRun = {
+  id: string;
+  project_id: string;
+  server_id: string;
+  trigger: string;
+  status: "pending" | "running" | "succeeded" | "failed" | "canceled" | "agent_offline";
+  branch: string;
+  exit_code?: number;
+  error?: string;
+  started_at?: string;
+  finished_at?: string;
+  created_at: string;
+};
+
+export type DeploySettings = {
+  language_paths: Record<string, string>;
+  updated_at: string;
+};
+
 export type JobTemplate = {
   id: string;
   name: string;

@@ -83,12 +83,42 @@ func RequireRole(min string) fiber.Handler {
 	}
 }
 
+// OptionalAuth attaches user_id + role when a valid session cookie is present, and
+// otherwise continues. Used on routes that accept either a session or a bearer token.
+func OptionalAuth(secret []byte, store *Store, log *slog.Logger) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		cookie := c.Cookies(cookieName)
+		if cookie == "" {
+			return c.Next()
+		}
+		sess, err := ParseSession(secret, cookie)
+		if err != nil {
+			return c.Next()
+		}
+		u, err := store.GetByID(c.Context(), sess.UserID)
+		if err != nil {
+			return c.Next()
+		}
+		c.Locals(ctxUserID, u.ID)
+		c.Locals(ctxRole, u.Role)
+		return c.Next()
+	}
+}
+
 // CurrentUserID returns the authenticated user_id, or "" if not authenticated.
 func CurrentUserID(c fiber.Ctx) string {
 	if v, ok := c.Locals(ctxUserID).(string); ok {
 		return v
 	}
 	return ""
+}
+
+// CurrentRole returns the authenticated role, or "" if not authenticated.
+func CurrentRole(c fiber.Ctx) string { return currentRole(c) }
+
+// HasMinRole reports whether the caller meets a role rank (false when unauthenticated).
+func HasMinRole(c fiber.Ctx, min string) bool {
+	return roleRank[currentRole(c)] >= roleRank[min]
 }
 
 func currentRole(c fiber.Ctx) string {

@@ -15,7 +15,35 @@ external callers. Agents do **not** use this API; they use the gRPC channel in
 |--------|---------------------|--------------------------------------|
 | POST   | `/auth/login`       | Email + password, sets session.      |
 | POST   | `/auth/logout`      | Clears session.                      |
-| GET    | `/me`               | Current user and role.               |
+| GET    | `/auth/config`      | Password / OIDC / GitHub / GitLab flags. |
+
+## Deploys
+
+GitHub/GitLab import: connect a git grant, pick a repo, clone onto a chosen agent, run the install script.
+
+| Method | Path | Role | Notes |
+|--------|------|------|-------|
+| GET | `/git/connections` | viewer | Linked git grants (no tokens). |
+| DELETE | `/git/connections/:provider` | viewer | Drop a git grant. |
+| GET | `/git/repos?provider=` | viewer | Repos visible to the git grant. |
+| GET | `/git/inspect?provider=&repo=` | viewer | Language/install/workspace detection. |
+| GET | `/deploy-settings` | viewer | Per-language clone path defaults. |
+| PUT | `/deploy-settings` | admin | `{language_paths}`. |
+| GET | `/deploys` | viewer | Imported projects. |
+| POST | `/deploys` | operator | Import + start a run. Returns `deploy_token` once. Creates the provider push webhook and commits `croncompose.yml` plus GHA/GitLab CI when the git grant allows; failures land in `warnings`. |
+| GET | `/deploys/:id` | viewer | Project plus webhook URL/secret. |
+| PATCH | `/deploys/:id` | operator | Edit clone/install/process manager. Changing `process_manager` away from `none` starts a run. |
+| DELETE | `/deploys/:id` | operator | Delete the project and its runs. |
+| GET | `/deploys/:id/workflow` | viewer | `croncompose.yml` and GitHub Actions or GitLab CI. |
+| GET | `/deploys/:id/runs` | viewer | Run history. |
+| POST | `/deploys/:id/runs` | operator or bearer | Session (manual) or `Authorization: Bearer ccdep_…`. |
+| GET | `/deploy-runs/:runId` | viewer | Run detail. |
+| GET | `/deploy-runs/:runId/logs/stream` | viewer | **SSE** live installer output. |
+| POST | `/deploy-runs/:runId/stdin` | operator | Forward bytes into the installer PTY. |
+| POST | `/deploys/webhooks/github` | public | `X-Hub-Signature-256`. |
+| POST | `/deploys/webhooks/gitlab` | public | `X-Gitlab-Token`. |
+
+OAuth start URLs (public): `GET /auth/github/start`, `GET /auth/gitlab/start`. Pass `purpose=login` (default) or `purpose=git`. Git connect requires an existing session.
 
 ## Servers
 

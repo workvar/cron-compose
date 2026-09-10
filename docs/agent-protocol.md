@@ -47,6 +47,7 @@ drops. One stream carries both directions.
 | `RunStarted`  | A run began: run_id, job_id, job_version_id, trigger, started_at.  |
 | `LogChunk`    | Output: run_id, stream (stdout/stderr), seq, data.                 |
 | `RunFinished` | A run ended: run_id, status, exit_code, finished_at, duration_ms.  |
+| `DeployEvent` | Git deploy progress: run_id, kind (log/started/finished), data. Clone tokens must never appear in logs. |
 
 ### Control plane to agent (`ServerMessage`)
 
@@ -56,6 +57,7 @@ drops. One stream carries both directions.
 | `RunNow`     | On-demand run: job_id, job_version_id, a server-assigned run_id.    |
 | `CancelRun`  | Cancel a running job by run_id.                                     |
 | `UpdateAgent`| Request the agent self-update to a target version (later phase).    |
+| `DeployCommand` | Clone + install on this host: op start/stdin/cancel. `clone_token` is never logged. After install, `process_manager` is `none`, `pm2` (ecosystem or `npm start`), `systemd` (user unit), or `docker` (`compose up -d`). |
 
 ### Why bidi gRPC
 

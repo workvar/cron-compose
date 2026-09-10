@@ -8,7 +8,7 @@ import { useSidebar } from "./AppShell";
 import { shouldShowServerPromo } from "@/lib/ui-helpers";
 import {
   IconDashboard, IconServer, IconJobs, IconKey, IconShield,
-  IconSettings, IconZap, IconPlus, IconPlug, IconPorts,
+  IconSettings, IconZap, IconPlus, IconPlug, IconPorts, IconGit,
   IconChevronLeft, IconChevronRight,
 } from "./icons";
 
@@ -37,6 +37,7 @@ export function Sidebar({ me, serverCount }: { me: Me; serverCount: number }) {
         <NavLink href="/" icon={<IconDashboard />}>Dashboard</NavLink>
         <NavLink href="/servers" icon={<IconServer />}>Servers</NavLink>
         <NavLink href="/jobs" icon={<IconJobs />}>Jobs</NavLink>
+        <NavLink href="/deploys" icon={<IconGit />}>Deploy</NavLink>
         <NavLink href="/connectors" icon={<IconPlug />}>Connectors</NavLink>
         <NavLink href="/ports" icon={<IconPorts />}>Ports</NavLink>
         {isAdmin && <NavLink href="/secrets" icon={<IconKey />}>Secrets</NavLink>}

@@ -87,6 +87,14 @@ type Config struct {
 	OIDCClientSecret string
 	OIDCRedirectURL  string
 	OIDCDefaultRole  string
+
+	GitHubOAuthClientID     string
+	GitHubOAuthClientSecret string
+	GitHubOAuthRedirectURL  string
+	GitLabOAuthClientID     string
+	GitLabOAuthClientSecret string
+	GitLabOAuthRedirectURL  string
+	GitLabOAuthBaseURL      string
 }
 
 // Load reads config from the environment with sensible dev defaults.
@@ -111,10 +119,10 @@ func Load() (Config, error) {
 		SeedAdminEmail:    env("SEED_ADMIN_EMAIL", ""),
 		SeedAdminPassword: env("SEED_ADMIN_PASSWORD", ""),
 
-		PublicBaseURL:    env("PUBLIC_BASE_URL", ""),
+		PublicBaseURL: env("PUBLIC_BASE_URL", ""),
 		// Public path is /api (rewritten to /api/v1). Using /api/v1 here breaks enroll
 		// when a tunnel fronts Next.js, which would proxy to /api/v1/v1/….
-		PublicHTTPURL: env("PUBLIC_HTTP_URL", "http://localhost:8080/api"),
+		PublicHTTPURL:    env("PUBLIC_HTTP_URL", "http://localhost:8080/api"),
 		PublicGRPCAddr:   env("PUBLIC_GRPC_ADDR", "localhost:9090"),
 		InstallScriptURL: env("INSTALL_SCRIPT_URL", "https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh"),
 
@@ -142,10 +150,19 @@ func Load() (Config, error) {
 		OIDCClientSecret: env("OIDC_CLIENT_SECRET", ""),
 		OIDCRedirectURL:  env("OIDC_REDIRECT_URL", ""),
 		OIDCDefaultRole:  env("OIDC_DEFAULT_ROLE", "viewer"),
+
+		GitHubOAuthClientID:     env("GITHUB_OAUTH_CLIENT_ID", ""),
+		GitHubOAuthClientSecret: env("GITHUB_OAUTH_CLIENT_SECRET", ""),
+		GitHubOAuthRedirectURL:  env("GITHUB_OAUTH_REDIRECT_URL", ""),
+		GitLabOAuthClientID:     env("GITLAB_OAUTH_CLIENT_ID", ""),
+		GitLabOAuthClientSecret: env("GITLAB_OAUTH_CLIENT_SECRET", ""),
+		GitLabOAuthRedirectURL:  env("GITLAB_OAUTH_REDIRECT_URL", ""),
+		GitLabOAuthBaseURL:      env("GITLAB_OAUTH_BASE_URL", "https://gitlab.com"),
 	}
 	if err := c.applyPublicBaseURL(); err != nil {
 		return c, err
 	}
+	c.ensureOAuthRedirects()
 	if c.DatabaseURL == "" {
 		return c, fmt.Errorf("DATABASE_URL is required")
 	}
@@ -179,8 +196,33 @@ func (c *Config) applyPublicBaseURL() error {
 	if c.OIDCIssuerURL != "" && os.Getenv("OIDC_REDIRECT_URL") == "" {
 		c.OIDCRedirectURL = base + "/api/auth/oidc/callback"
 	}
+	if os.Getenv("GITHUB_OAUTH_REDIRECT_URL") == "" {
+		c.GitHubOAuthRedirectURL = base + "/api/auth/github/callback"
+	}
+	if os.Getenv("GITLAB_OAUTH_REDIRECT_URL") == "" {
+		c.GitLabOAuthRedirectURL = base + "/api/auth/gitlab/callback"
+	}
 	c.TLSHosts = ensureHost(c.TLSHosts, host)
 	return nil
+}
+
+// ensureOAuthRedirects fills GitHub/GitLab callback URLs when they were not set
+// explicitly. PUBLIC_BASE_URL (via applyPublicBaseURL) wins; otherwise we derive from
+// PublicHTTPURL so local dev still has a registerable callback.
+func (c *Config) ensureOAuthRedirects() {
+	base := strings.TrimRight(c.PublicBaseURL, "/")
+	if base == "" {
+		u := strings.TrimSuffix(c.PublicHTTPURL, "/")
+		u = strings.TrimSuffix(u, "/api/v1")
+		u = strings.TrimSuffix(u, "/api")
+		base = u
+	}
+	if c.GitHubOAuthRedirectURL == "" {
+		c.GitHubOAuthRedirectURL = base + "/api/auth/github/callback"
+	}
+	if c.GitLabOAuthRedirectURL == "" {
+		c.GitLabOAuthRedirectURL = base + "/api/auth/gitlab/callback"
+	}
 }
 
 // portOf returns the port from a listen address like ":9090" or "0.0.0.0:9090",

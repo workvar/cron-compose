@@ -13,8 +13,11 @@ export const metadata: Metadata = {
   title: "CronCompose",
   description: "Schedule and manage jobs across remote Linux servers",
   icons: {
-    icon: [{ url: "/app/logo.png", type: "image/png" }],
-    apple: [{ url: "/app/logo.png", type: "image/png" }],
+    icon: [
+      { url: "/app/logo.svg", type: "image/svg+xml" },
+      { url: "/app/logo.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: [{ url: "/app/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
 };
 

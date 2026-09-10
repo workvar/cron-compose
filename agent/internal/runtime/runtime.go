@@ -16,6 +16,7 @@ import (
 
 	"github.com/croncompose/croncompose/agent/internal/config"
 	"github.com/croncompose/croncompose/agent/internal/connectors"
+	"github.com/croncompose/croncompose/agent/internal/deploy"
 	"github.com/croncompose/croncompose/agent/internal/identity"
 	"github.com/croncompose/croncompose/agent/internal/outbox"
 	"github.com/croncompose/croncompose/agent/internal/scheduler"
@@ -43,6 +44,7 @@ type Runtime struct {
 	conns     *connectors.Registry
 	exec      *connectors.Executor
 	terminals *terminal.Manager
+	deploys   *deploy.Manager
 
 	sched *scheduler.Scheduler
 
@@ -85,6 +87,7 @@ func New(cfg config.Config, log *slog.Logger, st *store.Store, ident identity.Id
 	r.sched = scheduler.New(r.onSchedulerFire)
 	r.exec = connectors.NewExecutor(log, r.conns)
 	r.initTerminals()
+	r.initDeploys()
 	return r
 }
 
@@ -144,6 +147,7 @@ func (r *Runtime) connectAndServe(ctx context.Context, addr string) error {
 	// Terminal sessions are tied to the connection: when this cycle ends, kill any live
 	// shells so none linger across a reconnect.
 	defer r.terminals.CloseAll()
+	defer r.deploys.CloseAll()
 
 	// Enqueue Hello and a periodic heartbeat. The drain loop is the sole sender.
 	r.queue(&agentv1.AgentMessage{
@@ -151,7 +155,7 @@ func (r *Runtime) connectAndServe(ctx context.Context, addr string) error {
 			AgentVersion: r.cfg.AgentVersion,
 			Os:           runtime.GOOS,
 			Arch:         runtime.GOARCH,
-			Capabilities: []string{"terminal", "connectors.lifecycle", "connectors.config"},
+			Capabilities: []string{"terminal", "connectors.lifecycle", "connectors.config", "deploys"},
 		}},
 	})
 

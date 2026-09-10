@@ -55,6 +55,17 @@ func (g *Gateway) SendConnectorCommand(ctx context.Context, serverID string, cmd
 	}
 }
 
+// SendDeploy pushes a clone/install command (or stdin/cancel) to a connected agent.
+// Unlike connector commands this is fire-and-forget: progress comes back as DeployEvent.
+func (g *Gateway) SendDeploy(serverID string, cmd *agentv1.DeployCommand) error {
+	if cmd == nil {
+		return errors.New("nil deploy command")
+	}
+	return g.registry.Send(serverID, &agentv1.ServerMessage{
+		Body: &agentv1.ServerMessage_DeployCommand{DeployCommand: cmd},
+	})
+}
+
 // NewRequestID mints an id callers can log before the command goes out, so an
 // operation row exists even if the send fails.
 func NewRequestID() string { return ids.New() }

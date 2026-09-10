@@ -13,6 +13,10 @@ const config: NextConfig = {
   // Standalone output for tiny production Docker images.
   output: "standalone",
 
+  // Parent repo lockfile would make Turbopack treat the monorepo root as the
+  // app root and 404 every App Router page.
+  turbopack: { root: __dirname },
+
   // The whole UI lives under /app, so the control plane (the single entry point)
   // serves /api itself and reverse-proxies /app to this app. next/link, next/router
   // and redirect() pick this prefix up automatically; raw fetch() does not (see the

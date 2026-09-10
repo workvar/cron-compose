@@ -23,6 +23,6 @@ func (r *Runtime) sendDirect(msg *agentv1.AgentMessage) {
 	select {
 	case r.direct <- msg:
 	default:
-		r.log.Warn("terminal direct-send buffer full; dropping output")
+		r.log.Warn("direct-send buffer full; dropping output")
 	}
 }
