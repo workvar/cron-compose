@@ -240,12 +240,12 @@ func randomBytes(n int) string {
 }
 
 // InsertRun records a new deploy run.
-func (s *Store) InsertRun(ctx context.Context, projectID, serverID, trigger, branch string) (Run, error) {
+func (s *Store) InsertRun(ctx context.Context, projectID, serverID, trigger, branch, commitSHA string) (Run, error) {
 	id := ids.New()
 	_, err := s.pool.Exec(ctx, `
-		insert into deploy_runs (id, project_id, server_id, trigger, status, branch)
-		values ($1,$2,$3,$4,'pending',$5)
-	`, id, projectID, serverID, trigger, branch)
+		insert into deploy_runs (id, project_id, server_id, trigger, status, branch, commit_sha)
+		values ($1,$2,$3,$4,'pending',$5,$6)
+	`, id, projectID, serverID, trigger, branch, commitSHA)
 	if err != nil {
 		return Run{}, err
 	}

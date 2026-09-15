@@ -35,7 +35,7 @@ type FailedRunHook interface {
 // package because deploys already depends on agentgw for Gateway.SendDeploy; the
 // reverse dependency would be a cycle.
 type DeployFinishedHook interface {
-	DeployRunFinished(serverID, runID, status string, exitCode int32, errMsg string)
+	DeployRunFinished(serverID, runID, status, phase string, exitCode int32, errMsg string)
 }
 
 // Gateway owns the gRPC server, the per-server connection registry, the log broker,

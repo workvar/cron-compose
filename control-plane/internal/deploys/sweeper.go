@@ -47,6 +47,6 @@ func (h *handler) sweepStuckRuns(ctx context.Context) {
 		h.log.Warn("deploy: closed out stuck run", "run_id", r.ID, "project_id", r.ProjectID)
 		// Same path a normal failure takes, so a stuck run still updates the project's
 		// health state and still triggers auto-rollback.
-		h.DeployRunFinished(r.ServerID, r.ID, "failed", 1, msg)
+		h.DeployRunFinished(r.ServerID, r.ID, "failed", "", 1, msg)
 	}
 }

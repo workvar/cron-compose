@@ -15,6 +15,7 @@ import (
 	"github.com/croncompose/croncompose/control-plane/internal/connectors"
 	"github.com/croncompose/croncompose/control-plane/internal/cryptobox"
 	"github.com/croncompose/croncompose/control-plane/internal/deploys"
+	"github.com/croncompose/croncompose/control-plane/internal/githubapp"
 	"github.com/croncompose/croncompose/control-plane/internal/jobs"
 	"github.com/croncompose/croncompose/control-plane/internal/notify"
 	"github.com/croncompose/croncompose/control-plane/internal/pki"
@@ -45,7 +46,9 @@ type Deps struct {
 	GitHubOAuth      auth.OAuthProvider
 	GitLabOAuth      auth.OAuthProvider
 	GitLabOrigin     string
-	OIDCDefaultRole  string
+	// GitHubApp posts deploy commit statuses as CronCompose. nil when unconfigured.
+	GitHubApp       *githubapp.App
+	OIDCDefaultRole string
 	// Notifier delivers run-failure notifications. The notify routes need it for the
 	// test-delivery endpoint.
 	Notifier *notify.Notifier
@@ -115,7 +118,7 @@ func New(d Deps) *fiber.App {
 	publicOrigin := strings.TrimSuffix(d.PublicHTTPURL, "/")
 	publicOrigin = strings.TrimSuffix(publicOrigin, "/api/v1")
 	publicOrigin = strings.TrimSuffix(publicOrigin, "/api")
-	deployH := deploys.Register(authed, d.Log, d.Pool, d.Gateway, writer, conns, publicOrigin, d.GitLabOrigin)
+	deployH := deploys.Register(authed, d.Log, d.Pool, d.Gateway, writer, conns, publicOrigin, d.GitLabOrigin, d.GitHubApp)
 	deploys.RegisterPublic(v1, deployH, auth.OptionalAuth(d.SessionSecret, userStore, d.Log))
 	// Lets a failed deploy trigger an automatic rollback without agentgw depending on
 	// the deploys package; see agentgw.DeployFinishedHook.

@@ -88,6 +88,14 @@ type Config struct {
 	OIDCRedirectURL  string
 	OIDCDefaultRole  string
 
+	// GitHub App, used for commit statuses. Optional: without it, statuses are posted
+	// with the importing user's OAuth token instead, and everything else is unchanged.
+	// GitHubAppPrivateKey holds the PEM itself; GitHubAppPrivateKeyPath points at a
+	// file, which is the better of the two for a real install.
+	GitHubAppID             string
+	GitHubAppPrivateKey     string
+	GitHubAppPrivateKeyPath string
+
 	GitHubOAuthClientID     string
 	GitHubOAuthClientSecret string
 	GitHubOAuthRedirectURL  string
@@ -151,6 +159,9 @@ func Load() (Config, error) {
 		OIDCRedirectURL:  env("OIDC_REDIRECT_URL", ""),
 		OIDCDefaultRole:  env("OIDC_DEFAULT_ROLE", "viewer"),
 
+		GitHubAppID:             env("GITHUB_APP_ID", ""),
+		GitHubAppPrivateKey:     env("GITHUB_APP_PRIVATE_KEY", ""),
+		GitHubAppPrivateKeyPath: env("GITHUB_APP_PRIVATE_KEY_PATH", ""),
 		GitHubOAuthClientID:     env("GITHUB_OAUTH_CLIENT_ID", ""),
 		GitHubOAuthClientSecret: env("GITHUB_OAUTH_CLIENT_SECRET", ""),
 		GitHubOAuthRedirectURL:  env("GITHUB_OAUTH_REDIRECT_URL", ""),

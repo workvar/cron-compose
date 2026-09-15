@@ -9,6 +9,7 @@ import (
 	"github.com/croncompose/croncompose/control-plane/internal/agentgw"
 	"github.com/croncompose/croncompose/control-plane/internal/audit"
 	"github.com/croncompose/croncompose/control-plane/internal/auth"
+	"github.com/croncompose/croncompose/control-plane/internal/githubapp"
 )
 
 // RegisterPublic attaches webhook + token-triggered run endpoints (no session required).
@@ -19,10 +20,10 @@ func RegisterPublic(r fiber.Router, h *handler, optAuth fiber.Handler) {
 }
 
 // Register attaches authenticated deploy and git-connection routes.
-func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, gw *agentgw.Gateway, writer audit.Writer, conns *auth.ConnStore, publicBase, gitlabBase string) *handler {
+func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, gw *agentgw.Gateway, writer audit.Writer, conns *auth.ConnStore, publicBase, gitlabBase string, app *githubapp.App) *handler {
 	h := &handler{
 		log: log, store: NewStore(pool), conns: conns, git: NewGitAPI(gitlabBase),
-		gateway: gw, audit: writer, public: publicBase,
+		gateway: gw, audit: writer, public: publicBase, app: app,
 	}
 	r.Get("/git/connections", h.listConnections)
 	r.Delete("/git/connections/:provider", h.deleteConnection)

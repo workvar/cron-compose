@@ -34,7 +34,7 @@ func healthCheckFor(p Project) *agentv1.HealthCheck {
 // that commit differs from the one that just failed, and the failed run was not
 // itself a rollback. That last condition is what keeps a broken project from
 // rolling back in a loop.
-func (h *handler) DeployRunFinished(serverID, runID, status string, exitCode int32, errMsg string) {
+func (h *handler) DeployRunFinished(serverID, runID, status, phase string, exitCode int32, errMsg string) {
 	ctx := context.Background()
 
 	run, err := h.store.GetRun(ctx, runID)
@@ -44,11 +44,16 @@ func (h *handler) DeployRunFinished(serverID, runID, status string, exitCode int
 	}
 	h.recordHealthState(ctx, run, status)
 
-	if status == "succeeded" || run.Trigger == triggerRollback {
+	p, err := h.store.Get(ctx, run.ProjectID)
+	if err != nil {
+		h.log.Warn("deploy: could not load project for a finished run", "run_id", runID, "err", err)
 		return
 	}
-	p, err := h.store.Get(ctx, run.ProjectID)
-	if err != nil || !p.AutoRollback {
+	// The commit status carries the outcome the health check produced, not merely the
+	// install script's exit code, which is the whole reason it is posted here.
+	h.reportStatusFinish(ctx, p, run, status, phase)
+
+	if status == "succeeded" || run.Trigger == triggerRollback || !p.AutoRollback {
 		return
 	}
 	good, err := h.store.LastSucceededRun(ctx, p.ID)

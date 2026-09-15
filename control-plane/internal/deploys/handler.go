@@ -14,6 +14,7 @@ import (
 	"github.com/croncompose/croncompose/control-plane/internal/agentgw"
 	"github.com/croncompose/croncompose/control-plane/internal/audit"
 	"github.com/croncompose/croncompose/control-plane/internal/auth"
+	"github.com/croncompose/croncompose/control-plane/internal/githubapp"
 	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
 )
 
@@ -25,6 +26,9 @@ type handler struct {
 	gateway *agentgw.Gateway
 	audit   audit.Writer
 	public  string
+	// app is the optional GitHub App used to post commit statuses as CronCompose
+	// rather than as the user who imported the repo. nil means none is configured.
+	app *githubapp.App
 }
 
 func jsonError(c fiber.Ctx, status int, code string, err error) error {
@@ -472,10 +476,15 @@ func (h *handler) gitlabWebhook(c fiber.Ctx) error {
 // the agent prefers a release already on disk carrying that commit over refetching
 // it, because the commit may be gone from the remote by then.
 func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinSHA string) (Run, error) {
-	run, err := h.store.InsertRun(ctx, p.ID, p.ServerID, trigger, branch)
+	// A rollback already knows its commit; a push or CI trigger reported one, and it
+	// reached us through duplicateTrigger. Recording it now rather than waiting for the
+	// agent lets the commit status go pending immediately and makes the de-duplication
+	// window cover a run that has not checked out yet.
+	run, err := h.store.InsertRun(ctx, p.ID, p.ServerID, trigger, branch, pinSHA)
 	if err != nil {
 		return Run{}, err
 	}
+	h.reportStatusStart(ctx, p, run)
 	token := ""
 	if p.CreatedBy != nil {
 		token, _ = h.conns.Token(ctx, *p.CreatedBy, p.Provider)

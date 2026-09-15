@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/croncompose/croncompose/control-plane/internal/config"
 	"github.com/croncompose/croncompose/control-plane/internal/cryptobox"
 	"github.com/croncompose/croncompose/control-plane/internal/db"
+	"github.com/croncompose/croncompose/control-plane/internal/githubapp"
 	"github.com/croncompose/croncompose/control-plane/internal/logger"
 	"github.com/croncompose/croncompose/control-plane/internal/notify"
 	"github.com/croncompose/croncompose/control-plane/internal/pki"
@@ -155,6 +157,18 @@ func run(seedAndExit bool) error {
 		log.Info("watching github for agent releases", "repo", cfg.GitHubReleaseRepo)
 	}
 
+	// Optional GitHub App: without it, deploy commit statuses are posted with the
+	// importing user's OAuth token instead. A bad key is fatal, because it is a typo in
+	// config rather than a decision not to use the App.
+	ghApp, err := newGitHubApp(cfg.GitHubAppID, cfg.GitHubAppPrivateKey, cfg.GitHubAppPrivateKeyPath)
+	if err != nil {
+		log.Error("github app config is invalid", "err", err)
+		os.Exit(1)
+	}
+	if ghApp.Configured() {
+		log.Info("github app configured; deploy commit statuses will be posted as the app", "app_id", cfg.GitHubAppID)
+	}
+
 	app := api.New(api.Deps{
 		Log:                log,
 		Pool:               pool,
@@ -172,6 +186,7 @@ func run(seedAndExit bool) error {
 		GitHubOAuth:        auth.GitHubProvider(cfg.GitHubOAuthClientID, cfg.GitHubOAuthClientSecret, cfg.GitHubOAuthRedirectURL),
 		GitLabOAuth:        auth.GitLabProvider(cfg.GitLabOAuthClientID, cfg.GitLabOAuthClientSecret, cfg.GitLabOAuthRedirectURL, cfg.GitLabOAuthBaseURL),
 		GitLabOrigin:       cfg.GitLabOAuthBaseURL,
+		GitHubApp:          ghApp,
 		OIDCDefaultRole:    cfg.OIDCDefaultRole,
 		Notifier:           notifier,
 		MetricsToken:       cfg.MetricsToken,
@@ -219,4 +234,19 @@ func publicUIBase(cfg config.Config) string {
 	u = strings.TrimSuffix(u, "/api/v1")
 	u = strings.TrimSuffix(u, "/api")
 	return u
+}
+
+// newGitHubApp reads the App's private key from the configured path, or from the
+// inline value when no path is set, and builds the client. Everything empty means no
+// App, which is a supported configuration rather than an error.
+func newGitHubApp(appID, inlineKey, keyPath string) (*githubapp.App, error) {
+	pem := []byte(inlineKey)
+	if keyPath != "" {
+		raw, err := os.ReadFile(keyPath)
+		if err != nil {
+			return nil, fmt.Errorf("read GITHUB_APP_PRIVATE_KEY_PATH: %w", err)
+		}
+		pem = raw
+	}
+	return githubapp.New(appID, pem, "")
 }

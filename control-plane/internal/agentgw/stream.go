@@ -287,7 +287,7 @@ func (s *service) onDeployEvent(ctx context.Context, serverID string, ev *agentv
 // the order they depend on each other.
 func (s *service) afterDeployRun(serverID, projectID, runID, status, branch, trigger, phase string, exitCode int32, errMsg string) {
 	if s.onDeployFin != nil {
-		s.onDeployFin.DeployRunFinished(serverID, runID, status, exitCode, errMsg)
+		s.onDeployFin.DeployRunFinished(serverID, runID, status, phase, exitCode, errMsg)
 	}
 	if s.onFailed == nil {
 		return
