@@ -21,23 +21,25 @@ type Store struct{ pool *pgxpool.Pool }
 func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 
 const targetCols = `
-  id, name, kind, coalesce(url,''), enabled, config, server_labels, on_statuses,
+  id, name, kind, coalesce(url,''), enabled, config, server_labels, on_statuses, events,
   last_error, last_fired_at, created_at
 `
 
 func scanTarget(row pgx.Row) (Target, error) {
 	var t Target
-	var cfg, labels, statuses []byte
+	var cfg, labels, statuses, events []byte
 	if err := row.Scan(&t.ID, &t.Name, &t.Kind, &t.URL, &t.Enabled,
-		&cfg, &labels, &statuses, &t.LastError, &t.LastFiredAt, &t.CreatedAt); err != nil {
+		&cfg, &labels, &statuses, &events, &t.LastError, &t.LastFiredAt, &t.CreatedAt); err != nil {
 		return t, err
 	}
 	t.Config = map[string]string{}
 	t.ServerLabels = map[string]string{}
 	t.OnStatuses = []string{}
+	t.Events = []string{}
 	_ = json.Unmarshal(cfg, &t.Config)
 	_ = json.Unmarshal(labels, &t.ServerLabels)
 	_ = json.Unmarshal(statuses, &t.OnStatuses)
+	_ = json.Unmarshal(events, &t.Events)
 	return t, nil
 }
 
@@ -86,12 +88,19 @@ func (s *Store) Insert(ctx context.Context, in CreateInput) (Target, error) {
 	if kind == "" {
 		kind = KindWebhook
 	}
+	events := in.Events
+	if len(events) == 0 {
+		// Matches the column default: a target that never mentioned events keeps
+		// firing on job runs only, the only thing this package could fire before
+		// deploys existed.
+		events = []string{EventJobRun}
+	}
 	_, err := s.pool.Exec(ctx, `
 		insert into notification_targets
-		  (id, name, kind, url, enabled, config, server_labels, on_statuses)
-		values ($1, $2, $3, $4, true, $5, $6, $7)
+		  (id, name, kind, url, enabled, config, server_labels, on_statuses, events)
+		values ($1, $2, $3, $4, true, $5, $6, $7, $8)
 	`, id, in.Name, kind, in.URL,
-		mustJSONMap(in.Config), mustJSONMap(in.ServerLabels), mustJSONSlice(in.OnStatuses))
+		mustJSONMap(in.Config), mustJSONMap(in.ServerLabels), mustJSONSlice(in.OnStatuses), mustJSONSlice(events))
 	if err != nil {
 		return Target{}, err
 	}
@@ -136,14 +145,17 @@ func (s *Store) Patch(ctx context.Context, id string, in PatchInput) (Target, er
 	if in.OnStatuses != nil {
 		cur.OnStatuses = *in.OnStatuses
 	}
+	if in.Events != nil {
+		cur.Events = *in.Events
+	}
 
 	_, err = s.pool.Exec(ctx, `
 		update notification_targets
 		   set name = $2, url = $3, enabled = $4, config = $5,
-		       server_labels = $6, on_statuses = $7
+		       server_labels = $6, on_statuses = $7, events = $8
 		 where id = $1
 	`, id, cur.Name, cur.URL, cur.Enabled,
-		mustJSONMap(cur.Config), mustJSONMap(cur.ServerLabels), mustJSONSlice(cur.OnStatuses))
+		mustJSONMap(cur.Config), mustJSONMap(cur.ServerLabels), mustJSONSlice(cur.OnStatuses), mustJSONSlice(cur.Events))
 	if err != nil {
 		return Target{}, err
 	}

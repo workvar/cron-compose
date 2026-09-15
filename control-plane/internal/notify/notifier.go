@@ -45,6 +45,7 @@ func (n *Notifier) FireRunFailed(serverID, jobID, runID, status string, exitCode
 	defer cancel()
 
 	ev := RunFailedEvent{
+		EventKind:  EventJobRun,
 		RunID:      runID,
 		JobID:      jobID,
 		ServerID:   serverID,
@@ -63,6 +64,51 @@ func (n *Notifier) FireRunFailed(serverID, jobID, runID, status string, exitCode
 
 	// Deliveries run inside this function's context, so the deadline above bounds the
 	// whole fan-out. Waiting for them keeps that context alive until they finish.
+	done := make(chan struct{})
+	pending := 0
+	for _, t := range targets {
+		if !t.Matches(ev) {
+			continue
+		}
+		pending++
+		go func(target Target) {
+			defer func() { done <- struct{}{} }()
+			n.deliverAndRecord(ctx, target, ev)
+		}(t)
+	}
+	for i := 0; i < pending; i++ {
+		<-done
+	}
+}
+
+// FireDeployFailed matches agentgw.FailedRunHook's deploy half. Called whenever a
+// deploy run finishes with a non-success status; rolledBack says whether that failure
+// already triggered an automatic rollback (see the deploys package), so the message
+// can say the app is back on its last good commit rather than reading as still down.
+func (n *Notifier) FireDeployFailed(serverID, projectID, runID, status, branch, trigger string, exitCode int32, errMsg string, rolledBack bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	ev := RunFailedEvent{
+		EventKind:  EventDeploy,
+		RunID:      runID,
+		ProjectID:  projectID,
+		ServerID:   serverID,
+		Branch:     branch,
+		Trigger:    trigger,
+		Status:     status,
+		ExitCode:   exitCode,
+		Error:      errMsg,
+		RolledBack: rolledBack,
+	}
+	n.enrichDeploy(ctx, &ev)
+
+	targets, err := n.store.EnabledList(ctx)
+	if err != nil {
+		n.log.Warn("notify: list targets failed", "err", err)
+		return
+	}
+
 	done := make(chan struct{})
 	pending := 0
 	for _, t := range targets {
@@ -152,6 +198,29 @@ func (n *Notifier) enrich(ctx context.Context, ev *RunFailedEvent) {
 	if err := n.pool.QueryRow(ctx,
 		`select coalesce(name,'') from jobs where id = $1`, ev.JobID).Scan(&ev.JobName); err != nil {
 		n.log.Debug("notify: job lookup failed", "err", err, "job_id", ev.JobID)
+	}
+}
+
+// enrichDeploy is enrich's deploy counterpart: same server lookup, but the human name
+// comes from deploy_projects rather than jobs.
+func (n *Notifier) enrichDeploy(ctx context.Context, ev *RunFailedEvent) {
+	if n.baseURL != "" && ev.RunID != "" {
+		ev.RunURL = n.baseURL + "/app/deploys/runs/" + ev.RunID
+	}
+	ev.ServerLabels = map[string]string{}
+
+	var labels []byte
+	if err := n.pool.QueryRow(ctx,
+		`select coalesce(name,''), coalesce(labels,'{}'::jsonb) from servers where id = $1`,
+		ev.ServerID).Scan(&ev.ServerName, &labels); err != nil {
+		n.log.Debug("notify: server lookup failed", "err", err, "server_id", ev.ServerID)
+	} else {
+		_ = json.Unmarshal(labels, &ev.ServerLabels)
+	}
+
+	if err := n.pool.QueryRow(ctx,
+		`select coalesce(name,'') from deploy_projects where id = $1`, ev.ProjectID).Scan(&ev.ProjectName); err != nil {
+		n.log.Debug("notify: deploy project lookup failed", "err", err, "project_id", ev.ProjectID)
 	}
 }
 

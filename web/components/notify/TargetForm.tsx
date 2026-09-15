@@ -5,6 +5,10 @@ import { useState } from "react";
 type Kind = "webhook" | "slack" | "email";
 
 const STATUSES = ["failed", "timed_out", "canceled", "skipped"];
+const EVENTS: { value: "job_run" | "deploy"; label: string }[] = [
+  { value: "job_run", label: "Job runs" },
+  { value: "deploy", label: "Deploys" },
+];
 
 /**
  * Create a notification target.
@@ -20,6 +24,7 @@ export function TargetForm({ onDone, onCancel }: { onDone: () => void; onCancel:
   const [cfg, setCfg] = useState<Record<string, string>>({});
   const [labels, setLabels] = useState("");
   const [statuses, setStatuses] = useState<string[]>([]);
+  const [events, setEvents] = useState<string[]>(["job_run"]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,6 +44,7 @@ export function TargetForm({ onDone, onCancel }: { onDone: () => void; onCancel:
           config: cfg,
           server_labels: parseLabels(labels),
           on_statuses: statuses,
+          events,
         }),
       });
       const body = await res.json().catch(() => null);
@@ -122,6 +128,28 @@ export function TargetForm({ onDone, onCancel }: { onDone: () => void; onCancel:
         <label htmlFor="nt-labels">Only for servers with labels (optional)</label>
         <input id="nt-labels" value={labels} onChange={(e) => setLabels(e.target.value)} placeholder="env=prod, role=db" />
         <p className="field-hint">Leave empty to cover the whole fleet.</p>
+      </div>
+
+      <div>
+        <label>Notify about</label>
+        <div className="cluster" style={{ gap: 6, marginTop: 6 }}>
+          {EVENTS.map((e) => (
+            <button
+              key={e.value}
+              type="button"
+              className={`chip ${events.includes(e.value) ? "selected" : ""}`}
+              onClick={() =>
+                setEvents((cur) => {
+                  const next = cur.includes(e.value) ? cur.filter((x) => x !== e.value) : [...cur, e.value];
+                  return next.length === 0 ? cur : next; // a target has to fire on at least one thing
+                })
+              }
+            >
+              {e.label}
+            </button>
+          ))}
+        </div>
+        <p className="field-hint">Job runs is the original behavior; turn on Deploys to also hear about deploy failures.</p>
       </div>
 
       <div>

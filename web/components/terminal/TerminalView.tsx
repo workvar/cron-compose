@@ -8,6 +8,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { TerminalFrame } from "./TerminalFrame";
+import { UserSwitcher } from "./UserSwitcher";
 
 export type TermStatus = "connecting" | "open" | "closed" | "error";
 
@@ -18,12 +19,14 @@ type Props = {
   /** OS user to run the session as. Empty or absent means the agent's own user. */
   runAs?: string;
   onClose: () => void;
+  /** Switch this session to another user: reconnects a fresh session as runAs. */
+  onSwitchUser: (runAs: string) => void;
 };
 
 const dim = (s: string) => `\r\n\x1b[90m${s}\x1b[0m\r\n`;
 const red = (s: string) => `\r\n\x1b[31m${s}\x1b[0m\r\n`;
 
-export default function TerminalView({ serverId, mode, command, runAs, onClose }: Props) {
+export default function TerminalView({ serverId, mode, command, runAs, onClose, onSwitchUser }: Props) {
   const holder = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -122,6 +125,12 @@ export default function TerminalView({ serverId, mode, command, runAs, onClose }
       title={title}
       actions={
         <div className="cluster">
+          <UserSwitcher
+            serverId={serverId}
+            value={runAs ?? ""}
+            onChange={(next) => onSwitchUser(next)}
+            compact
+          />
           <span className={`status ${statusTone(status)}`}>{statusLabel(status)}</span>
           {ended ? (
             <button className="button secondary sm" type="button" onClick={() => closeRef.current()}>

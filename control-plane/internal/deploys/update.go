@@ -14,6 +14,7 @@ type UpdateInput struct {
 	Env            *map[string]string `json:"env"`
 	Apps           *[]SpecApp         `json:"apps"`
 	WriteSpec      *bool              `json:"write_spec"`
+	AutoRollback   *bool              `json:"auto_rollback"`
 }
 
 func applyUpdate(p Project, in UpdateInput) Project {
@@ -52,6 +53,9 @@ func applyUpdate(p Project, in UpdateInput) Project {
 	}
 	if in.WriteSpec != nil {
 		p.WriteSpec = *in.WriteSpec
+	}
+	if in.AutoRollback != nil {
+		p.AutoRollback = *in.AutoRollback
 	}
 	return p
 }

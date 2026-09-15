@@ -28,6 +28,10 @@ func (r *Runtime) handleServerMessage(ctx context.Context, msg *agentv1.ServerMe
 		r.terminals.Handle(body.TerminalInput)
 	case *agentv1.ServerMessage_DeployCommand:
 		r.deploys.Handle(ctx, body.DeployCommand)
+	case *agentv1.ServerMessage_ListUsersRequest:
+		// Reads /etc/passwd (or shells out on macOS); fast, but keep it off the
+		// receive loop so a slow directory-service lookup can never stall it.
+		go r.handleListUsersRequest(body.ListUsersRequest)
 	}
 }
 

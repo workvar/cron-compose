@@ -119,6 +119,11 @@ func validateCreate(in CreateInput) error {
 	if !ValidKind(in.Kind) {
 		return errors.New("kind must be one of webhook, slack, email")
 	}
+	for _, e := range in.Events {
+		if !ValidEvent(e) {
+			return errors.New("events must be job_run and/or deploy")
+		}
+	}
 	switch in.Kind {
 	case KindWebhook, KindSlack:
 		if in.URL == "" {

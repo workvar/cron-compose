@@ -126,12 +126,35 @@ func (m *Manager) start(parent context.Context, cmd *agentv1.DeployCommand) {
 	if branch == "" {
 		branch = "main"
 	}
+	// The control plane pins a rollback deploy to an exact commit via this env var
+	// rather than a new DeployCommand field, so an older agent build still supports
+	// forward deploys unchanged and a newer one needs no proto change to add this.
+	// See control-plane/internal/deploys/handler.go's rollbackShaEnvKey.
+	pinSHA := ""
+	if env := cmd.GetEnv(); env != nil {
+		if sha, ok := env[rollbackEnvKey]; ok {
+			pinSHA = sha
+			cleaned := make(map[string]string, len(env))
+			for k, v := range env {
+				if k != rollbackEnvKey {
+					cleaned[k] = v
+				}
+			}
+			cmd.Env = cleaned
+		}
+	}
 	provider := providerFromURL(cmd.GetCloneUrl())
-	if err := cloneOrPull(ctx, dest, cmd.GetCloneUrl(), provider, token, branch); err != nil {
+	if err := cloneOrPull(ctx, dest, cmd.GetCloneUrl(), provider, token, branch, pinSHA); err != nil {
 		m.fail(runID, token, redact(err.Error(), token))
 		return
 	}
+	sha := headCommit(ctx, dest)
 	m.logLine(runID, token, "cloned "+PublicCloneURL(cmd.GetCloneUrl())+" → "+dest)
+	if sha != "" {
+		// Parsed back out of the log by control-plane/internal/agentgw/stream.go and
+		// stored on the run, so a later failure knows what commit to roll back to.
+		m.logLine(runID, token, "commit: "+sha)
+	}
 	_ = writeSpec(dest, cmd)
 
 	apps := cmd.GetApps()
@@ -208,7 +231,18 @@ func findEcosystem(dir string) string {
 	return ""
 }
 
-func cloneOrPull(ctx context.Context, dest, cloneURL, provider, token, branch string) error {
+// rollbackEnvKey is the DeployCommand.Env key the control plane sets to pin a run to
+// an exact commit instead of the branch tip. Must match
+// control-plane/internal/deploys/handler.go's rollbackShaEnvKey.
+const rollbackEnvKey = "CRONCOMPOSE_ROLLBACK_SHA"
+
+// cloneOrPull clones fresh or fast-forwards an existing checkout to branch's tip. When
+// pinSHA is set (an automatic rollback), it checks out that exact commit instead: the
+// normal clone is shallow (--depth 1), which only holds the tip, so a rollback fetches
+// that commit specifically (asking the remote for a SHA that is reachable from a ref
+// it already advertises, which GitHub, GitLab and a stock git server all allow) rather
+// than assuming --depth 1 left old history lying around.
+func cloneOrPull(ctx context.Context, dest, cloneURL, provider, token, branch, pinSHA string) error {
 	authURL := AuthenticatedCloneURL(cloneURL, provider, token)
 	public := PublicCloneURL(cloneURL)
 	if isGitDir(dest) {
@@ -218,6 +252,9 @@ func cloneOrPull(ctx context.Context, dest, cloneURL, provider, token, branch st
 		defer func() { _ = runCmd(context.Background(), dest, nil, "git", "remote", "set-url", "origin", public) }()
 		if err := runCmd(ctx, dest, nil, "git", "fetch", "origin", branch); err != nil {
 			return err
+		}
+		if pinSHA != "" {
+			return checkoutPinned(ctx, dest, pinSHA)
 		}
 		if err := runCmd(ctx, dest, nil, "git", "checkout", branch); err != nil {
 			return err
@@ -230,7 +267,34 @@ func cloneOrPull(ctx context.Context, dest, cloneURL, provider, token, branch st
 	if err := runCmd(ctx, "", nil, "git", "clone", "--branch", branch, "--single-branch", "--depth", "1", authURL, dest); err != nil {
 		return err
 	}
-	return runCmd(ctx, dest, nil, "git", "remote", "set-url", "origin", public)
+	if pinSHA == "" {
+		return runCmd(ctx, dest, nil, "git", "remote", "set-url", "origin", public)
+	}
+	defer func() { _ = runCmd(context.Background(), dest, nil, "git", "remote", "set-url", "origin", public) }()
+	return checkoutPinned(ctx, dest, pinSHA)
+}
+
+// checkoutPinned fetches one commit by sha (unshallowing first, best-effort, so the
+// fetch has real history to walk) and checks it out. dest's origin must already carry
+// authenticated credentials when the repo is private.
+func checkoutPinned(ctx context.Context, dest, sha string) error {
+	_ = runCmd(ctx, dest, nil, "git", "fetch", "--unshallow", "origin") // no-op if already full
+	if err := runCmd(ctx, dest, nil, "git", "fetch", "origin", sha); err != nil {
+		return err
+	}
+	return runCmd(ctx, dest, nil, "git", "checkout", "--force", sha)
+}
+
+// headCommit returns the checked-out commit sha, or "" if that can't be determined
+// (not fatal: the run just won't be a rollback candidate later).
+func headCommit(ctx context.Context, dir string) string {
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func isGitDir(dir string) bool {

@@ -109,8 +109,12 @@ func dialSMTP(ctx context.Context, addr, host string, implicitTLS bool) (*smtp.C
 // go to phones and to terminal mail readers, and the content is a short status plus a
 // block of program output.
 func buildMessage(from string, to []string, ev RunFailedEvent) []byte {
-	subject := fmt.Sprintf("[CronCompose] %s %s on %s",
-		ev.Status, nameOr(ev.JobName, ev.JobID), nameOr(ev.ServerName, ev.ServerID))
+	subjectName, label := nameOr(ev.JobName, ev.JobID), "Job"
+	if ev.EventKind == EventDeploy {
+		subjectName, label = nameOr(ev.ProjectName, ev.ProjectID), "Deploy"
+	}
+	subject := fmt.Sprintf("[CronCompose] %s %s %s on %s%s",
+		ev.Status, label, subjectName, nameOr(ev.ServerName, ev.ServerID), rollbackSuffix(ev))
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "From: %s\r\n", from)
@@ -121,11 +125,21 @@ func buildMessage(from string, to []string, ev RunFailedEvent) []byte {
 	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
 	b.WriteString("\r\n")
 
-	fmt.Fprintf(&b, "Job:      %s\n", nameOr(ev.JobName, ev.JobID))
+	fmt.Fprintf(&b, "%s:  %s\n", label, subjectName)
 	fmt.Fprintf(&b, "Server:   %s\n", nameOr(ev.ServerName, ev.ServerID))
 	fmt.Fprintf(&b, "Status:   %s\n", ev.Status)
 	fmt.Fprintf(&b, "Exit:     %d\n", ev.ExitCode)
-	fmt.Fprintf(&b, "Duration: %s\n", humanMillis(ev.DurationMs))
+	if ev.EventKind == EventDeploy {
+		fmt.Fprintf(&b, "Branch:   %s\n", nameOr(ev.Branch, "-"))
+		switch {
+		case ev.RolledBack && ev.Status == "succeeded":
+			b.WriteString("Recovered automatically: rolled back to the last successful commit.\n")
+		case ev.RolledBack:
+			b.WriteString("This was an automatic rollback attempt, and it also failed. Nothing was rolled back.\n")
+		}
+	} else {
+		fmt.Fprintf(&b, "Duration: %s\n", humanMillis(ev.DurationMs))
+	}
 	if ev.RunURL != "" {
 		fmt.Fprintf(&b, "Run:      %s\n", ev.RunURL)
 	}

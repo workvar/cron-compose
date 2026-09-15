@@ -169,7 +169,7 @@ func (h *handler) create(c fiber.Ctx) error {
 	}
 	h.audit.Write(c.Context(), auth.CurrentUserID(c), "deploy.create", "deploy", p.ID, map[string]any{"repo": p.RepoFullName})
 	warnings := h.provisionRemote(c.Context(), p)
-	run, err := h.startRun(c.Context(), p, "manual", p.DefaultBranch)
+	run, err := h.startRun(c.Context(), p, "manual", p.DefaultBranch, "")
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "run_failed", err)
 	}
@@ -196,7 +196,7 @@ func (h *handler) patch(c fiber.Ctx) error {
 	out := fiber.Map{"project": p}
 	pmChanged := in.ProcessManager != nil && p.ProcessManager != before.ProcessManager
 	if pmChanged && p.ProcessManager != "" && p.ProcessManager != "none" {
-		run, err := h.startRun(c.Context(), p, "manual", p.DefaultBranch)
+		run, err := h.startRun(c.Context(), p, "manual", p.DefaultBranch, "")
 		if err != nil {
 			return jsonError(c, fiber.StatusInternalServerError, "run_failed", err)
 		}
@@ -298,7 +298,7 @@ func (h *handler) createRun(c fiber.Ctx) error {
 	if branch == "" {
 		branch = p.DefaultBranch
 	}
-	run, err := h.startRun(c.Context(), p, trigger, branch)
+	run, err := h.startRun(c.Context(), p, trigger, branch, "")
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "run_failed", err)
 	}
@@ -419,7 +419,7 @@ func (h *handler) githubWebhook(c fiber.Ctx) error {
 	if branch != p.DefaultBranch {
 		return c.SendStatus(fiber.StatusNoContent)
 	}
-	_, err = h.startRun(c.Context(), p, "webhook", branch)
+	_, err = h.startRun(c.Context(), p, "webhook", branch, "")
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "run_failed", err)
 	}
@@ -454,14 +454,18 @@ func (h *handler) gitlabWebhook(c fiber.Ctx) error {
 	if branch != p.DefaultBranch {
 		return c.SendStatus(fiber.StatusNoContent)
 	}
-	_, err = h.startRun(c.Context(), p, "webhook", branch)
+	_, err = h.startRun(c.Context(), p, "webhook", branch, "")
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "run_failed", err)
 	}
 	return c.SendStatus(fiber.StatusAccepted)
 }
 
-func (h *handler) startRun(ctx context.Context, p Project, trigger, branch string) (Run, error) {
+// startRun starts a deploy. pinSHA is empty for every normal deploy (branch tip); an
+// automatic rollback (see DeployRunFinished) sets it to the commit to return to, and
+// startRun smuggles it to the agent as an env var rather than a new proto field - see
+// the CRONCOMPOSE_ROLLBACK_SHA comment on agent/internal/deploy/runner.go.
+func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinSHA string) (Run, error) {
 	run, err := h.store.InsertRun(ctx, p.ID, p.ServerID, trigger, branch)
 	if err != nil {
 		return Run{}, err
@@ -470,12 +474,20 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch strin
 	if p.CreatedBy != nil {
 		token, _ = h.conns.Token(ctx, *p.CreatedBy, p.Provider)
 	}
+	env := p.Env
+	if pinSHA != "" {
+		env = make(map[string]string, len(p.Env)+1)
+		for k, v := range p.Env {
+			env[k] = v
+		}
+		env[rollbackShaEnvKey] = pinSHA
+	}
 	cmd := &agentv1.DeployCommand{
 		RunId: run.ID, Op: "start",
 		CloneUrl: p.CloneURL, CloneToken: token,
 		DestPath: p.ClonePath, Branch: branch,
 		InstallScript: p.InstallScript, RootDirectory: p.RootDirectory,
-		Env: p.Env, Port: int32(p.Port), ProcessManager: p.ProcessManager,
+		Env: env, Port: int32(p.Port), ProcessManager: p.ProcessManager,
 	}
 	for _, a := range p.Apps {
 		lang, pm := a.Language, a.ProcessManager
@@ -505,6 +517,46 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch strin
 	_ = h.store.MarkRun(ctx, run.ID, "running", 0, "")
 	run.Status = "running"
 	return run, nil
+}
+
+// rollbackShaEnvKey must match agent/internal/deploy/runner.go's rollbackEnvKey.
+const rollbackShaEnvKey = "CRONCOMPOSE_ROLLBACK_SHA"
+
+// DeployRunFinished implements agentgw.DeployFinishedHook. Called for every deploy run
+// that finishes, successful or not; it only acts on a failure, and only for a project
+// that opted into AutoRollback, and only when there is a prior successful commit to go
+// back to, and only when this failed run wasn't itself a rollback attempt (a rollback
+// that fails does not chain into another rollback - see the roadmap's caution against
+// this class of retry loop).
+func (h *handler) DeployRunFinished(serverID, runID, status string, exitCode int32, errMsg string) {
+	if status == "succeeded" {
+		return
+	}
+	ctx := context.Background()
+	run, err := h.store.GetRun(ctx, runID)
+	if err != nil {
+		h.log.Warn("deploy: rollback check failed to load run", "run_id", runID, "err", err)
+		return
+	}
+	if run.Trigger == "rollback" {
+		return
+	}
+	p, err := h.store.Get(ctx, run.ProjectID)
+	if err != nil || !p.AutoRollback {
+		return
+	}
+	good, err := h.store.LastSucceededRun(ctx, p.ID)
+	if err != nil {
+		return // nothing to roll back to yet
+	}
+	if good.CommitSha == "" || good.CommitSha == run.CommitSha {
+		return // nothing to roll back to, or the failed run never got past the same commit
+	}
+	h.log.Warn("deploy: auto-rolling back after failed run",
+		"project_id", p.ID, "failed_run_id", runID, "rollback_to_commit", good.CommitSha)
+	if _, err := h.startRun(ctx, p, "rollback", good.Branch, good.CommitSha); err != nil {
+		h.log.Warn("deploy: auto-rollback failed to start", "project_id", p.ID, "err", err)
+	}
 }
 
 func bearerToken(c fiber.Ctx) string {

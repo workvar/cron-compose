@@ -19,11 +19,23 @@ import (
 	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
 )
 
-// FailedRunHook is invoked from onRunFinished whenever a run terminates with a
-// non-success status. Implemented by *notify.Notifier; injected to keep agentgw from
-// depending on the notify package directly.
+// FailedRunHook is invoked whenever a run terminates with a non-success status, for
+// both scheduled job runs (onRunFinished) and deploy runs (onDeployEvent). Implemented
+// by *notify.Notifier; injected to keep agentgw from depending on the notify package
+// directly.
 type FailedRunHook interface {
 	FireRunFailed(serverID, jobID, runID, status string, exitCode, durationMs int32, errMsg string)
+	FireDeployFailed(serverID, projectID, runID, status, branch, trigger string, exitCode int32, errMsg string, rolledBack bool)
+}
+
+// DeployFinishedHook is invoked whenever a deploy run finishes, successful or not, so
+// code outside agentgw can react - specifically, the deploys package triggering an
+// automatic rollback on failure. It lives here rather than on FailedRunHook because it
+// fires on every outcome, not just failures, and here rather than on the deploys
+// package because deploys already depends on agentgw for Gateway.SendDeploy; the
+// reverse dependency would be a cycle.
+type DeployFinishedHook interface {
+	DeployRunFinished(serverID, runID, status string, exitCode int32, errMsg string)
 }
 
 // Gateway owns the gRPC server, the per-server connection registry, the log broker,
@@ -37,10 +49,12 @@ type Gateway struct {
 	broker      *LogBroker
 	terminals   *TerminalBus
 	pending     *PendingRequests
+	users       *PendingUserRequests
 	logMaxBytes int
 	update      UpdatePolicy
 	resolver    SecretResolver
 	onFailed    FailedRunHook
+	onDeployFin DeployFinishedHook
 	grpc        *grpc.Server
 	lis         net.Listener
 }
@@ -56,6 +70,7 @@ func New(addr string, log *slog.Logger, pool *pgxpool.Pool, bundle *pki.Bundle, 
 		broker:    NewLogBroker(),
 		terminals: NewTerminalBus(),
 		pending:   NewPendingRequests(),
+		users:     NewPendingUserRequests(),
 		resolver:  resolver,
 	}
 }
@@ -82,6 +97,10 @@ func (g *Gateway) SendAgentUpdate(serverID string, up *agentv1.UpdateAgent) erro
 // Set this once, before Start, so the stream handler picks it up.
 func (g *Gateway) SetFailedRunHook(h FailedRunHook) { g.onFailed = h }
 
+// SetDeployFinishedHook installs a hook invoked when a deploy run finishes, whatever
+// the outcome. See DeployFinishedHook for why this is separate from SetFailedRunHook.
+func (g *Gateway) SetDeployFinishedHook(h DeployFinishedHook) { g.onDeployFin = h }
+
 // Registry exposes the per-server connection registry so the REST API can push
 // RunNow / CancelRun / SyncJobs over the active stream.
 func (g *Gateway) Registry() *Registry { return g.registry }
@@ -96,6 +115,10 @@ func (g *Gateway) Terminals() *TerminalBus { return g.terminals }
 // Pending exposes the connector request/response correlation registry. The REST
 // layer uses it indirectly through SendConnectorCommand; it is exported for tests.
 func (g *Gateway) Pending() *PendingRequests { return g.pending }
+
+// Users exposes the "list OS accounts" request/response correlation registry. The
+// REST layer uses it indirectly through SendListUsersRequest; exported for tests.
+func (g *Gateway) Users() *PendingUserRequests { return g.users }
 
 // Start binds and serves over mTLS.
 func (g *Gateway) Start(_ context.Context) error {
@@ -123,7 +146,7 @@ func (g *Gateway) Start(_ context.Context) error {
 
 	creds := credentials.NewTLS(tlsCfg)
 	g.grpc = grpc.NewServer(grpc.Creds(creds))
-	agentv1.RegisterAgentServiceServer(g.grpc, newService(g.log, g.pool, g.registry, g.broker, g.terminals, g.pending, g.logMaxBytes, g.update, g.resolver, g.onFailed))
+	agentv1.RegisterAgentServiceServer(g.grpc, newService(g.log, g.pool, g.registry, g.broker, g.terminals, g.pending, g.users, g.logMaxBytes, g.update, g.resolver, g.onFailed, g.onDeployFin))
 
 	go func() {
 		g.log.Info("grpc listening (mTLS)", "addr", g.addr)

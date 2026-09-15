@@ -116,6 +116,9 @@ func New(d Deps) *fiber.App {
 	publicOrigin = strings.TrimSuffix(publicOrigin, "/api")
 	deployH := deploys.Register(authed, d.Log, d.Pool, d.Gateway, writer, conns, publicOrigin, d.GitLabOrigin)
 	deploys.RegisterPublic(v1, deployH, auth.OptionalAuth(d.SessionSecret, userStore, d.Log))
+	// Lets a failed deploy trigger an automatic rollback without agentgw depending on
+	// the deploys package; see agentgw.DeployFinishedHook.
+	d.Gateway.SetDeployFinishedHook(deployH)
 
 	// Single entry point: serve the UI under /app (and bounce / into it) when an
 	// upstream is configured. With no upstream, / is an nginx-style welcome page.

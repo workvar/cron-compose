@@ -10,6 +10,7 @@ package terminal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net"
 	"net/url"
@@ -268,6 +269,57 @@ func hostnamePart(host string) string {
 		return h
 	}
 	return host
+}
+
+// systemUser is the wire shape for one entry in GET .../terminal/users.
+type systemUser struct {
+	Username  string `json:"username"`
+	UID       uint32 `json:"uid"`
+	Home      string `json:"home"`
+	Shell     string `json:"shell"`
+	Available bool   `json:"available"` // false: exists, but this agent cannot switch to it yet (needs root)
+}
+
+// listUsers answers GET /servers/:id/terminal/users: the OS accounts the terminal's
+// user switcher can offer for this server, fetched live from the agent. Same
+// admin/owner gate as the terminal socket itself (see Register), since this reveals
+// account names on the managed host.
+func (h *handler) listUsers(c fiber.Ctx) error {
+	serverID := c.Params("id")
+
+	res, err := h.gw.SendListUsersRequest(c.Context(), serverID)
+	switch {
+	case errors.Is(err, agentgw.ErrAgentOffline):
+		return jsonError(c, fiber.StatusServiceUnavailable, "agent_offline", err)
+	case errors.Is(err, agentgw.ErrCommandTimeout):
+		return jsonError(c, fiber.StatusGatewayTimeout, "agent_timeout", err)
+	case err != nil:
+		return jsonError(c, fiber.StatusInternalServerError, "list_users_failed", err)
+	}
+	if res.GetError() != "" {
+		return jsonError(c, fiber.StatusInternalServerError, "list_users_failed", errors.New(res.GetError()))
+	}
+
+	users := make([]systemUser, 0, len(res.GetUsers()))
+	for _, u := range res.GetUsers() {
+		users = append(users, systemUser{
+			Username:  u.GetUsername(),
+			UID:       u.GetUid(),
+			Home:      u.GetHome(),
+			Shell:     u.GetShell(),
+			Available: u.GetAvailable(),
+		})
+	}
+	return c.JSON(fiber.Map{"users": users})
+}
+
+func jsonError(c fiber.Ctx, status int, code string, err error) error {
+	return c.Status(status).JSON(fiber.Map{
+		"error": fiber.Map{
+			"code":    code,
+			"message": err.Error(),
+		},
+	})
 }
 
 func isLoopback(host string) bool {

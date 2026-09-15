@@ -120,13 +120,16 @@ export function TargetManager({ initial }: { initial: NotificationTarget[] }) {
 function TargetScope({ target }: { target: NotificationTarget }) {
   const labels = Object.entries(target.server_labels ?? {});
   const statuses = target.on_statuses ?? [];
+  const events = target.events && target.events.length > 0 ? target.events : ["job_run"];
+  const eventLabel = events.length === 2 ? "job runs & deploys" : events[0] === "deploy" ? "deploys" : "job runs";
   if (labels.length === 0 && statuses.length === 0) {
-    return <div className="faint" style={{ fontSize: 12 }}>every failed run, every server</div>;
+    return <div className="faint" style={{ fontSize: 12 }}>every failed run, every server · {eventLabel}</div>;
   }
   return (
     <div className="faint" style={{ fontSize: 12 }}>
       {statuses.length > 0 ? statuses.join(", ") : "any failure"}
       {labels.length > 0 ? ` · servers where ${labels.map(([k, v]) => `${k}=${v}`).join(", ")}` : " · every server"}
+      {" · "}{eventLabel}
     </div>
   );
 }

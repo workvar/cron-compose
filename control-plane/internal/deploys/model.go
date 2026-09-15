@@ -21,20 +21,27 @@ type Project struct {
 	Env            map[string]string `json:"env"`
 	Apps           []SpecApp         `json:"apps"`
 	WriteSpec      bool              `json:"write_spec"`
-	CreatedBy      *string           `json:"created_by,omitempty"`
-	CreatedAt      time.Time         `json:"created_at"`
-	UpdatedAt      time.Time         `json:"updated_at"`
-	DeployToken    string            `json:"deploy_token,omitempty"` // only on create
+	// AutoRollback, when true, redeploys the project's last successful commit
+	// automatically after a failed run, and restarts the process manager on it.
+	AutoRollback bool      `json:"auto_rollback"`
+	CreatedBy    *string   `json:"created_by,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	DeployToken  string    `json:"deploy_token,omitempty"` // only on create
 }
 
 // Run is one clone+install attempt.
 type Run struct {
-	ID         string     `json:"id"`
-	ProjectID  string     `json:"project_id"`
-	ServerID   string     `json:"server_id"`
-	Trigger    string     `json:"trigger"`
-	Status     string     `json:"status"`
-	Branch     string     `json:"branch"`
+	ID        string `json:"id"`
+	ProjectID string `json:"project_id"`
+	ServerID  string `json:"server_id"`
+	Trigger   string `json:"trigger"`
+	Status    string `json:"status"`
+	Branch    string `json:"branch"`
+	// CommitSha is filled in once the agent reports the commit it checked out (see
+	// agent/internal/deploy/runner.go); empty until then, and always empty for a run
+	// that never got that far (agent_offline).
+	CommitSha  string     `json:"commit_sha,omitempty"`
 	ExitCode   *int       `json:"exit_code,omitempty"`
 	Error      string     `json:"error,omitempty"`
 	StartedAt  *time.Time `json:"started_at,omitempty"`

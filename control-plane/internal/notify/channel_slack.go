@@ -21,13 +21,22 @@ func (n *Notifier) deliverSlack(ctx context.Context, t Target, ev RunFailedEvent
 		return errors.New("slack target has no incoming-webhook url")
 	}
 
-	headline := fmt.Sprintf("%s %s on %s",
-		statusEmoji(ev.Status), nameOr(ev.JobName, ev.JobID), nameOr(ev.ServerName, ev.ServerID))
+	subject, label := nameOr(ev.JobName, ev.JobID), "Job"
+	if ev.EventKind == EventDeploy {
+		subject, label = nameOr(ev.ProjectName, ev.ProjectID), "Deploy"
+	}
+	headline := fmt.Sprintf("%s %s %s on %s",
+		statusEmoji(ev.Status), label, subject, nameOr(ev.ServerName, ev.ServerID))
+	headline += rollbackSuffix(ev)
 
 	fields := []map[string]string{
 		{"type": "mrkdwn", "text": "*Status*\n" + ev.Status},
 		{"type": "mrkdwn", "text": fmt.Sprintf("*Exit code*\n%d", ev.ExitCode)},
-		{"type": "mrkdwn", "text": "*Duration*\n" + humanMillis(ev.DurationMs)},
+	}
+	if ev.EventKind == EventDeploy {
+		fields = append(fields, map[string]string{"type": "mrkdwn", "text": "*Branch*\n" + nameOr(ev.Branch, "-")})
+	} else {
+		fields = append(fields, map[string]string{"type": "mrkdwn", "text": "*Duration*\n" + humanMillis(ev.DurationMs)})
 	}
 	if ev.RunURL != "" {
 		fields = append(fields, map[string]string{
@@ -64,6 +73,18 @@ func (n *Notifier) deliverSlack(ctx context.Context, t Target, ev RunFailedEvent
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", userAgent)
 	return n.doRequest(req)
+}
+
+// rollbackSuffix renders the automatic-rollback outcome for a headline or subject
+// line. Empty for anything that isn't a rollback run's own result.
+func rollbackSuffix(ev RunFailedEvent) string {
+	switch {
+	case ev.RolledBack && ev.Status == "succeeded":
+		return " (recovered via rollback)"
+	case ev.RolledBack:
+		return " (rollback also failed)"
+	}
+	return ""
 }
 
 func statusEmoji(status string) string {

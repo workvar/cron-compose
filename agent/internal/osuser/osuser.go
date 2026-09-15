@@ -63,7 +63,7 @@ func Resolve(name string) (*Credential, error) {
 	if uint32(uid) == uint32(os.Getuid()) {
 		return nil, nil
 	}
-	if os.Geteuid() != 0 {
+	if !canSwitchTo(uint32(uid)) {
 		return nil, fmt.Errorf("%w (wanted %s)", ErrNotPermitted, name)
 	}
 
@@ -110,6 +110,14 @@ func (c *Credential) Env() []string {
 		"HOME=" + c.Home,
 		"SHELL=" + c.Shell,
 	}
+}
+
+// canSwitchTo reports whether this agent process could become uid right now.
+// Dropping privileges is only possible downward, so this is true only when the agent
+// runs as root; a non-root agent can only ever be itself, which Resolve checks before
+// calling this.
+func canSwitchTo(uid uint32) bool {
+	return os.Geteuid() == 0
 }
 
 // supplementaryGroups collects the user's secondary groups. Best effort: if the

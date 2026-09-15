@@ -16,6 +16,19 @@ export type Server = {
   created_at: string;
 };
 
+// One OS account the web terminal could switch to, from GET
+// /servers/:id/terminal/users. `available` is false when the account exists but the
+// agent on that server isn't running as root, so it can't actually become that user
+// yet (root itself always shows, even when unavailable, so the option to elevate is
+// visible rather than silently missing).
+export type SystemUser = {
+  username: string;
+  uid: number;
+  home: string;
+  shell: string;
+  available: boolean;
+};
+
 export type ListResponse<T> = {
   items: T[];
   next_cursor?: string;
@@ -128,6 +141,8 @@ export type NotificationTarget = {
   server_labels?: Record<string, string>;
   /** Empty means every non-success outcome. */
   on_statuses?: string[];
+  /** Which event families this fires for. Empty means job runs only. */
+  events?: ("job_run" | "deploy")[];
   last_error?: string;
   last_fired_at?: string | null;
   created_at: string;
@@ -281,6 +296,8 @@ export type DeployProject = {
   env: Record<string, string>;
   apps: DeployApp[];
   write_spec: boolean;
+  /** Redeploy the last successful commit automatically after a failed run. */
+  auto_rollback: boolean;
   created_by?: string;
   created_at: string;
   updated_at: string;
@@ -294,6 +311,8 @@ export type DeployRun = {
   trigger: string;
   status: "pending" | "running" | "succeeded" | "failed" | "canceled" | "agent_offline";
   branch: string;
+  /** Filled in once the agent reports the commit it checked out. */
+  commit_sha?: string;
   exit_code?: number;
   error?: string;
   started_at?: string;

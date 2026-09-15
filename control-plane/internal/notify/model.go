@@ -18,6 +18,19 @@ func ValidKind(k string) bool {
 	return k == KindWebhook || k == KindSlack || k == KindEmail
 }
 
+// Event families a target can opt into. A target created before this existed keeps
+// firing on job runs only (see the "events" column default), so nothing that already
+// worked starts firing on deploys without the operator asking for that.
+const (
+	EventJobRun = "job_run"
+	EventDeploy = "deploy"
+)
+
+// ValidEvent reports whether e is a known event family.
+func ValidEvent(e string) bool {
+	return e == EventJobRun || e == EventDeploy
+}
+
 // Target is one notification destination.
 type Target struct {
 	ID   string `json:"id"`
@@ -35,7 +48,10 @@ type Target struct {
 	ServerLabels map[string]string `json:"server_labels,omitempty"`
 	// OnStatuses limits which run outcomes fire this target. Empty means every
 	// non-success outcome.
-	OnStatuses  []string   `json:"on_statuses,omitempty"`
+	OnStatuses []string `json:"on_statuses,omitempty"`
+	// Events limits which event families fire this target: "job_run", "deploy", or
+	// both. Empty means "job_run" only, so existing targets keep their old behavior.
+	Events      []string   `json:"events,omitempty"`
 	LastError   string     `json:"last_error,omitempty"`
 	LastFiredAt *time.Time `json:"last_fired_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
@@ -71,8 +87,29 @@ func (t Target) Redacted() Target {
 // secret alone", so an edit form can round-trip without the browser ever holding it.
 const redactedPlaceholder = "********"
 
+// wantsEvent reports whether this target is subscribed to an event family. Absent
+// Events on the target, or an absent EventKind on the event, both mean "job_run": that
+// was the only thing this package could fire before deploys existed.
+func (t Target) wantsEvent(kind string) bool {
+	if kind == "" {
+		kind = EventJobRun
+	}
+	if len(t.Events) == 0 {
+		return kind == EventJobRun
+	}
+	for _, e := range t.Events {
+		if e == kind {
+			return true
+		}
+	}
+	return false
+}
+
 // Matches reports whether this target wants to hear about an event.
 func (t Target) Matches(ev RunFailedEvent) bool {
+	if !t.wantsEvent(ev.EventKind) {
+		return false
+	}
 	if len(t.OnStatuses) > 0 {
 		found := false
 		for _, s := range t.OnStatuses {
@@ -101,6 +138,7 @@ type CreateInput struct {
 	Config       map[string]string `json:"config"`
 	ServerLabels map[string]string `json:"server_labels"`
 	OnStatuses   []string          `json:"on_statuses"`
+	Events       []string          `json:"events"`
 }
 
 // PatchInput is the body of PATCH /notification-targets/:id. Every field is a pointer
@@ -112,22 +150,42 @@ type PatchInput struct {
 	Config       *map[string]string `json:"config"`
 	ServerLabels *map[string]string `json:"server_labels"`
 	OnStatuses   *[]string          `json:"on_statuses"`
+	Events       *[]string          `json:"events"`
 }
 
 // RunFailedEvent describes the run that triggered a notification. Names and labels are
 // resolved before dispatch: a Slack message saying "job 01HX... failed on server
 // 01HY..." is not worth waking up for.
+//
+// It covers both event families this package fires: a scheduled job run (the original
+// and still default shape) and a deploy run. EventKind tells channels and Target.Matches
+// which one this is; the job- and deploy-specific fields are simply empty for the other
+// kind rather than living in two parallel event types, so every channel keeps one
+// delivery path.
 type RunFailedEvent struct {
+	// EventKind is EventJobRun or EventDeploy. Empty means EventJobRun, for events built
+	// before this field existed.
+	EventKind    string            `json:"event,omitempty"`
 	RunID        string            `json:"run_id"`
-	JobID        string            `json:"job_id"`
+	JobID        string            `json:"job_id,omitempty"`
 	JobName      string            `json:"job_name,omitempty"`
 	ServerID     string            `json:"server_id"`
 	ServerName   string            `json:"server_name,omitempty"`
 	ServerLabels map[string]string `json:"server_labels,omitempty"`
 	Status       string            `json:"status"`
 	ExitCode     int32             `json:"exit_code"`
-	DurationMs   int32             `json:"duration_ms"`
+	DurationMs   int32             `json:"duration_ms,omitempty"`
 	Error        string            `json:"error,omitempty"`
 	// RunURL deep-links to the run in the UI. Empty when no public URL is configured.
 	RunURL string `json:"run_url,omitempty"`
+
+	// Deploy-only fields, set when EventKind is EventDeploy.
+	ProjectID   string `json:"project_id,omitempty"`
+	ProjectName string `json:"project_name,omitempty"`
+	Branch      string `json:"branch,omitempty"`
+	Trigger     string `json:"trigger,omitempty"`
+	// RolledBack is true when this failure caused an automatic rollback to the
+	// project's last successful commit, so the notification can say so instead of
+	// reading like the app is still down.
+	RolledBack bool `json:"rolled_back,omitempty"`
 }

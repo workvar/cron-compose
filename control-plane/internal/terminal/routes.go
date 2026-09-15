@@ -17,4 +17,5 @@ import (
 func Register(r fiber.Router, log *slog.Logger, gw *agentgw.Gateway, writer audit.Writer, publicURL string) {
 	h := newHandler(log, gw, writer, publicURL)
 	r.Get("/servers/:id/terminal/ws", auth.RequireRole("admin"), h.ws)
+	r.Get("/servers/:id/terminal/users", auth.RequireRole("admin"), h.listUsers)
 }

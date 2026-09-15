@@ -50,6 +50,7 @@ message AgentMessage {
     ConnectorResult connector_result = 8; // reply to a ConnectorCommand
     TerminalOutput  terminal_output  = 9; // web terminal: pty / command output
     DeployEvent     deploy_event     = 10; // git clone / install progress
+    ListUsersResult list_users_result = 11; // reply to a ListUsersRequest
   }
 }
 
@@ -62,6 +63,7 @@ message ServerMessage {
     ConnectorCommand connector_command = 5; // targeted connector op (read/validate/apply/lifecycle)
     TerminalInput    terminal_input    = 6; // web terminal: open / stdin / resize / close
     DeployCommand    deploy_command    = 7; // clone + install on the target host
+    ListUsersRequest list_users_request = 8; // web terminal: who can this box switch to?
   }
 }
 
@@ -262,6 +264,32 @@ message TerminalOutput {
   bytes  data       = 3;  // data: pty output bytes
   int32  exit_code  = 4;  // exit: process exit code
   string message    = 5;  // error / exit: human-readable detail
+}
+
+// ListUsersRequest / ListUsersResult let the terminal setup screen (and the switcher
+// in the live terminal's top bar) offer a real list of OS accounts on the target
+// server, instead of a free-text guess. Request/response, correlated by request_id,
+// the same pattern as ConnectorCommand/ConnectorResult.
+
+message ListUsersRequest {
+  string request_id = 1;
+}
+
+message SystemUser {
+  string username  = 1;
+  uint32 uid        = 2;
+  string home       = 3;
+  string shell      = 4;
+  // Whether the agent could actually switch to this user right now: it already is
+  // that user, or it is running as root. False means the entry is shown but picking
+  // it will fail until the agent on that server runs as root.
+  bool   available  = 5;
+}
+
+message ListUsersResult {
+  string request_id = 1;
+  repeated SystemUser users = 2;
+  string error = 3; // set instead of users when the agent could not read the user list
 }
 
 // ---- Git deploys ----

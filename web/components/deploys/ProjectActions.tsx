@@ -15,6 +15,7 @@ export function ProjectActions({ project }: { project: DeployProject }) {
   const [clonePath, setClonePath] = useState(project.clone_path);
   const [port, setPort] = useState(project.port ? String(project.port) : "");
   const [pm, setPm] = useState(project.process_manager);
+  const [autoRollback, setAutoRollback] = useState(project.auto_rollback);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -31,6 +32,7 @@ export function ProjectActions({ project }: { project: DeployProject }) {
           clone_path: clonePath,
           port: port ? Number(port) : 0,
           process_manager: pm,
+          auto_rollback: autoRollback,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -99,6 +101,15 @@ export function ProjectActions({ project }: { project: DeployProject }) {
                 <option value="docker">Docker</option>
               </select>
             </div>
+          </div>
+          <div className="field">
+            <label className="cluster" style={{ gap: 8, alignItems: "center" }}>
+              <input type="checkbox" checked={autoRollback} onChange={(e) => setAutoRollback(e.target.checked)} />
+              Roll back automatically on a failed deploy
+            </label>
+            <p className="field-hint">
+              Redeploys the last successful commit and restarts the process manager on it. Off by default.
+            </p>
           </div>
           {error && <p className="form-error">{error}</p>}
           <button type="submit" className="button" disabled={busy}>{busy ? "Saving…" : "Save"}</button>

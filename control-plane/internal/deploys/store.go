@@ -27,7 +27,8 @@ func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 const projectCols = `
   id, name, provider, repo_full_name, repo_id, clone_url, default_branch, server_id,
   language, install_script, root_directory, clone_path, port, process_manager,
-  coalesce(env::text,'{}'), coalesce(apps::text,'[]'), write_spec, created_by, created_at, updated_at
+  coalesce(env::text,'{}'), coalesce(apps::text,'[]'), write_spec, auto_rollback,
+  created_by, created_at, updated_at
 `
 
 func scanProject(row pgx.Row) (Project, error) {
@@ -36,7 +37,7 @@ func scanProject(row pgx.Row) (Project, error) {
 	err := row.Scan(
 		&p.ID, &p.Name, &p.Provider, &p.RepoFullName, &p.RepoID, &p.CloneURL, &p.DefaultBranch, &p.ServerID,
 		&p.Language, &p.InstallScript, &p.RootDirectory, &p.ClonePath, &p.Port, &p.ProcessManager,
-		&envJSON, &appsJSON, &p.WriteSpec, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
+		&envJSON, &appsJSON, &p.WriteSpec, &p.AutoRollback, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {
 		return p, err
@@ -199,10 +200,10 @@ func (s *Store) Update(ctx context.Context, id string, in UpdateInput) (Project,
 		update deploy_projects set
 		  name=$2, default_branch=$3, server_id=$4, language=$5, install_script=$6,
 		  root_directory=$7, clone_path=$8, port=$9, process_manager=$10,
-		  env=$11, apps=$12, write_spec=$13, updated_at=now()
+		  env=$11, apps=$12, write_spec=$13, auto_rollback=$14, updated_at=now()
 		where id=$1
 	`, p.ID, p.Name, p.DefaultBranch, p.ServerID, p.Language, p.InstallScript,
-		p.RootDirectory, p.ClonePath, p.Port, p.ProcessManager, envJSON, appsJSON, p.WriteSpec)
+		p.RootDirectory, p.ClonePath, p.Port, p.ProcessManager, envJSON, appsJSON, p.WriteSpec, p.AutoRollback)
 	if err != nil {
 		return Project{}, err
 	}
@@ -245,19 +246,26 @@ func (s *Store) InsertRun(ctx context.Context, projectID, serverID, trigger, bra
 	return s.GetRun(ctx, id)
 }
 
-// GetRun loads one run.
-func (s *Store) GetRun(ctx context.Context, id string) (Run, error) {
+const runCols = `
+  id, project_id, server_id, trigger, status, branch, coalesce(commit_sha,''),
+  exit_code, coalesce(error,''), started_at, finished_at, created_at
+`
+
+func scanRun(row pgx.Row) (Run, error) {
 	var r Run
 	var exit *int
-	err := s.pool.QueryRow(ctx, `
-		select id, project_id, server_id, trigger, status, branch, exit_code, coalesce(error,''),
-		       started_at, finished_at, created_at
-		from deploy_runs where id = $1
-	`, id).Scan(&r.ID, &r.ProjectID, &r.ServerID, &r.Trigger, &r.Status, &r.Branch, &exit, &r.Error, &r.StartedAt, &r.FinishedAt, &r.CreatedAt)
+	err := row.Scan(&r.ID, &r.ProjectID, &r.ServerID, &r.Trigger, &r.Status, &r.Branch, &r.CommitSha,
+		&exit, &r.Error, &r.StartedAt, &r.FinishedAt, &r.CreatedAt)
+	r.ExitCode = exit
+	return r, err
+}
+
+// GetRun loads one run.
+func (s *Store) GetRun(ctx context.Context, id string) (Run, error) {
+	r, err := scanRun(s.pool.QueryRow(ctx, `select `+runCols+` from deploy_runs where id = $1`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Run{}, ErrNotFound
 	}
-	r.ExitCode = exit
 	return r, err
 }
 
@@ -267,8 +275,7 @@ func (s *Store) ListRuns(ctx context.Context, projectID string, limit int) ([]Ru
 		limit = 50
 	}
 	rows, err := s.pool.Query(ctx, `
-		select id, project_id, server_id, trigger, status, branch, exit_code, coalesce(error,''),
-		       started_at, finished_at, created_at
+		select `+runCols+`
 		from deploy_runs where project_id = $1 order by created_at desc limit $2
 	`, projectID, limit)
 	if err != nil {
@@ -277,15 +284,29 @@ func (s *Store) ListRuns(ctx context.Context, projectID string, limit int) ([]Ru
 	defer rows.Close()
 	out := []Run{}
 	for rows.Next() {
-		var r Run
-		var exit *int
-		if err := rows.Scan(&r.ID, &r.ProjectID, &r.ServerID, &r.Trigger, &r.Status, &r.Branch, &exit, &r.Error, &r.StartedAt, &r.FinishedAt, &r.CreatedAt); err != nil {
+		r, err := scanRun(rows)
+		if err != nil {
 			return nil, err
 		}
-		r.ExitCode = exit
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// LastSucceededRun returns the most recent run that both succeeded and has a recorded
+// commit, i.e. the commit an auto-rollback should return to. ErrNotFound means there is
+// nothing to roll back to yet (the project has never had a clean run).
+func (s *Store) LastSucceededRun(ctx context.Context, projectID string) (Run, error) {
+	r, err := scanRun(s.pool.QueryRow(ctx, `
+		select `+runCols+`
+		from deploy_runs
+		where project_id = $1 and status = 'succeeded' and commit_sha <> ''
+		order by created_at desc limit 1
+	`, projectID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Run{}, ErrNotFound
+	}
+	return r, err
 }
 
 // MarkRun updates status fields.

@@ -1,10 +1,12 @@
 package agentgw
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"math"
+	"regexp"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -122,7 +124,10 @@ func (s *service) handleAgentMessage(ctx context.Context, serverID string, msg *
 		s.terminals.Deliver(body.TerminalOutput)
 		return nil
 	case *agentv1.AgentMessage_DeployEvent:
-		return s.onDeployEvent(ctx, body.DeployEvent)
+		return s.onDeployEvent(ctx, serverID, body.DeployEvent)
+	case *agentv1.AgentMessage_ListUsersResult:
+		s.users.Resolve(body.ListUsersResult)
+		return nil
 	}
 	return nil
 }
@@ -207,7 +212,7 @@ func (s *service) onRunFinished(ctx context.Context, serverID string, r *agentv1
 	return err
 }
 
-func (s *service) onDeployEvent(ctx context.Context, ev *agentv1.DeployEvent) error {
+func (s *service) onDeployEvent(ctx context.Context, serverID string, ev *agentv1.DeployEvent) error {
 	runID := ev.GetRunId()
 	kind := ev.GetKind()
 	if kind == "log" || len(ev.GetData()) > 0 {
@@ -226,6 +231,14 @@ func (s *service) onDeployEvent(ctx context.Context, ev *agentv1.DeployEvent) er
 			values ($1, 'stdout', $2, $3)
 			on conflict (run_id, stream, seq) do nothing
 		`, runID, ev.GetSeq(), string(chunk.GetData()))
+		// The agent reports the commit it checked out as a normal log line rather than
+		// a new proto field, so an older or newer agent/control-plane pairing never
+		// needs a schema bump to stay compatible; see agent/internal/deploy/runner.go.
+		if sha, ok := parseCommitLogLine(chunk.GetData()); ok {
+			_, _ = s.pool.Exec(ctx, `
+				update deploy_runs set commit_sha = $2 where id = $1 and commit_sha = ''
+			`, runID, sha)
+		}
 	}
 	switch kind {
 	case "started":
@@ -258,9 +271,38 @@ func (s *service) onDeployEvent(ctx context.Context, ev *agentv1.DeployEvent) er
 			ExitCode: ev.GetExitCode(),
 			Error:    ev.GetMessage(),
 		})
+		if err == nil && s.onDeployFin != nil {
+			go s.onDeployFin.DeployRunFinished(serverID, runID, status, ev.GetExitCode(), ev.GetMessage())
+		}
+		if err == nil && s.onFailed != nil {
+			var projectID, branch, trigger string
+			_ = s.pool.QueryRow(ctx, `select project_id, branch, trigger from deploy_runs where id = $1`, runID).
+				Scan(&projectID, &branch, &trigger)
+			isRollback := trigger == "rollback"
+			// Always notify about a rollback run's own outcome (recovered, or the
+			// rollback itself failed too); a forward deploy only notifies on failure,
+			// matching the job-run behavior this package started with.
+			if status != "succeeded" || isRollback {
+				go s.onFailed.FireDeployFailed(serverID, projectID, runID, status, branch, trigger, ev.GetExitCode(), ev.GetMessage(), isRollback)
+			}
+		}
 		return err
 	}
 	return nil
+}
+
+// parseCommitLogLine extracts a commit sha from a "commit: <sha40>" log line, the
+// marker the agent emits right after checkout (see agent/internal/deploy/runner.go).
+// The full 40-hex-char match keeps this from firing on unrelated install-script output
+// that happens to start with the word "commit".
+var commitLogPattern = regexp.MustCompile(`^commit: ([0-9a-f]{40})$`)
+
+func parseCommitLogLine(data []byte) (string, bool) {
+	m := commitLogPattern.FindSubmatch(bytes.TrimSpace(data))
+	if m == nil {
+		return "", false
+	}
+	return string(m[1]), true
 }
 
 // sendFullSync loads every enabled job for the server and pushes one SyncJobs.

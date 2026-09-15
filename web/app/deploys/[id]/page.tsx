@@ -74,6 +74,7 @@ export default async function DeployDetailPage({ params }: { params: Promise<{ i
             <span className="pill">{p.default_branch}</span>
             <span className="pill">{p.process_manager}</span>
             {p.port > 0 && <span className="pill">PORT {p.port}</span>}
+            {p.auto_rollback && <span className="pill" title="Redeploys the last successful commit automatically after a failed run">auto-rollback</span>}
           </div>
         </div>
         <div className="panel">
@@ -113,6 +114,7 @@ export default async function DeployDetailPage({ params }: { params: Promise<{ i
                 <span className={`status ${tone[r.status]}`}>{r.status}</span>
                 <span className="pill">{r.trigger}</span>
                 <span className="subtle">{r.branch}</span>
+                {r.commit_sha && <code className="subtle">{r.commit_sha.slice(0, 7)}</code>}
               </div>
               <span className="subtle">{r.created_at}</span>
             </div>

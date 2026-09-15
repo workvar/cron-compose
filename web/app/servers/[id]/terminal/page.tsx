@@ -4,6 +4,7 @@ import { use, useCallback, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { IconChevronLeft, IconTerminal } from "@/components/icons";
+import { UserSwitcher } from "@/components/terminal/UserSwitcher";
 
 // xterm touches the DOM, so load the view client-side only.
 const TerminalView = dynamic(() => import("@/components/terminal/TerminalView"), { ssr: false });
@@ -25,6 +26,13 @@ export default function TerminalPage({ params }: Props) {
     setPhase("live");
   };
   const back = useCallback(() => setPhase("setup"), []);
+
+  // Switching users from the live top bar: apply the new run_as, then bump the
+  // session key so TerminalView remounts and opens a fresh connection as that user.
+  const switchUser = useCallback((next: string) => {
+    setRunAs(next);
+    setSession((n) => n + 1);
+  }, []);
 
   return (
     <>
@@ -73,17 +81,12 @@ export default function TerminalPage({ params }: Props) {
 
           <div>
             <label htmlFor="term-user">Run as</label>
-            <input
-              id="term-user"
-              className="term-cmd"
-              placeholder="leave empty for the agent&apos;s own user"
-              value={runAs}
-              onChange={(e) => setRunAs(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") start(); }}
-            />
+            <UserSwitcher id="term-user" serverId={id} value={runAs} onChange={setRunAs} />
             <p className="field-hint">
-              An unprivileged agent can only run as itself; anything else fails with a clear error
-              rather than silently running as the wrong user.
+              Pulled live from the server; root is always listed. Type a name if the account you
+              want isn&apos;t shown. Picking a user the agent can&apos;t yet switch to (agent not
+              running as root) fails with a clear error rather than silently running as the wrong
+              user.
             </p>
           </div>
 
@@ -101,6 +104,7 @@ export default function TerminalPage({ params }: Props) {
           command={mode === "command" ? command : undefined}
           runAs={runAs.trim() || undefined}
           onClose={back}
+          onSwitchUser={switchUser}
         />
       )}
     </>

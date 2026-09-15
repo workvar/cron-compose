@@ -96,6 +96,20 @@
 .term-dots span:nth-child(1) { background: #ff5f57; }
 .term-dots span:nth-child(2) { background: #febc2e; }
 .term-dots span:nth-child(3) { background: #28c840; }
+
+/* The user switcher living in the dark top bar, next to the connection status. */
+.term-user-select { width: auto; min-width: 160px; max-width: 220px; }
+.term-user-select .ss-input {
+  min-height: 30px;
+  padding: 5px 30px 5px 10px;
+  font-size: 12px;
+  background: #0b1220;
+  border-color: #1e2a40;
+  color: #dbe5d8;
+}
+.term-user-select .ss-input::placeholder { color: #7fa893; }
+.term-user-select .ss-chevron { width: 22px; height: 22px; }
+.term-user-select .ss-chevron svg { width: 13px; height: 13px; }
 .term-title {
   flex: 1;
   min-width: 0;
