@@ -289,14 +289,26 @@ func (h *handler) createRun(c fiber.Ctx) error {
 	var body struct {
 		Trigger string `json:"trigger"`
 		Branch  string `json:"branch"`
+		Commit  string `json:"commit"`
 	}
 	_ = c.Bind().Body(&body)
-	if body.Trigger != "" {
+	// "rollback" is reserved for runs this control plane starts itself: a caller able
+	// to set it would silently opt the project out of auto-rollback, since a run that
+	// is already a rollback never triggers another one.
+	if body.Trigger != "" && body.Trigger != triggerRollback {
 		trigger = body.Trigger
 	}
 	branch := body.Branch
 	if branch == "" {
 		branch = p.DefaultBranch
+	}
+	// De-duplication applies to automated triggers only. An operator clicking Redeploy
+	// has decided they want this run, even if one is already going.
+	if trigger != "manual" {
+		if reason := h.duplicateTrigger(c.Context(), p, body.Commit); reason != "" {
+			h.log.Info("deploy: skipping duplicate trigger", "project_id", p.ID, "reason", reason)
+			return c.JSON(fiber.Map{"skipped": reason})
+		}
 	}
 	run, err := h.startRun(c.Context(), p, trigger, branch, "")
 	if err != nil {
@@ -395,6 +407,7 @@ func (h *handler) githubWebhook(c fiber.Ctx) error {
 	body := c.Body()
 	var payload struct {
 		Ref        string `json:"ref"`
+		After      string `json:"after"`
 		Repository struct {
 			FullName string `json:"full_name"`
 		} `json:"repository"`
@@ -419,18 +432,15 @@ func (h *handler) githubWebhook(c fiber.Ctx) error {
 	if branch != p.DefaultBranch {
 		return c.SendStatus(fiber.StatusNoContent)
 	}
-	_, err = h.startRun(c.Context(), p, "webhook", branch, "")
-	if err != nil {
-		return jsonError(c, fiber.StatusInternalServerError, "run_failed", err)
-	}
-	return c.SendStatus(fiber.StatusAccepted)
+	return h.triggerFromWebhook(c, p, branch, c.Get("X-GitHub-Delivery"), payload.After)
 }
 
 func (h *handler) gitlabWebhook(c fiber.Ctx) error {
 	body := c.Body()
 	var payload struct {
-		Ref     string `json:"ref"`
-		Project struct {
+		Ref         string `json:"ref"`
+		CheckoutSHA string `json:"checkout_sha"`
+		Project     struct {
 			Path string `json:"path_with_namespace"`
 		} `json:"project"`
 	}
@@ -454,17 +464,13 @@ func (h *handler) gitlabWebhook(c fiber.Ctx) error {
 	if branch != p.DefaultBranch {
 		return c.SendStatus(fiber.StatusNoContent)
 	}
-	_, err = h.startRun(c.Context(), p, "webhook", branch, "")
-	if err != nil {
-		return jsonError(c, fiber.StatusInternalServerError, "run_failed", err)
-	}
-	return c.SendStatus(fiber.StatusAccepted)
+	return h.triggerFromWebhook(c, p, branch, c.Get("X-Gitlab-Event-UUID"), payload.CheckoutSHA)
 }
 
 // startRun starts a deploy. pinSHA is empty for every normal deploy (branch tip); an
 // automatic rollback (see DeployRunFinished) sets it to the commit to return to, and
-// startRun smuggles it to the agent as an env var rather than a new proto field - see
-// the CRONCOMPOSE_ROLLBACK_SHA comment on agent/internal/deploy/runner.go.
+// the agent prefers a release already on disk carrying that commit over refetching
+// it, because the commit may be gone from the remote by then.
 func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinSHA string) (Run, error) {
 	run, err := h.store.InsertRun(ctx, p.ID, p.ServerID, trigger, branch)
 	if err != nil {
@@ -474,20 +480,15 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 	if p.CreatedBy != nil {
 		token, _ = h.conns.Token(ctx, *p.CreatedBy, p.Provider)
 	}
-	env := p.Env
-	if pinSHA != "" {
-		env = make(map[string]string, len(p.Env)+1)
-		for k, v := range p.Env {
-			env[k] = v
-		}
-		env[rollbackShaEnvKey] = pinSHA
-	}
 	cmd := &agentv1.DeployCommand{
 		RunId: run.ID, Op: "start",
 		CloneUrl: p.CloneURL, CloneToken: token,
 		DestPath: p.ClonePath, Branch: branch,
 		InstallScript: p.InstallScript, RootDirectory: p.RootDirectory,
-		Env: env, Port: int32(p.Port), ProcessManager: p.ProcessManager,
+		Env: p.Env, Port: int32(p.Port), ProcessManager: p.ProcessManager,
+		RollbackSha:    pinSHA,
+		Health:         healthCheckFor(p),
+		TimeoutSeconds: int32(p.DeployTimeoutSeconds),
 	}
 	for _, a := range p.Apps {
 		lang, pm := a.Language, a.ProcessManager
@@ -517,46 +518,6 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 	_ = h.store.MarkRun(ctx, run.ID, "running", 0, "")
 	run.Status = "running"
 	return run, nil
-}
-
-// rollbackShaEnvKey must match agent/internal/deploy/runner.go's rollbackEnvKey.
-const rollbackShaEnvKey = "CRONCOMPOSE_ROLLBACK_SHA"
-
-// DeployRunFinished implements agentgw.DeployFinishedHook. Called for every deploy run
-// that finishes, successful or not; it only acts on a failure, and only for a project
-// that opted into AutoRollback, and only when there is a prior successful commit to go
-// back to, and only when this failed run wasn't itself a rollback attempt (a rollback
-// that fails does not chain into another rollback - see the roadmap's caution against
-// this class of retry loop).
-func (h *handler) DeployRunFinished(serverID, runID, status string, exitCode int32, errMsg string) {
-	if status == "succeeded" {
-		return
-	}
-	ctx := context.Background()
-	run, err := h.store.GetRun(ctx, runID)
-	if err != nil {
-		h.log.Warn("deploy: rollback check failed to load run", "run_id", runID, "err", err)
-		return
-	}
-	if run.Trigger == "rollback" {
-		return
-	}
-	p, err := h.store.Get(ctx, run.ProjectID)
-	if err != nil || !p.AutoRollback {
-		return
-	}
-	good, err := h.store.LastSucceededRun(ctx, p.ID)
-	if err != nil {
-		return // nothing to roll back to yet
-	}
-	if good.CommitSha == "" || good.CommitSha == run.CommitSha {
-		return // nothing to roll back to, or the failed run never got past the same commit
-	}
-	h.log.Warn("deploy: auto-rolling back after failed run",
-		"project_id", p.ID, "failed_run_id", runID, "rollback_to_commit", good.CommitSha)
-	if _, err := h.startRun(ctx, p, "rollback", good.Branch, good.CommitSha); err != nil {
-		h.log.Warn("deploy: auto-rollback failed to start", "project_id", p.ID, "err", err)
-	}
 }
 
 func bearerToken(c fiber.Ctx) string {

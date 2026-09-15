@@ -2494,6 +2494,15 @@ type DeployCommand struct {
 	ProcessManager string                 `protobuf:"bytes,11,opt,name=process_manager,json=processManager,proto3" json:"process_manager,omitempty"` // none | pm2 | systemd | docker
 	Apps           []*DeployApp           `protobuf:"bytes,12,rep,name=apps,proto3" json:"apps,omitempty"`
 	Stdin          []byte                 `protobuf:"bytes,13,opt,name=stdin,proto3" json:"stdin,omitempty"`
+	// Pin this run to an exact commit instead of the branch tip. Set only by an
+	// automatic rollback; the agent prefers a release already on disk with this sha
+	// and only reaches for the network when there is none.
+	RollbackSha string       `protobuf:"bytes,14,opt,name=rollback_sha,json=rollbackSha,proto3" json:"rollback_sha,omitempty"`
+	Health      *HealthCheck `protobuf:"bytes,15,opt,name=health,proto3" json:"health,omitempty"` // optional; empty path means no probe
+	// Whole-run budget. The agent fails the run when it is exceeded, so a wedged
+	// installer cannot hold the project's deploy slot forever. 0 means the agent
+	// default.
+	TimeoutSeconds int32 `protobuf:"varint,16,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -2619,22 +2628,112 @@ func (x *DeployCommand) GetStdin() []byte {
 	return nil
 }
 
+func (x *DeployCommand) GetRollbackSha() string {
+	if x != nil {
+		return x.RollbackSha
+	}
+	return ""
+}
+
+func (x *DeployCommand) GetHealth() *HealthCheck {
+	if x != nil {
+		return x.Health
+	}
+	return nil
+}
+
+func (x *DeployCommand) GetTimeoutSeconds() int32 {
+	if x != nil {
+		return x.TimeoutSeconds
+	}
+	return 0
+}
+
+// HealthCheck is the opt-in "is it actually up" probe run after the process manager
+// starts. Without one, a deploy counts as successful the moment the install script
+// exits 0, which misses an app that installs cleanly and then crashes on boot.
+type HealthCheck struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Path           string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`                                            // e.g. /healthz ; empty disables the probe
+	Port           int32                  `protobuf:"varint,2,opt,name=port,proto3" json:"port,omitempty"`                                           // 0 = the app's configured port
+	TimeoutSeconds int32                  `protobuf:"varint,3,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"` // total budget to become healthy; 0 = agent default
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *HealthCheck) Reset() {
+	*x = HealthCheck{}
+	mi := &file_agent_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HealthCheck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HealthCheck) ProtoMessage() {}
+
+func (x *HealthCheck) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HealthCheck.ProtoReflect.Descriptor instead.
+func (*HealthCheck) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *HealthCheck) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *HealthCheck) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *HealthCheck) GetTimeoutSeconds() int32 {
+	if x != nil {
+		return x.TimeoutSeconds
+	}
+	return 0
+}
+
 type DeployEvent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
-	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"` // log | started | finished | error
-	Data          []byte                 `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
-	Message       string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
-	ExitCode      int32                  `protobuf:"varint,5,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
-	Status        string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"` // running | succeeded | failed | canceled
-	Seq           int32                  `protobuf:"varint,7,opt,name=seq,proto3" json:"seq,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	RunId    string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	Kind     string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"` // log | started | finished | error
+	Data     []byte                 `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	Message  string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+	ExitCode int32                  `protobuf:"varint,5,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	Status   string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"` // running | succeeded | failed | canceled
+	Seq      int32                  `protobuf:"varint,7,opt,name=seq,proto3" json:"seq,omitempty"`
+	// Commit this run checked out. Sent on the first log event after checkout so the
+	// control plane can record it without parsing log text.
+	CommitSha string `protobuf:"bytes,8,opt,name=commit_sha,json=commitSha,proto3" json:"commit_sha,omitempty"`
+	// Coarse stage this event belongs to: preflight | clone | install | release |
+	// start | health. Purely for readable logs and UI grouping.
+	Phase         string `protobuf:"bytes,9,opt,name=phase,proto3" json:"phase,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeployEvent) Reset() {
 	*x = DeployEvent{}
-	mi := &file_agent_proto_msgTypes[28]
+	mi := &file_agent_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2646,7 +2745,7 @@ func (x *DeployEvent) String() string {
 func (*DeployEvent) ProtoMessage() {}
 
 func (x *DeployEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[28]
+	mi := &file_agent_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2659,7 +2758,7 @@ func (x *DeployEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeployEvent.ProtoReflect.Descriptor instead.
 func (*DeployEvent) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{28}
+	return file_agent_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *DeployEvent) GetRunId() string {
@@ -2709,6 +2808,20 @@ func (x *DeployEvent) GetSeq() int32 {
 		return x.Seq
 	}
 	return 0
+}
+
+func (x *DeployEvent) GetCommitSha() string {
+	if x != nil {
+		return x.CommitSha
+	}
+	return ""
+}
+
+func (x *DeployEvent) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
 }
 
 var File_agent_proto protoreflect.FileDescriptor
@@ -2952,7 +3065,7 @@ const file_agent_proto_rawDesc = "" +
 	"\x03env\x18\a \x03(\v2(.croncompose.agent.v1.DeployApp.EnvEntryR\x03env\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xf7\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xfe\x04\n" +
 	"\rDeployCommand\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x0e\n" +
 	"\x02op\x18\x02 \x01(\tR\x02op\x12\x1b\n" +
@@ -2968,10 +3081,17 @@ const file_agent_proto_rawDesc = "" +
 	" \x01(\x05R\x04port\x12'\n" +
 	"\x0fprocess_manager\x18\v \x01(\tR\x0eprocessManager\x123\n" +
 	"\x04apps\x18\f \x03(\v2\x1f.croncompose.agent.v1.DeployAppR\x04apps\x12\x14\n" +
-	"\x05stdin\x18\r \x01(\fR\x05stdin\x1a6\n" +
+	"\x05stdin\x18\r \x01(\fR\x05stdin\x12!\n" +
+	"\frollback_sha\x18\x0e \x01(\tR\vrollbackSha\x129\n" +
+	"\x06health\x18\x0f \x01(\v2!.croncompose.agent.v1.HealthCheckR\x06health\x12'\n" +
+	"\x0ftimeout_seconds\x18\x10 \x01(\x05R\x0etimeoutSeconds\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xad\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"^\n" +
+	"\vHealthCheck\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
+	"\x04port\x18\x02 \x01(\x05R\x04port\x12'\n" +
+	"\x0ftimeout_seconds\x18\x03 \x01(\x05R\x0etimeoutSeconds\"\xe2\x01\n" +
 	"\vDeployEvent\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
@@ -2979,7 +3099,10 @@ const file_agent_proto_rawDesc = "" +
 	"\amessage\x18\x04 \x01(\tR\amessage\x12\x1b\n" +
 	"\texit_code\x18\x05 \x01(\x05R\bexitCode\x12\x16\n" +
 	"\x06status\x18\x06 \x01(\tR\x06status\x12\x10\n" +
-	"\x03seq\x18\a \x01(\x05R\x03seq2\xbf\x01\n" +
+	"\x03seq\x18\a \x01(\x05R\x03seq\x12\x1d\n" +
+	"\n" +
+	"commit_sha\x18\b \x01(\tR\tcommitSha\x12\x14\n" +
+	"\x05phase\x18\t \x01(\tR\x05phase2\xbf\x01\n" +
 	"\fAgentService\x12S\n" +
 	"\x06Enroll\x12#.croncompose.agent.v1.EnrollRequest\x1a$.croncompose.agent.v1.EnrollResponse\x12Z\n" +
 	"\vAgentStream\x12\".croncompose.agent.v1.AgentMessage\x1a#.croncompose.agent.v1.ServerMessage(\x010\x01B;Z9github.com/croncompose/croncompose/proto/agent/v1;agentv1b\x06proto3"
@@ -2996,7 +3119,7 @@ func file_agent_proto_rawDescGZIP() []byte {
 	return file_agent_proto_rawDescData
 }
 
-var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
+var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_agent_proto_goTypes = []any{
 	(*EnrollRequest)(nil),         // 0: croncompose.agent.v1.EnrollRequest
 	(*EnrollResponse)(nil),        // 1: croncompose.agent.v1.EnrollResponse
@@ -3026,14 +3149,15 @@ var file_agent_proto_goTypes = []any{
 	(*ListUsersResult)(nil),       // 25: croncompose.agent.v1.ListUsersResult
 	(*DeployApp)(nil),             // 26: croncompose.agent.v1.DeployApp
 	(*DeployCommand)(nil),         // 27: croncompose.agent.v1.DeployCommand
-	(*DeployEvent)(nil),           // 28: croncompose.agent.v1.DeployEvent
-	nil,                           // 29: croncompose.agent.v1.JobDef.EnvEntry
-	nil,                           // 30: croncompose.agent.v1.JobDef.SecretsEntry
-	nil,                           // 31: croncompose.agent.v1.DiscoveredConnector.DetailEntry
-	nil,                           // 32: croncompose.agent.v1.ConnectorResource.AttributesEntry
-	nil,                           // 33: croncompose.agent.v1.DeployApp.EnvEntry
-	nil,                           // 34: croncompose.agent.v1.DeployCommand.EnvEntry
-	(*timestamppb.Timestamp)(nil), // 35: google.protobuf.Timestamp
+	(*HealthCheck)(nil),           // 28: croncompose.agent.v1.HealthCheck
+	(*DeployEvent)(nil),           // 29: croncompose.agent.v1.DeployEvent
+	nil,                           // 30: croncompose.agent.v1.JobDef.EnvEntry
+	nil,                           // 31: croncompose.agent.v1.JobDef.SecretsEntry
+	nil,                           // 32: croncompose.agent.v1.DiscoveredConnector.DetailEntry
+	nil,                           // 33: croncompose.agent.v1.ConnectorResource.AttributesEntry
+	nil,                           // 34: croncompose.agent.v1.DeployApp.EnvEntry
+	nil,                           // 35: croncompose.agent.v1.DeployCommand.EnvEntry
+	(*timestamppb.Timestamp)(nil), // 36: google.protobuf.Timestamp
 }
 var file_agent_proto_depIdxs = []int32{
 	4,  // 0: croncompose.agent.v1.AgentMessage.hello:type_name -> croncompose.agent.v1.Hello
@@ -3045,7 +3169,7 @@ var file_agent_proto_depIdxs = []int32{
 	17, // 6: croncompose.agent.v1.AgentMessage.connector_event:type_name -> croncompose.agent.v1.ConnectorEvent
 	20, // 7: croncompose.agent.v1.AgentMessage.connector_result:type_name -> croncompose.agent.v1.ConnectorResult
 	22, // 8: croncompose.agent.v1.AgentMessage.terminal_output:type_name -> croncompose.agent.v1.TerminalOutput
-	28, // 9: croncompose.agent.v1.AgentMessage.deploy_event:type_name -> croncompose.agent.v1.DeployEvent
+	29, // 9: croncompose.agent.v1.AgentMessage.deploy_event:type_name -> croncompose.agent.v1.DeployEvent
 	25, // 10: croncompose.agent.v1.AgentMessage.list_users_result:type_name -> croncompose.agent.v1.ListUsersResult
 	11, // 11: croncompose.agent.v1.ServerMessage.sync_jobs:type_name -> croncompose.agent.v1.SyncJobs
 	12, // 12: croncompose.agent.v1.ServerMessage.run_now:type_name -> croncompose.agent.v1.RunNow
@@ -3055,31 +3179,32 @@ var file_agent_proto_depIdxs = []int32{
 	21, // 16: croncompose.agent.v1.ServerMessage.terminal_input:type_name -> croncompose.agent.v1.TerminalInput
 	27, // 17: croncompose.agent.v1.ServerMessage.deploy_command:type_name -> croncompose.agent.v1.DeployCommand
 	23, // 18: croncompose.agent.v1.ServerMessage.list_users_request:type_name -> croncompose.agent.v1.ListUsersRequest
-	35, // 19: croncompose.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
-	35, // 20: croncompose.agent.v1.RunStarted.started_at:type_name -> google.protobuf.Timestamp
-	35, // 21: croncompose.agent.v1.RunFinished.finished_at:type_name -> google.protobuf.Timestamp
-	29, // 22: croncompose.agent.v1.JobDef.env:type_name -> croncompose.agent.v1.JobDef.EnvEntry
-	30, // 23: croncompose.agent.v1.JobDef.secrets:type_name -> croncompose.agent.v1.JobDef.SecretsEntry
+	36, // 19: croncompose.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
+	36, // 20: croncompose.agent.v1.RunStarted.started_at:type_name -> google.protobuf.Timestamp
+	36, // 21: croncompose.agent.v1.RunFinished.finished_at:type_name -> google.protobuf.Timestamp
+	30, // 22: croncompose.agent.v1.JobDef.env:type_name -> croncompose.agent.v1.JobDef.EnvEntry
+	31, // 23: croncompose.agent.v1.JobDef.secrets:type_name -> croncompose.agent.v1.JobDef.SecretsEntry
 	10, // 24: croncompose.agent.v1.SyncJobs.upsert:type_name -> croncompose.agent.v1.JobDef
-	31, // 25: croncompose.agent.v1.DiscoveredConnector.detail:type_name -> croncompose.agent.v1.DiscoveredConnector.DetailEntry
+	32, // 25: croncompose.agent.v1.DiscoveredConnector.detail:type_name -> croncompose.agent.v1.DiscoveredConnector.DetailEntry
 	16, // 26: croncompose.agent.v1.DiscoveredConnector.resources:type_name -> croncompose.agent.v1.ConnectorResource
-	32, // 27: croncompose.agent.v1.ConnectorResource.attributes:type_name -> croncompose.agent.v1.ConnectorResource.AttributesEntry
-	35, // 28: croncompose.agent.v1.ConnectorEvent.ts:type_name -> google.protobuf.Timestamp
+	33, // 27: croncompose.agent.v1.ConnectorResource.attributes:type_name -> croncompose.agent.v1.ConnectorResource.AttributesEntry
+	36, // 28: croncompose.agent.v1.ConnectorEvent.ts:type_name -> google.protobuf.Timestamp
 	15, // 29: croncompose.agent.v1.ConnectorEvent.connectors:type_name -> croncompose.agent.v1.DiscoveredConnector
 	19, // 30: croncompose.agent.v1.ConnectorResult.steps:type_name -> croncompose.agent.v1.ConnectorStep
 	24, // 31: croncompose.agent.v1.ListUsersResult.users:type_name -> croncompose.agent.v1.SystemUser
-	33, // 32: croncompose.agent.v1.DeployApp.env:type_name -> croncompose.agent.v1.DeployApp.EnvEntry
-	34, // 33: croncompose.agent.v1.DeployCommand.env:type_name -> croncompose.agent.v1.DeployCommand.EnvEntry
+	34, // 32: croncompose.agent.v1.DeployApp.env:type_name -> croncompose.agent.v1.DeployApp.EnvEntry
+	35, // 33: croncompose.agent.v1.DeployCommand.env:type_name -> croncompose.agent.v1.DeployCommand.EnvEntry
 	26, // 34: croncompose.agent.v1.DeployCommand.apps:type_name -> croncompose.agent.v1.DeployApp
-	0,  // 35: croncompose.agent.v1.AgentService.Enroll:input_type -> croncompose.agent.v1.EnrollRequest
-	2,  // 36: croncompose.agent.v1.AgentService.AgentStream:input_type -> croncompose.agent.v1.AgentMessage
-	1,  // 37: croncompose.agent.v1.AgentService.Enroll:output_type -> croncompose.agent.v1.EnrollResponse
-	3,  // 38: croncompose.agent.v1.AgentService.AgentStream:output_type -> croncompose.agent.v1.ServerMessage
-	37, // [37:39] is the sub-list for method output_type
-	35, // [35:37] is the sub-list for method input_type
-	35, // [35:35] is the sub-list for extension type_name
-	35, // [35:35] is the sub-list for extension extendee
-	0,  // [0:35] is the sub-list for field type_name
+	28, // 35: croncompose.agent.v1.DeployCommand.health:type_name -> croncompose.agent.v1.HealthCheck
+	0,  // 36: croncompose.agent.v1.AgentService.Enroll:input_type -> croncompose.agent.v1.EnrollRequest
+	2,  // 37: croncompose.agent.v1.AgentService.AgentStream:input_type -> croncompose.agent.v1.AgentMessage
+	1,  // 38: croncompose.agent.v1.AgentService.Enroll:output_type -> croncompose.agent.v1.EnrollResponse
+	3,  // 39: croncompose.agent.v1.AgentService.AgentStream:output_type -> croncompose.agent.v1.ServerMessage
+	38, // [38:40] is the sub-list for method output_type
+	36, // [36:38] is the sub-list for method input_type
+	36, // [36:36] is the sub-list for extension type_name
+	36, // [36:36] is the sub-list for extension extendee
+	0,  // [0:36] is the sub-list for field type_name
 }
 
 func init() { file_agent_proto_init() }
@@ -3116,7 +3241,7 @@ func file_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_proto_rawDesc), len(file_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   35,
+			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

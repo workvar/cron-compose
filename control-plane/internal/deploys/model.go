@@ -23,12 +23,31 @@ type Project struct {
 	WriteSpec      bool              `json:"write_spec"`
 	// AutoRollback, when true, redeploys the project's last successful commit
 	// automatically after a failed run, and restarts the process manager on it.
-	AutoRollback bool      `json:"auto_rollback"`
-	CreatedBy    *string   `json:"created_by,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-	DeployToken  string    `json:"deploy_token,omitempty"` // only on create
+	AutoRollback bool `json:"auto_rollback"`
+	// Health is the opt-in "did it actually come up" probe. With HealthPath empty a
+	// run succeeds as soon as the install script exits 0, which is what every project
+	// did before this existed.
+	HealthPath           string `json:"health_path"`
+	HealthPort           int    `json:"health_port"`
+	HealthTimeoutSeconds int    `json:"health_timeout_seconds"`
+	// DeployTimeoutSeconds bounds a whole run. 0 means the agent's default.
+	DeployTimeoutSeconds int `json:"deploy_timeout_seconds"`
+	// HealthState is where the project stands now, as opposed to what its last run
+	// did: unknown, healthy, degraded, or rolled_back.
+	HealthState string    `json:"health_state"`
+	CreatedBy   *string   `json:"created_by,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	DeployToken string    `json:"deploy_token,omitempty"` // only on create
 }
+
+// Project health states.
+const (
+	HealthUnknown    = "unknown"
+	HealthHealthy    = "healthy"
+	HealthDegraded   = "degraded"
+	HealthRolledBack = "rolled_back"
+)
 
 // Run is one clone+install attempt.
 type Run struct {

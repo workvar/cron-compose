@@ -1,12 +1,10 @@
 package agentgw
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
 	"math"
-	"regexp"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -215,6 +213,13 @@ func (s *service) onRunFinished(ctx context.Context, serverID string, r *agentv1
 func (s *service) onDeployEvent(ctx context.Context, serverID string, ev *agentv1.DeployEvent) error {
 	runID := ev.GetRunId()
 	kind := ev.GetKind()
+	// The commit is what a later failed run rolls back to, so it is recorded the
+	// moment the agent reports it rather than inferred from log text.
+	if sha := ev.GetCommitSha(); sha != "" {
+		_, _ = s.pool.Exec(ctx, `
+			update deploy_runs set commit_sha = $2 where id = $1 and commit_sha = ''
+		`, runID, sha)
+	}
 	if kind == "log" || len(ev.GetData()) > 0 {
 		chunk := &agentv1.LogChunk{
 			RunId:  runID,
@@ -231,14 +236,6 @@ func (s *service) onDeployEvent(ctx context.Context, serverID string, ev *agentv
 			values ($1, 'stdout', $2, $3)
 			on conflict (run_id, stream, seq) do nothing
 		`, runID, ev.GetSeq(), string(chunk.GetData()))
-		// The agent reports the commit it checked out as a normal log line rather than
-		// a new proto field, so an older or newer agent/control-plane pairing never
-		// needs a schema bump to stay compatible; see agent/internal/deploy/runner.go.
-		if sha, ok := parseCommitLogLine(chunk.GetData()); ok {
-			_, _ = s.pool.Exec(ctx, `
-				update deploy_runs set commit_sha = $2 where id = $1 and commit_sha = ''
-			`, runID, sha)
-		}
 	}
 	switch kind {
 	case "started":
@@ -289,20 +286,6 @@ func (s *service) onDeployEvent(ctx context.Context, serverID string, ev *agentv
 		return err
 	}
 	return nil
-}
-
-// parseCommitLogLine extracts a commit sha from a "commit: <sha40>" log line, the
-// marker the agent emits right after checkout (see agent/internal/deploy/runner.go).
-// The full 40-hex-char match keeps this from firing on unrelated install-script output
-// that happens to start with the word "commit".
-var commitLogPattern = regexp.MustCompile(`^commit: ([0-9a-f]{40})$`)
-
-func parseCommitLogLine(data []byte) (string, bool) {
-	m := commitLogPattern.FindSubmatch(bytes.TrimSpace(data))
-	if m == nil {
-		return "", false
-	}
-	return string(m[1]), true
 }
 
 // sendFullSync loads every enabled job for the server and pushes one SyncJobs.

@@ -322,6 +322,24 @@ message DeployCommand {
   string process_manager = 11; // none | pm2 | systemd | docker
   repeated DeployApp apps = 12;
   bytes  stdin            = 13;
+  // Pin this run to an exact commit instead of the branch tip. Set only by an
+  // automatic rollback; the agent prefers a release already on disk with this sha
+  // and only reaches for the network when there is none.
+  string rollback_sha     = 14;
+  HealthCheck health      = 15; // optional; empty path means no probe
+  // Whole-run budget. The agent fails the run when it is exceeded, so a wedged
+  // installer cannot hold the project's deploy slot forever. 0 means the agent
+  // default.
+  int32  timeout_seconds  = 16;
+}
+
+// HealthCheck is the opt-in "is it actually up" probe run after the process manager
+// starts. Without one, a deploy counts as successful the moment the install script
+// exits 0, which misses an app that installs cleanly and then crashes on boot.
+message HealthCheck {
+  string path            = 1; // e.g. /healthz ; empty disables the probe
+  int32  port            = 2; // 0 = the app's configured port
+  int32  timeout_seconds = 3; // total budget to become healthy; 0 = agent default
 }
 
 message DeployEvent {
@@ -332,5 +350,11 @@ message DeployEvent {
   int32  exit_code    = 5;
   string status      = 6; // running | succeeded | failed | canceled
   int32  seq          = 7;
+  // Commit this run checked out. Sent on the first log event after checkout so the
+  // control plane can record it without parsing log text.
+  string commit_sha   = 8;
+  // Coarse stage this event belongs to: preflight | clone | install | release |
+  // start | health. Purely for readable logs and UI grouping.
+  string phase        = 9;
 }
 

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"strings"
 
@@ -119,6 +120,8 @@ func New(d Deps) *fiber.App {
 	// Lets a failed deploy trigger an automatic rollback without agentgw depending on
 	// the deploys package; see agentgw.DeployFinishedHook.
 	d.Gateway.SetDeployFinishedHook(deployH)
+	// Backstop for a run whose agent died mid-deploy and will never report an outcome.
+	go deployH.StartSweeper(context.Background())
 
 	// Single entry point: serve the UI under /app (and bounce / into it) when an
 	// upstream is configured. With no upstream, / is an nginx-style welcome page.

@@ -48,7 +48,12 @@ func UnmarshalSpec(raw []byte) (Spec, error) {
 	return s, nil
 }
 
-// GitHubActionsWorkflow is the trigger-only workflow committed next to croncompose.yml.
+// GitHubActionsWorkflow is the trigger-only workflow committed next to
+// croncompose.yml. It builds nothing: the build happens on the target server, so the
+// job's whole purpose is to tell CronCompose that a commit landed. It reports the
+// branch and commit explicitly, so a push to a feature branch does not redeploy the
+// default branch, and so the control plane can recognize this trigger and the push
+// webhook as the same event and deploy once.
 func GitHubActionsWorkflow(publicBase, projectID string) string {
 	base := strings.TrimRight(publicBase, "/")
 	url := fmt.Sprintf("%s/api/deploys/%s/runs", base, projectID)
@@ -69,15 +74,17 @@ jobs:
           curl -fsS -X POST %q \
             -H "Authorization: Bearer $CRONCOMPOSE_TOKEN" \
             -H "content-type: application/json" \
-            -d '{"trigger":"api"}'
+            -d "{\"trigger\":\"api\",\"branch\":\"${{ github.ref_name }}\",\"commit\":\"${{ github.sha }}\"}"
 `, url)) + "\n"
 }
 
-// GitLabCI is the trigger job committed as .gitlab-ci.yml.
+// GitLabCI is the trigger job committed as .gitlab-ci.yml. Same shape as the GitHub
+// workflow above, including reporting the branch and commit it is triggering for.
 func GitLabCI(publicBase, projectID string) string {
 	base := strings.TrimRight(publicBase, "/")
 	hook := fmt.Sprintf("%s/api/deploys/%s/runs", base, projectID)
-	return strings.TrimSpace(fmt.Sprintf("deploy:\n  rules:\n    - if: $CI_COMMIT_BRANCH\n  script:\n    - curl -fsS -X POST %q -H \"Authorization: Bearer $CRONCOMPOSE_TOKEN\" -H \"content-type: application/json\" -d '{\"trigger\":\"api\"}'\n", hook)) + "\n"
+	body := `{"trigger":"api","branch":"$CI_COMMIT_REF_NAME","commit":"$CI_COMMIT_SHA"}`
+	return fmt.Sprintf("deploy:\n  rules:\n    - if: $CI_COMMIT_BRANCH\n  script:\n    - curl -fsS -X POST %q -H \"Authorization: Bearer $CRONCOMPOSE_TOKEN\" -H \"content-type: application/json\" -d '%s'\n", hook, body)
 }
 
 func specFiles(p Project, publicBase string) []RepoFile {

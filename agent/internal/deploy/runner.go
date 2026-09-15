@@ -3,6 +3,7 @@ package deploy
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,9 +12,30 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/creack/pty"
 	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
+)
+
+// Coarse stages, attached to every event so the UI can group a run's output and an
+// operator reading raw logs can see where a failure happened.
+const (
+	phasePreflight = "preflight"
+	phaseClone     = "clone"
+	phaseInstall   = "install"
+	phaseRelease   = "release"
+	phaseStart     = "start"
+	phaseHealth    = "health"
+)
+
+// Bounds on a single run. The timeout keeps a wedged installer (one waiting on a
+// prompt nobody will answer, say) from holding the project forever; the log cap
+// keeps a runaway build from filling the database with megabytes of progress bars.
+const (
+	defaultRunTimeout = 15 * time.Minute
+	maxRunTimeout     = 2 * time.Hour
+	logCapBytes       = 2 << 20 // 2MB of streamed output per run
 )
 
 // Sender ships one DeployEvent back to the control plane (ephemeral, never outbox).
@@ -25,20 +47,24 @@ type Manager struct {
 	log  *slog.Logger
 	send Sender
 
-	mu     sync.Mutex
-	stdin  map[string]*os.File
-	cancel map[string]context.CancelFunc
-	seq    map[string]*atomic.Int32
+	mu       sync.Mutex
+	stdin    map[string]*os.File
+	cancel   map[string]context.CancelFunc
+	seq      map[string]*atomic.Int32
+	logged   map[string]*atomic.Int64 // bytes of log streamed per run, for the cap
+	capNoted map[string]bool          // whether the "truncated" notice was already sent
 }
 
 // NewManager wires a Manager.
 func NewManager(log *slog.Logger, send Sender) *Manager {
 	return &Manager{
-		log:    log,
-		send:   send,
-		stdin:  map[string]*os.File{},
-		cancel: map[string]context.CancelFunc{},
-		seq:    map[string]*atomic.Int32{},
+		log:      log,
+		send:     send,
+		stdin:    map[string]*os.File{},
+		cancel:   map[string]context.CancelFunc{},
+		seq:      map[string]*atomic.Int32{},
+		logged:   map[string]*atomic.Int64{},
+		capNoted: map[string]bool{},
 	}
 }
 
@@ -95,18 +121,35 @@ func (m *Manager) cancelRun(runID string) {
 	}
 }
 
+// runTimeout clamps the control plane's budget into something sane. A project can ask
+// for longer than the default for a genuinely slow build, but not for unbounded.
+func runTimeout(seconds int32) time.Duration {
+	if seconds <= 0 {
+		return defaultRunTimeout
+	}
+	d := time.Duration(seconds) * time.Second
+	if d > maxRunTimeout {
+		return maxRunTimeout
+	}
+	return d
+}
+
 func (m *Manager) start(parent context.Context, cmd *agentv1.DeployCommand) {
 	runID := cmd.GetRunId()
 	token := cmd.GetCloneToken()
-	ctx, cancel := context.WithCancel(parent)
+	budget := runTimeout(cmd.GetTimeoutSeconds())
+	ctx, cancel := context.WithTimeout(parent, budget)
 	m.mu.Lock()
 	m.cancel[runID] = cancel
 	m.seq[runID] = &atomic.Int32{}
+	m.logged[runID] = &atomic.Int64{}
 	m.mu.Unlock()
 	defer func() {
 		m.mu.Lock()
 		delete(m.cancel, runID)
 		delete(m.seq, runID)
+		delete(m.logged, runID)
+		delete(m.capNoted, runID)
 		if f := m.stdin[runID]; f != nil {
 			_ = f.Close()
 			delete(m.stdin, runID)
@@ -117,105 +160,238 @@ func (m *Manager) start(parent context.Context, cmd *agentv1.DeployCommand) {
 
 	m.emit(runID, token, &agentv1.DeployEvent{RunId: runID, Kind: "started", Status: "running", Message: "starting"})
 
-	dest := filepath.Clean(cmd.GetDestPath())
-	if dest == "" || dest == "." || !filepath.IsAbs(dest) {
-		m.fail(runID, token, "dest_path must be an absolute path")
+	if err := m.deploy(ctx, cmd); err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			m.fail(runID, token, fmt.Sprintf("deploy timed out after %s", budget))
+			return
+		}
+		m.fail(runID, token, redact(err.Error(), token))
 		return
+	}
+	m.emit(runID, token, &agentv1.DeployEvent{
+		RunId: runID, Kind: "finished", Status: "succeeded", Message: "deploy finished",
+	})
+}
+
+// deploy walks one run through its phases and returns the first failure. It is split
+// out of start so every exit path gets the same timeout and failure reporting.
+func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error {
+	runID := cmd.GetRunId()
+	token := cmd.GetCloneToken()
+
+	base := filepath.Clean(cmd.GetDestPath())
+	if base == "" || base == "." || !filepath.IsAbs(base) {
+		return errors.New("dest_path must be an absolute path")
 	}
 	branch := cmd.GetBranch()
 	if branch == "" {
 		branch = "main"
 	}
-	// The control plane pins a rollback deploy to an exact commit via this env var
-	// rather than a new DeployCommand field, so an older agent build still supports
-	// forward deploys unchanged and a newer one needs no proto change to add this.
-	// See control-plane/internal/deploys/handler.go's rollbackShaEnvKey.
-	pinSHA := ""
-	if env := cmd.GetEnv(); env != nil {
-		if sha, ok := env[rollbackEnvKey]; ok {
-			pinSHA = sha
-			cleaned := make(map[string]string, len(env))
-			for k, v := range env {
-				if k != rollbackEnvKey {
-					cleaned[k] = v
-				}
-			}
-			cmd.Env = cleaned
-		}
-	}
-	provider := providerFromURL(cmd.GetCloneUrl())
-	if err := cloneOrPull(ctx, dest, cmd.GetCloneUrl(), provider, token, branch, pinSHA); err != nil {
-		m.fail(runID, token, redact(err.Error(), token))
-		return
-	}
-	sha := headCommit(ctx, dest)
-	m.logLine(runID, token, "cloned "+PublicCloneURL(cmd.GetCloneUrl())+" → "+dest)
-	if sha != "" {
-		// Parsed back out of the log by control-plane/internal/agentgw/stream.go and
-		// stored on the run, so a later failure knows what commit to roll back to.
-		m.logLine(runID, token, "commit: "+sha)
-	}
-	_ = writeSpec(dest, cmd)
 
-	apps := cmd.GetApps()
-	if len(apps) == 0 {
-		apps = []*agentv1.DeployApp{{
-			Name:           filepath.Base(dest),
-			RootDirectory:  cmd.GetRootDirectory(),
-			InstallScript:  cmd.GetInstallScript(),
-			Language:       detectLangHint(dest),
-			Port:           cmd.GetPort(),
-			ProcessManager: cmd.GetProcessManager(),
-			Env:            cmd.GetEnv(),
-		}}
+	if err := m.preflight(runID, token, base, cmd.GetInstallScript(), cmd.GetProcessManager()); err != nil {
+		return err
 	}
-	for _, app := range apps {
-		root := app.GetRootDirectory()
-		if root == "" {
-			root = cmd.GetRootDirectory()
+
+	release, sha, reused, err := m.checkout(ctx, cmd, base, branch)
+	if err != nil {
+		return err
+	}
+	// Sent as a field rather than parsed out of log text: this is what a later failed
+	// run rolls back to, so it should not depend on log formatting.
+	m.emit(runID, token, &agentv1.DeployEvent{
+		RunId: runID, Kind: "log", Phase: phaseClone, CommitSha: sha,
+		Data: []byte("commit: " + sha + "\n"),
+	})
+	_ = writeSpec(release, cmd)
+
+	if !reused {
+		if err := m.installApps(ctx, cmd, release); err != nil {
+			return err
 		}
-		work := dest
-		if root != "" && root != "." {
-			work = filepath.Join(dest, filepath.Clean(root))
+	}
+
+	// Nothing serves from the new release until this point, which is what makes a
+	// deploy atomic: a failed install leaves the previous release live.
+	layout := NewLayout(base)
+	if err := layout.Swap(release); err != nil {
+		return fmt.Errorf("activate release: %w", err)
+	}
+	m.phaseLine(runID, token, phaseRelease, "current -> "+filepath.Base(release))
+
+	if err := m.startApps(ctx, cmd, layout); err != nil {
+		return err
+	}
+	if err := m.checkHealth(ctx, cmd); err != nil {
+		return err
+	}
+	if pruned := layout.Prune(); len(pruned) > 0 {
+		m.phaseLine(runID, token, phaseRelease, "pruned old releases: "+strings.Join(pruned, ", "))
+	}
+	return nil
+}
+
+// checkout produces the release directory this run will serve from. A rollback whose
+// commit is still on disk skips the network entirely and simply reuses that release,
+// which is the whole point of keeping them: the commit may be gone from the remote.
+func (m *Manager) checkout(ctx context.Context, cmd *agentv1.DeployCommand, base, branch string) (release, sha string, reused bool, err error) {
+	runID := cmd.GetRunId()
+	token := cmd.GetCloneToken()
+	layout := NewLayout(base)
+
+	if layout.NeedsMigration() {
+		m.phaseLine(runID, token, phaseRelease, "migrating existing checkout into "+releasesDir+"/")
+		moved, err := layout.Migrate(ctx)
+		if err != nil {
+			return "", "", false, fmt.Errorf("migrate to release layout: %w", err)
 		}
+		m.phaseLine(runID, token, phaseRelease, "existing checkout is now "+filepath.Base(moved))
+	}
+
+	if pin := cmd.GetRollbackSha(); pin != "" {
+		if dir := layout.FindRelease(pin); dir != "" {
+			m.phaseLine(runID, token, phaseRelease, "rolling back to release "+filepath.Base(dir)+" already on disk")
+			return dir, pin, true, nil
+		}
+		m.phaseLine(runID, token, phaseClone, "commit "+shortSHA(pin)+" is not on disk; fetching it")
+	}
+
+	tmp, err := layout.Prepare(runID)
+	if err != nil {
+		return "", "", false, err
+	}
+	defer func() {
+		if err != nil {
+			_ = os.RemoveAll(tmp)
+		}
+	}()
+
+	provider := providerFromURL(cmd.GetCloneUrl())
+	m.phaseLine(runID, token, phaseClone, "cloning "+PublicCloneURL(cmd.GetCloneUrl())+" ("+branch+")")
+	if err = cloneInto(ctx, tmp, cmd.GetCloneUrl(), provider, token, branch, cmd.GetRollbackSha()); err != nil {
+		return "", "", false, err
+	}
+	sha = headCommit(ctx, tmp)
+	release, err = layout.Promote(tmp, sha)
+	if err != nil {
+		return "", "", false, err
+	}
+	m.phaseLine(runID, token, phaseClone, "release "+filepath.Base(release))
+	return release, sha, false, nil
+}
+
+// installApps runs each app's install script inside the new release directory.
+func (m *Manager) installApps(ctx context.Context, cmd *agentv1.DeployCommand, release string) error {
+	runID := cmd.GetRunId()
+	token := cmd.GetCloneToken()
+	for _, app := range appsOf(cmd, release) {
+		work := appWorkDir(release, cmd, app)
 		script := app.GetInstallScript()
 		if script == "" {
 			script = cmd.GetInstallScript()
 		}
-		env := map[string]string{}
-		for k, v := range cmd.GetEnv() {
-			env[k] = v
+		if script == "" {
+			continue
 		}
-		for k, v := range app.GetEnv() {
-			env[k] = v
+		m.phaseLine(runID, token, phaseInstall, script+" (in "+work+")")
+		if err := m.runPTY(ctx, runID, token, work, script, appEnv(cmd, app)); err != nil {
+			return err
 		}
-		port := app.GetPort()
-		if port == 0 {
-			port = cmd.GetPort()
-		}
-		if port > 0 {
-			env["PORT"] = fmt.Sprintf("%d", port)
-		}
-		if script != "" {
-			m.logLine(runID, token, "install: "+script+" (in "+work+")")
-			if err := m.runPTY(ctx, runID, token, work, script, env); err != nil {
-				m.fail(runID, token, redact(err.Error(), token))
-				return
-			}
-		}
+	}
+	return nil
+}
+
+// startApps hands each app to its process manager. Working directories go through the
+// current symlink, never a release directory, so a pm2 or systemd entry written today
+// still points at live code after the next deploy.
+func (m *Manager) startApps(ctx context.Context, cmd *agentv1.DeployCommand, layout Layout) error {
+	runID := cmd.GetRunId()
+	token := cmd.GetCloneToken()
+	for _, app := range appsOf(cmd, layout.Current) {
+		work := appWorkDir(layout.Current, cmd, app)
 		pm := app.GetProcessManager()
 		if pm == "" {
 			pm = cmd.GetProcessManager()
 		}
-		lang := app.GetLanguage()
-		if err := m.startProcess(ctx, runID, token, work, pm, lang, env); err != nil {
-			m.fail(runID, token, redact(err.Error(), token))
-			return
+		if err := m.startProcess(ctx, runID, token, work, pm, app.GetLanguage(), appEnv(cmd, app)); err != nil {
+			return err
 		}
 	}
-	m.emit(runID, token, &agentv1.DeployEvent{
-		RunId: runID, Kind: "finished", Status: "succeeded", Message: "deploy finished",
-	})
+	return nil
+}
+
+// checkHealth runs the project's probe, if it has one, against each app's port.
+func (m *Manager) checkHealth(ctx context.Context, cmd *agentv1.DeployCommand) error {
+	runID := cmd.GetRunId()
+	token := cmd.GetCloneToken()
+	checked := false
+	for _, app := range appsOf(cmd, "") {
+		port := app.GetPort()
+		if port == 0 {
+			port = cmd.GetPort()
+		}
+		cfg, ok := resolveHealth(cmd.GetHealth(), port)
+		if !ok {
+			continue
+		}
+		checked = true
+		if err := m.waitHealthy(ctx, runID, token, cfg); err != nil {
+			return err
+		}
+	}
+	if !checked && cmd.GetHealth().GetPath() != "" {
+		m.phaseLine(runID, token, phaseHealth, "skipped: no port configured to probe")
+	}
+	return nil
+}
+
+// appsOf returns the command's apps, or one synthesized app for a single-app project.
+// dir is used only to guess the language and name; pass "" when neither matters.
+func appsOf(cmd *agentv1.DeployCommand, dir string) []*agentv1.DeployApp {
+	if apps := cmd.GetApps(); len(apps) > 0 {
+		return apps
+	}
+	name, lang := "app", ""
+	if dir != "" {
+		name, lang = filepath.Base(dir), detectLangHint(dir)
+	}
+	return []*agentv1.DeployApp{{
+		Name:           name,
+		RootDirectory:  cmd.GetRootDirectory(),
+		InstallScript:  cmd.GetInstallScript(),
+		Language:       lang,
+		Port:           cmd.GetPort(),
+		ProcessManager: cmd.GetProcessManager(),
+		Env:            cmd.GetEnv(),
+	}}
+}
+
+func appWorkDir(root string, cmd *agentv1.DeployCommand, app *agentv1.DeployApp) string {
+	sub := app.GetRootDirectory()
+	if sub == "" {
+		sub = cmd.GetRootDirectory()
+	}
+	if sub == "" || sub == "." {
+		return root
+	}
+	return filepath.Join(root, filepath.Clean(sub))
+}
+
+func appEnv(cmd *agentv1.DeployCommand, app *agentv1.DeployApp) map[string]string {
+	env := map[string]string{}
+	for k, v := range cmd.GetEnv() {
+		env[k] = v
+	}
+	for k, v := range app.GetEnv() {
+		env[k] = v
+	}
+	port := app.GetPort()
+	if port == 0 {
+		port = cmd.GetPort()
+	}
+	if port > 0 {
+		env["PORT"] = fmt.Sprintf("%d", port)
+	}
+	return env
 }
 
 func findEcosystem(dir string) string {
@@ -231,52 +407,29 @@ func findEcosystem(dir string) string {
 	return ""
 }
 
-// rollbackEnvKey is the DeployCommand.Env key the control plane sets to pin a run to
-// an exact commit instead of the branch tip. Must match
-// control-plane/internal/deploys/handler.go's rollbackShaEnvKey.
-const rollbackEnvKey = "CRONCOMPOSE_ROLLBACK_SHA"
-
-// cloneOrPull clones fresh or fast-forwards an existing checkout to branch's tip. When
-// pinSHA is set (an automatic rollback), it checks out that exact commit instead: the
-// normal clone is shallow (--depth 1), which only holds the tip, so a rollback fetches
-// that commit specifically (asking the remote for a SHA that is reachable from a ref
-// it already advertises, which GitHub, GitLab and a stock git server all allow) rather
-// than assuming --depth 1 left old history lying around.
-func cloneOrPull(ctx context.Context, dest, cloneURL, provider, token, branch, pinSHA string) error {
+// cloneInto clones into an empty directory. Releases are immutable, so there is no
+// pull path any more: every deploy gets a fresh shallow clone, and a rollback to a
+// commit that is no longer on disk asks the remote for that sha specifically (a sha
+// reachable from an advertised ref, which GitHub, GitLab and a stock git server all
+// allow).
+func cloneInto(ctx context.Context, dest, cloneURL, provider, token, branch, pinSHA string) error {
 	authURL := AuthenticatedCloneURL(cloneURL, provider, token)
 	public := PublicCloneURL(cloneURL)
-	if isGitDir(dest) {
-		if err := runCmd(ctx, dest, nil, "git", "remote", "set-url", "origin", authURL); err != nil {
-			return err
-		}
-		defer func() { _ = runCmd(context.Background(), dest, nil, "git", "remote", "set-url", "origin", public) }()
-		if err := runCmd(ctx, dest, nil, "git", "fetch", "origin", branch); err != nil {
-			return err
-		}
-		if pinSHA != "" {
-			return checkoutPinned(ctx, dest, pinSHA)
-		}
-		if err := runCmd(ctx, dest, nil, "git", "checkout", branch); err != nil {
-			return err
-		}
-		return runCmd(ctx, dest, nil, "git", "reset", "--hard", "origin/"+branch)
-	}
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return err
-	}
 	if err := runCmd(ctx, "", nil, "git", "clone", "--branch", branch, "--single-branch", "--depth", "1", authURL, dest); err != nil {
 		return err
 	}
-	if pinSHA == "" {
-		return runCmd(ctx, dest, nil, "git", "remote", "set-url", "origin", public)
+	if pinSHA != "" {
+		if err := checkoutPinned(ctx, dest, pinSHA); err != nil {
+			return err
+		}
 	}
-	defer func() { _ = runCmd(context.Background(), dest, nil, "git", "remote", "set-url", "origin", public) }()
-	return checkoutPinned(ctx, dest, pinSHA)
+	// Drop the credentialed remote: the release directory outlives the run, and the
+	// token must not sit in .git/config afterwards.
+	return runCmd(ctx, dest, nil, "git", "remote", "set-url", "origin", public)
 }
 
 // checkoutPinned fetches one commit by sha (unshallowing first, best-effort, so the
-// fetch has real history to walk) and checks it out. dest's origin must already carry
-// authenticated credentials when the repo is private.
+// fetch has real history to walk) and checks it out.
 func checkoutPinned(ctx context.Context, dest, sha string) error {
 	_ = runCmd(ctx, dest, nil, "git", "fetch", "--unshallow", "origin") // no-op if already full
 	if err := runCmd(ctx, dest, nil, "git", "fetch", "origin", sha); err != nil {
@@ -295,6 +448,13 @@ func headCommit(ctx context.Context, dir string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+func shortSHA(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
 
 func isGitDir(dir string) bool {
@@ -329,7 +489,7 @@ func (m *Manager) runPTY(ctx context.Context, runID, token, dir, script string, 
 			n, err := r.Read(buf)
 			if n > 0 {
 				m.emit(runID, token, &agentv1.DeployEvent{
-					RunId: runID, Kind: "log", Data: append([]byte(nil), buf[:n]...),
+					RunId: runID, Kind: "log", Phase: phaseInstall, Data: append([]byte(nil), buf[:n]...),
 				})
 			}
 			if err != nil {
@@ -404,7 +564,43 @@ func (m *Manager) logLine(runID, token, msg string) {
 	m.emit(runID, token, &agentv1.DeployEvent{RunId: runID, Kind: "log", Data: []byte(msg + "\n")})
 }
 
+// phaseLine is logLine with a stage attached, for the structured phases above.
+func (m *Manager) phaseLine(runID, token, phase, msg string) {
+	m.emit(runID, token, &agentv1.DeployEvent{
+		RunId: runID, Kind: "log", Phase: phase, Data: []byte(phase + ": " + msg + "\n"),
+	})
+}
+
+// overLogCap reports whether this run has already streamed its budget of output, and
+// sends one notice the first time it has. Lifecycle events are never dropped; only
+// log payload is, so a capped run still finishes cleanly.
+func (m *Manager) overLogCap(runID string, n int) bool {
+	m.mu.Lock()
+	counter := m.logged[runID]
+	m.mu.Unlock()
+	if counter == nil {
+		return false
+	}
+	if counter.Add(int64(n)) <= logCapBytes {
+		return false
+	}
+	m.mu.Lock()
+	first := !m.capNoted[runID]
+	m.capNoted[runID] = true
+	m.mu.Unlock()
+	if first && m.send != nil {
+		m.send(&agentv1.DeployEvent{
+			RunId: runID, Kind: "log", Phase: phaseInstall,
+			Data: []byte(fmt.Sprintf("\n[log truncated: this run passed %s of output]\n", humanBytes(logCapBytes))),
+		})
+	}
+	return true
+}
+
 func (m *Manager) emit(runID, token string, ev *agentv1.DeployEvent) {
+	if ev.Kind == "log" && len(ev.Data) > 0 && m.overLogCap(runID, len(ev.Data)) {
+		return
+	}
 	if ev.Seq == 0 {
 		m.mu.Lock()
 		s := m.seq[runID]
