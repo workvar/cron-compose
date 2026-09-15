@@ -6,6 +6,7 @@ import { IconChevronLeft } from "@/components/icons";
 import { RedeployButton } from "@/components/deploys/RedeployButton";
 import { HostThisApp } from "@/components/deploys/HostThisApp";
 import { ProjectActions } from "@/components/deploys/ProjectActions";
+import { HealthBadge } from "@/components/deploys/HealthBadge";
 
 type Detail = {
   project: DeployProject;
@@ -56,7 +57,10 @@ export default async function DeployDetailPage({ params }: { params: Promise<{ i
       <Link href="/deploys" className="back-link"><IconChevronLeft /> Back to deploys</Link>
       <div className="page-head">
         <div>
-          <h1>{p.name}</h1>
+          <div className="cluster" style={{ alignItems: "center", gap: 10 }}>
+            <h1 style={{ margin: 0 }}>{p.name}</h1>
+            <HealthBadge state={p.health_state} />
+          </div>
           <p className="subtle">{p.provider}/{p.repo_full_name} · {server?.name || p.server_id.slice(0, 8)}</p>
         </div>
         <div className="page-head-actions">
@@ -75,6 +79,11 @@ export default async function DeployDetailPage({ params }: { params: Promise<{ i
             <span className="pill">{p.process_manager}</span>
             {p.port > 0 && <span className="pill">PORT {p.port}</span>}
             {p.auto_rollback && <span className="pill" title="Redeploys the last successful commit automatically after a failed run">auto-rollback</span>}
+            {p.health_path && (
+              <span className="pill" title={`Each deploy must answer on 127.0.0.1:${p.health_port || p.port}${p.health_path} within ${p.health_timeout_seconds || 60}s`}>
+                health {p.health_path}
+              </span>
+            )}
           </div>
         </div>
         <div className="panel">

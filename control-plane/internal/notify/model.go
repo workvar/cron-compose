@@ -184,6 +184,14 @@ type RunFailedEvent struct {
 	ProjectName string `json:"project_name,omitempty"`
 	Branch      string `json:"branch,omitempty"`
 	Trigger     string `json:"trigger,omitempty"`
+	// Phase names the stage that failed: preflight, clone, install, release, start
+	// or health. "health" is the interesting one, because it means the code built and
+	// installed cleanly and the app still did not come up.
+	Phase string `json:"phase,omitempty"`
+	// ProjectState is where the project stands after this run: healthy, degraded or
+	// rolled_back. A message that says what is running now is actionable; one that
+	// only says a run failed is not.
+	ProjectState string `json:"project_state,omitempty"`
 	// RolledBack is true when this failure caused an automatic rollback to the
 	// project's last successful commit, so the notification can say so instead of
 	// reading like the app is still down.

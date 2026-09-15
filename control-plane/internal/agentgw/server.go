@@ -25,7 +25,7 @@ import (
 // directly.
 type FailedRunHook interface {
 	FireRunFailed(serverID, jobID, runID, status string, exitCode, durationMs int32, errMsg string)
-	FireDeployFailed(serverID, projectID, runID, status, branch, trigger string, exitCode int32, errMsg string, rolledBack bool)
+	FireDeployFailed(serverID, projectID, runID, status, branch, trigger, phase string, exitCode int32, errMsg string, rolledBack bool)
 }
 
 // DeployFinishedHook is invoked whenever a deploy run finishes, successful or not, so

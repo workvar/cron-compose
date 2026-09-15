@@ -278,6 +278,8 @@ export type DeployApp = {
   process_manager?: string;
 };
 
+export type DeployHealthState = "unknown" | "healthy" | "degraded" | "rolled_back";
+
 export type DeployProject = {
   id: string;
   name: string;
@@ -298,6 +300,18 @@ export type DeployProject = {
   write_spec: boolean;
   /** Redeploy the last successful commit automatically after a failed run. */
   auto_rollback: boolean;
+  /**
+   * Opt-in health probe. With an empty path a deploy is successful as soon as the
+   * install script exits 0; with one set, the app has to answer on
+   * 127.0.0.1:<health_port || port><health_path> before the run counts.
+   */
+  health_path: string;
+  health_port: number;
+  health_timeout_seconds: number;
+  /** Whole-run budget handed to the agent. 0 means the agent's default. */
+  deploy_timeout_seconds: number;
+  /** Where the project stands now, as opposed to what its last run did. */
+  health_state: DeployHealthState;
   created_by?: string;
   created_at: string;
   updated_at: string;

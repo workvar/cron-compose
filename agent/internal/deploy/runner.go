@@ -38,6 +38,25 @@ const (
 	logCapBytes       = 2 << 20 // 2MB of streamed output per run
 )
 
+// phaseError tags a failure with the stage it happened in. The stage travels to the
+// control plane on the finished event, which is what lets a notification say the app
+// built fine and then failed its health check, rather than just "failed".
+type phaseError struct {
+	phase string
+	err   error
+}
+
+func (e phaseError) Error() string { return e.err.Error() }
+func (e phaseError) Unwrap() error { return e.err }
+
+func failedPhase(err error) string {
+	var pe phaseError
+	if errors.As(err, &pe) {
+		return pe.phase
+	}
+	return ""
+}
+
 // Sender ships one DeployEvent back to the control plane (ephemeral, never outbox).
 type Sender func(*agentv1.DeployEvent)
 
@@ -162,10 +181,10 @@ func (m *Manager) start(parent context.Context, cmd *agentv1.DeployCommand) {
 
 	if err := m.deploy(ctx, cmd); err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			m.fail(runID, token, fmt.Sprintf("deploy timed out after %s", budget))
+			m.fail(runID, token, phaseInstall, fmt.Sprintf("deploy timed out after %s", budget))
 			return
 		}
-		m.fail(runID, token, redact(err.Error(), token))
+		m.fail(runID, token, failedPhase(err), redact(err.Error(), token))
 		return
 	}
 	m.emit(runID, token, &agentv1.DeployEvent{
@@ -189,12 +208,12 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 	}
 
 	if err := m.preflight(runID, token, base, cmd.GetInstallScript(), cmd.GetProcessManager()); err != nil {
-		return err
+		return phaseError{phasePreflight, err}
 	}
 
 	release, sha, reused, err := m.checkout(ctx, cmd, base, branch)
 	if err != nil {
-		return err
+		return phaseError{phaseClone, err}
 	}
 	// Sent as a field rather than parsed out of log text: this is what a later failed
 	// run rolls back to, so it should not depend on log formatting.
@@ -206,7 +225,7 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 
 	if !reused {
 		if err := m.installApps(ctx, cmd, release); err != nil {
-			return err
+			return phaseError{phaseInstall, err}
 		}
 	}
 
@@ -214,15 +233,15 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 	// deploy atomic: a failed install leaves the previous release live.
 	layout := NewLayout(base)
 	if err := layout.Swap(release); err != nil {
-		return fmt.Errorf("activate release: %w", err)
+		return phaseError{phaseRelease, fmt.Errorf("activate release: %w", err)}
 	}
 	m.phaseLine(runID, token, phaseRelease, "current -> "+filepath.Base(release))
 
 	if err := m.startApps(ctx, cmd, layout); err != nil {
-		return err
+		return phaseError{phaseStart, err}
 	}
 	if err := m.checkHealth(ctx, cmd); err != nil {
-		return err
+		return phaseError{phaseHealth, err}
 	}
 	if pruned := layout.Prune(); len(pruned) > 0 {
 		m.phaseLine(runID, token, phaseRelease, "pruned old releases: "+strings.Join(pruned, ", "))
@@ -554,9 +573,9 @@ func writeSpec(dest string, cmd *agentv1.DeployCommand) error {
 	return os.WriteFile(filepath.Join(dest, "croncompose.yml"), []byte(b.String()), 0o644)
 }
 
-func (m *Manager) fail(runID, token, msg string) {
+func (m *Manager) fail(runID, token, phase, msg string) {
 	m.emit(runID, token, &agentv1.DeployEvent{
-		RunId: runID, Kind: "finished", Status: "failed", ExitCode: 1, Message: msg,
+		RunId: runID, Kind: "finished", Status: "failed", ExitCode: 1, Phase: phase, Message: msg,
 	})
 }
 

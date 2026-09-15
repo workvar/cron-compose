@@ -268,24 +268,37 @@ func (s *service) onDeployEvent(ctx context.Context, serverID string, ev *agentv
 			ExitCode: ev.GetExitCode(),
 			Error:    ev.GetMessage(),
 		})
-		if err == nil && s.onDeployFin != nil {
-			go s.onDeployFin.DeployRunFinished(serverID, runID, status, ev.GetExitCode(), ev.GetMessage())
-		}
-		if err == nil && s.onFailed != nil {
+		if err == nil {
 			var projectID, branch, trigger string
 			_ = s.pool.QueryRow(ctx, `select project_id, branch, trigger from deploy_runs where id = $1`, runID).
 				Scan(&projectID, &branch, &trigger)
-			isRollback := trigger == "rollback"
-			// Always notify about a rollback run's own outcome (recovered, or the
-			// rollback itself failed too); a forward deploy only notifies on failure,
-			// matching the job-run behavior this package started with.
-			if status != "succeeded" || isRollback {
-				go s.onFailed.FireDeployFailed(serverID, projectID, runID, status, branch, trigger, ev.GetExitCode(), ev.GetMessage(), isRollback)
-			}
+			// One goroutine, in order: the finished hook records the project's health
+			// state and may start a rollback, and the notification reads that state to
+			// say what is running now. Firing them concurrently would race, and the
+			// message would report the state from before this run.
+			go s.afterDeployRun(serverID, projectID, runID, status, branch, trigger, ev.GetPhase(), ev.GetExitCode(), ev.GetMessage())
 		}
 		return err
 	}
 	return nil
+}
+
+// afterDeployRun runs the two things that happen once a deploy run is recorded, in
+// the order they depend on each other.
+func (s *service) afterDeployRun(serverID, projectID, runID, status, branch, trigger, phase string, exitCode int32, errMsg string) {
+	if s.onDeployFin != nil {
+		s.onDeployFin.DeployRunFinished(serverID, runID, status, exitCode, errMsg)
+	}
+	if s.onFailed == nil {
+		return
+	}
+	isRollback := trigger == "rollback"
+	// Always report a rollback run's own outcome (recovered, or the rollback failed
+	// too); a forward deploy reports only on failure, matching the job-run behavior
+	// this package started with.
+	if status != "succeeded" || isRollback {
+		s.onFailed.FireDeployFailed(serverID, projectID, runID, status, branch, trigger, phase, exitCode, errMsg, isRollback)
+	}
 }
 
 // sendFullSync loads every enabled job for the server and pushes one SyncJobs.

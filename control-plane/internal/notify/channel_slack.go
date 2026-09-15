@@ -35,6 +35,12 @@ func (n *Notifier) deliverSlack(ctx context.Context, t Target, ev RunFailedEvent
 	}
 	if ev.EventKind == EventDeploy {
 		fields = append(fields, map[string]string{"type": "mrkdwn", "text": "*Branch*\n" + nameOr(ev.Branch, "-")})
+		if label := phaseLabel(ev.Phase); label != "" {
+			fields = append(fields, map[string]string{"type": "mrkdwn", "text": "*Failed at*\n" + label})
+		}
+		if label := stateLabel(ev.ProjectState); label != "" {
+			fields = append(fields, map[string]string{"type": "mrkdwn", "text": "*Project now*\n" + label})
+		}
 	} else {
 		fields = append(fields, map[string]string{"type": "mrkdwn", "text": "*Duration*\n" + humanMillis(ev.DurationMs)})
 	}
@@ -73,18 +79,6 @@ func (n *Notifier) deliverSlack(ctx context.Context, t Target, ev RunFailedEvent
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", userAgent)
 	return n.doRequest(req)
-}
-
-// rollbackSuffix renders the automatic-rollback outcome for a headline or subject
-// line. Empty for anything that isn't a rollback run's own result.
-func rollbackSuffix(ev RunFailedEvent) string {
-	switch {
-	case ev.RolledBack && ev.Status == "succeeded":
-		return " (recovered via rollback)"
-	case ev.RolledBack:
-		return " (rollback also failed)"
-	}
-	return ""
 }
 
 func statusEmoji(status string) string {

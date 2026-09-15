@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { DeployProject } from "@/lib/types";
+import { HealthCheckFields, type HealthCheckValues } from "./HealthCheckFields";
 
 export function ProjectActions({ project }: { project: DeployProject }) {
   const router = useRouter();
@@ -16,6 +17,12 @@ export function ProjectActions({ project }: { project: DeployProject }) {
   const [port, setPort] = useState(project.port ? String(project.port) : "");
   const [pm, setPm] = useState(project.process_manager);
   const [autoRollback, setAutoRollback] = useState(project.auto_rollback);
+  const [health, setHealth] = useState<HealthCheckValues>({
+    path: project.health_path || "",
+    port: project.health_port ? String(project.health_port) : "",
+    timeout: project.health_timeout_seconds ? String(project.health_timeout_seconds) : "",
+    deployTimeout: project.deploy_timeout_seconds ? String(project.deploy_timeout_seconds) : "",
+  });
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -33,6 +40,10 @@ export function ProjectActions({ project }: { project: DeployProject }) {
           port: port ? Number(port) : 0,
           process_manager: pm,
           auto_rollback: autoRollback,
+          health_path: health.path.trim(),
+          health_port: health.port ? Number(health.port) : 0,
+          health_timeout_seconds: health.timeout ? Number(health.timeout) : 60,
+          deploy_timeout_seconds: health.deployTimeout ? Number(health.deployTimeout) : 0,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -111,6 +122,7 @@ export function ProjectActions({ project }: { project: DeployProject }) {
               Redeploys the last successful commit and restarts the process manager on it. Off by default.
             </p>
           </div>
+          <HealthCheckFields value={health} onChange={setHealth} appPort={project.port} />
           {error && <p className="form-error">{error}</p>}
           <button type="submit" className="button" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         </form>

@@ -125,12 +125,19 @@ func buildMessage(from string, to []string, ev RunFailedEvent) []byte {
 	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
 	b.WriteString("\r\n")
 
-	fmt.Fprintf(&b, "%s:  %s\n", label, subjectName)
+	// Padded to line up with the fixed-width labels below.
+	fmt.Fprintf(&b, "%-9s %s\n", label+":", subjectName)
 	fmt.Fprintf(&b, "Server:   %s\n", nameOr(ev.ServerName, ev.ServerID))
 	fmt.Fprintf(&b, "Status:   %s\n", ev.Status)
 	fmt.Fprintf(&b, "Exit:     %d\n", ev.ExitCode)
 	if ev.EventKind == EventDeploy {
 		fmt.Fprintf(&b, "Branch:   %s\n", nameOr(ev.Branch, "-"))
+		if label := phaseLabel(ev.Phase); label != "" {
+			fmt.Fprintf(&b, "Failed:   %s\n", label)
+		}
+		if label := stateLabel(ev.ProjectState); label != "" {
+			fmt.Fprintf(&b, "Project:  %s\n", label)
+		}
 		switch {
 		case ev.RolledBack && ev.Status == "succeeded":
 			b.WriteString("Recovered automatically: rolled back to the last successful commit.\n")

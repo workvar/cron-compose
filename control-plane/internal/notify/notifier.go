@@ -85,7 +85,7 @@ func (n *Notifier) FireRunFailed(serverID, jobID, runID, status string, exitCode
 // deploy run finishes with a non-success status; rolledBack says whether that failure
 // already triggered an automatic rollback (see the deploys package), so the message
 // can say the app is back on its last good commit rather than reading as still down.
-func (n *Notifier) FireDeployFailed(serverID, projectID, runID, status, branch, trigger string, exitCode int32, errMsg string, rolledBack bool) {
+func (n *Notifier) FireDeployFailed(serverID, projectID, runID, status, branch, trigger, phase string, exitCode int32, errMsg string, rolledBack bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -96,6 +96,7 @@ func (n *Notifier) FireDeployFailed(serverID, projectID, runID, status, branch, 
 		ServerID:   serverID,
 		Branch:     branch,
 		Trigger:    trigger,
+		Phase:      phase,
 		Status:     status,
 		ExitCode:   exitCode,
 		Error:      errMsg,
@@ -219,7 +220,8 @@ func (n *Notifier) enrichDeploy(ctx context.Context, ev *RunFailedEvent) {
 	}
 
 	if err := n.pool.QueryRow(ctx,
-		`select coalesce(name,'') from deploy_projects where id = $1`, ev.ProjectID).Scan(&ev.ProjectName); err != nil {
+		`select coalesce(name,''), coalesce(health_state,'') from deploy_projects where id = $1`,
+		ev.ProjectID).Scan(&ev.ProjectName, &ev.ProjectState); err != nil {
 		n.log.Debug("notify: deploy project lookup failed", "err", err, "project_id", ev.ProjectID)
 	}
 }

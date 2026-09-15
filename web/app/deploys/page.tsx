@@ -2,6 +2,7 @@ import Link from "next/link";
 import { apiGet } from "@/lib/api";
 import type { DeployProject, ListResponse, Server } from "@/lib/types";
 import { IconGit, IconPlus } from "@/components/icons";
+import { HealthBadge } from "@/components/deploys/HealthBadge";
 
 export default async function DeploysPage() {
   let items: DeployProject[] = [];
@@ -58,6 +59,7 @@ export default async function DeploysPage() {
                 </div>
               </div>
               <div className="cluster">
+                <HealthBadge state={p.health_state} />
                 <span className="pill">{p.language}</span>
                 <span className="pill">{p.process_manager}</span>
               </div>
