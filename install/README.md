@@ -100,6 +100,12 @@ GitHub OAuth Apps are not OIDC; they will not enable “Sign in with SSO.” You
 edit these keys in `.env` later and `./croncompose-ctl.sh restart` — see
 [operations.md](../docs/operations.md#oidc-sso).
 
+**"Sign in with GitHub/GitLab" and the Deploy feature's commit statuses** are separate,
+optional, and not asked by the installer at all — add them to `.env` whenever you want
+them, then restart. See [DEPLOYMENT.md](../DEPLOYMENT.md#optional-sign-in-and-git-integrations)
+for the variables and [the GitHub App walkthrough](../DEPLOYMENT.md#creating-a-github-app-optional)
+if you want deploy statuses to post as CronCompose rather than under your own account.
+
 ## Database options
 
 The default path is two steps only:

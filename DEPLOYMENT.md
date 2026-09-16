@@ -66,28 +66,46 @@ cp .env.example .env && chmod 600 .env
 Edit `.env` in place afterwards; it is the source of truth for the stack, and both
 process managers cache the environment, so restart after any change. Under Docker
 Compose the same values come from `docker-compose.prod.yml`'s `x-env` block or a `.env`
-beside it. The most important variables:
+beside it.
+
+Four variables get you running; everything else has a sane default and can wait.
+
+### Required
 
 | Variable             | Purpose                                                                 |
 |----------------------|-------------------------------------------------------------------------|
-| `DATABASE_URL`       | Postgres DSN. Required.                                                  |
+| `DATABASE_URL`       | Postgres DSN.                                                            |
+| `PUBLIC_BASE_URL`    | The external address people and agents reach this host at (for example `https://cc.example.com`). Derives the public REST URL, the advertised gRPC address, the OIDC redirect, and a TLS SAN — see below. |
+| `SESSION_SECRET`     | HMAC key for session cookies. 16+ chars. Generate with `openssl rand -hex 32`. |
+| `SECRETS_MASTER_KEY` | 32-byte hex key (64 hex chars) wrapping stored secrets. **Set this in prod**; the default is a clearly marked dev key. Back it up — losing it makes every stored secret unrecoverable. |
+
+### Networking and ports
+
+| Variable             | Purpose                                                                 |
+|----------------------|-------------------------------------------------------------------------|
 | `HTTP_ADDR`          | HTTP listener. Default `:8080`. Serves `/app` and `/api`.               |
 | `GRPC_ADDR`          | Agent mTLS gRPC listener. Default `:9090`.                              |
 | `WEB_UPSTREAM`       | Internal Next.js address the control plane proxies `/app` to. Empty disables the UI proxy (API-only). |
-| `PUBLIC_BASE_URL`    | Single source of truth for the external address. Derives the public REST URL, the advertised gRPC address, the OIDC redirect, and a TLS SAN. |
-| `SESSION_SECRET`     | HMAC key for session cookies. Required, 16+ chars. Generate with `openssl rand -hex 32`. |
-| `SECRETS_MASTER_KEY` | 32-byte hex key (64 hex chars) wrapping stored secrets. **Set this in prod**; the default is a clearly marked dev key. |
-| `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Bootstrap admin, upserted on every boot (see the hardening note). |
 | `TLS_DIR`            | Where the agent-facing CA and server cert live. Persist this.            |
 | `TLS_HOSTS`          | SANs the server cert covers. Must include the public name agents dial.   |
+
+### Admin, logging, and limits
+
+| Variable             | Purpose                                                                 |
+|----------------------|-------------------------------------------------------------------------|
+| `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Bootstrap admin, upserted on every boot (see the hardening note). |
 | `LOG_LEVEL`          | `debug` \| `info` \| `warn` \| `error`. Default `info`.                  |
-| `OIDC_*`             | Optional SSO. See [operations.md](docs/operations.md).                  |
 | `METRICS_TOKEN`      | When set, `/metrics` requires `Authorization: Bearer <token>`. Empty leaves it open, which is fine on a private network and not on the internet. |
 | `RUN_LOG_MAX_BYTES`  | Per-run log storage cap. Default 5 MiB. The run still completes and its exit status is still reported; only the log tail is dropped, with a note in the log. |
 | `RETENTION_RUN_LOG_DAYS` | Delete run logs older than this. `0` (default) never prunes. |
 | `RETENTION_RUN_DAYS` | Delete runs older than this. `0` (default) never prunes. Set it longer than the log window: runs are small and answer "has this been failing all month". |
 | `RETENTION_AUDIT_DAYS` | Delete audit entries older than this. `0` (default) never prunes. |
 | `RETENTION_OPERATION_DAYS` | Delete connector operations older than this. `0` (default) never prunes. |
+
+### Agent updates
+
+| Variable             | Purpose                                                                 |
+|----------------------|-------------------------------------------------------------------------|
 | `AGENT_UPDATE_VERSION` | Optional manual pin. When set with `AGENT_UPDATE_URL` + `AGENT_UPDATE_SHA256`, offers a binary download instead of a source build. |
 | `AGENT_UPDATE_URL`   | Binary download URL template. `{version}`, `{os}` and `{arch}` are substituted. Must be `https`. Used only with a manual pin. |
 | `AGENT_UPDATE_SHA256` | Pinned sha256 for a manual binary update: bare hex, or JSON mapping `"os/arch"` to a digest. |
@@ -95,6 +113,17 @@ beside it. The most important variables:
 | `GITHUB_RELEASE_REPO` | GitHub `owner/repo` to poll for releases (default `workvar/cron-compose`). A new tag is offered as a **source** update (hosts build locally). |
 | `AGENT_UPDATE_POLL_MINUTES` | How often to check GitHub for a new tag (default `1440` = 24h). |
 | `INSTALL_SCRIPT_URL` | Agent installer URL shown in the UI (default: latest release asset `install-agent.sh`). |
+
+### Optional: sign-in and Git integrations
+
+All optional, all off until set. Full setup steps for each are in `.env.example`.
+
+| Variable             | Purpose                                                                 |
+|----------------------|-------------------------------------------------------------------------|
+| `OIDC_*`             | Optional SSO. See [operations.md](docs/operations.md#oidc-sso).         |
+| `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | "Sign in with GitHub" and Settings → Git clone grants. Register `<PUBLIC_BASE_URL>/api/auth/github/callback`. |
+| `GITLAB_OAUTH_CLIENT_ID` / `GITLAB_OAUTH_CLIENT_SECRET` / `GITLAB_OAUTH_BASE_URL` | Same, for GitLab. Register `<PUBLIC_BASE_URL>/api/auth/gitlab/callback`. |
+| `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY_PATH` (or `GITHUB_APP_PRIVATE_KEY`) | A GitHub App CronCompose authenticates as, so deploy commit statuses post as CronCompose itself rather than under the importing user's account and keep working after they leave. Without it, statuses still post, just via that user's OAuth grant. See ["Creating a GitHub App"](#creating-a-github-app-optional) below. |
 
 `PUBLIC_BASE_URL` is the easiest knob: set it once (for example
 `https://cc.example.com`) and the control plane derives `PUBLIC_HTTP_URL`
@@ -111,6 +140,39 @@ openssl rand -hex 32   # SECRETS_MASTER_KEY
 
 Back up `SECRETS_MASTER_KEY` somewhere safe. Losing it makes every stored secret
 unrecoverable.
+
+### Creating a GitHub App (optional)
+
+Skip this if you don't need Deploy commit statuses to post as CronCompose itself; the
+feature works without it, just under the importing user's own GitHub account.
+
+1. Go to <https://github.com/settings/apps/new>, name it (this name is what shows up on
+   every commit status), and set the homepage to your `PUBLIC_BASE_URL`.
+2. Under **Webhook**, uncheck **Active** — CronCompose creates its own per-repo push
+   webhook, so the App itself doesn't need to receive events.
+3. Under **Repository permissions**, grant exactly three: **Commit statuses** =
+   Read and write, **Contents** = Read-only, **Metadata** = Read-only. Nothing else.
+4. Click **Create GitHub App**, note the **App ID** at the top of the page, then scroll
+   down to **Private keys** and **Generate a private key** — this downloads a `.pem`.
+5. From the App's **Install App** tab, install it on the repos (or the whole org) that
+   CronCompose deploys.
+6. Put the `.pem` somewhere only the CronCompose service user can read, and set:
+
+   ```sh
+   install -m 600 ~/Downloads/your-app.private-key.pem /etc/croncompose/github-app.pem
+   ```
+
+   ```
+   GITHUB_APP_ID=<the App ID from step 4>
+   GITHUB_APP_PRIVATE_KEY_PATH=/etc/croncompose/github-app.pem
+   ```
+
+   (Running in a container with no mounted secret volume? Set `GITHUB_APP_PRIVATE_KEY`
+   to the key's contents instead — keep real newlines, not `\n` — but the path above is
+   the better option wherever you can mount a file.)
+
+7. Restart the control plane. That's it — no code changes, no re-import of existing
+   repos.
 
 ## Path A: Docker Compose
 
