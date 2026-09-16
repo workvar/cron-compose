@@ -46,3 +46,6 @@ Thumbs.db
 # Editors
 .idea/
 .vscode/
+
+# Local secrets (GitHub App private key, etc.), never commit
+/secrets/
