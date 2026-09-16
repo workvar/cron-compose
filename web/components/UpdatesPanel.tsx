@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { UpdateStatus } from "@/lib/types";
 import { summarizeUpdates } from "@/lib/update-helpers";
 import { beginUpdating } from "@/lib/updating";
+import { UpdateRowStatus } from "@/components/UpdateRowStatus";
 import { IconArrowUpRight, IconDownload, IconServer } from "@/components/icons";
 
 type Props = {
@@ -170,7 +171,13 @@ export function UpdatesPanel({ initial, canUpdate }: Props) {
                           disabled={!s.can_update || busy !== null || done}
                           onClick={() => void updateOne(s.server_id, !!s.stack)}
                         >
-                          {busy === s.server_id ? "Updating…" : done ? "Started" : "Update"}
+                          <UpdateRowStatus
+                            serverId={s.server_id}
+                            targetVersion={view.latest}
+                            stack={!!s.stack}
+                            started={done}
+                            busyLabel={busy === s.server_id}
+                          />
                         </button>
                       ) : (
                         <span className="subtle" style={{ fontSize: 12 }}>
