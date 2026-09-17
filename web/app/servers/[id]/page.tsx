@@ -3,6 +3,7 @@ import { apiGet } from "@/lib/api";
 import type { Job, ListResponse, Me, Server } from "@/lib/types";
 import { JobRow } from "@/components/JobRow";
 import { UpdateServerButton } from "@/components/UpdateServerButton";
+import { ServerActions } from "@/components/ServerActions";
 import { IconChevronLeft, IconPlus, IconTerminal } from "@/components/icons";
 import type { UpdateStatus } from "@/lib/types";
 
@@ -63,6 +64,7 @@ export default async function ServerDetailPage({ params }: Props) {
             <Link href={`/servers/${server.id}/terminal`} className="button secondary"><IconTerminal /> Terminal</Link>
           )}
           <Link href={`/servers/${server.id}/jobs/new`} className="button"><IconPlus /> New job</Link>
+          {canTerminal && <ServerActions server={server} />}
         </div>
       </div>
 
