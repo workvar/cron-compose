@@ -65,11 +65,20 @@ export default function SecretsPage() {
 
       <div className="panel" style={{ maxWidth: 560 }}>
         <div className="card-head"><div className="card-title">Add a secret</div></div>
-        <form onSubmit={create}>
+        {/* autoComplete="off" plus a distinct autocomplete value on the password field
+            keeps browser password managers from guessing the scope select is a
+            "username" for the value field below and auto-highlighting it. */}
+        <form onSubmit={create} autoComplete="off">
           <div className="grid-2">
             <div className="field">
               <label>Name (env var)</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="API_KEY" required />
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="API_KEY"
+                autoComplete="off"
+                required
+              />
             </div>
             <div className="field">
               <label htmlFor="secret-scope">Scope</label>
@@ -89,12 +98,24 @@ export default function SecretsPage() {
           {secretNeedsScopeId(scope) && (
             <div className="field">
               <label>Scope ID ({scope})</label>
-              <input value={scopeID} onChange={(e) => setScopeID(e.target.value)} placeholder={`${scope}_id`} required />
+              <input
+                value={scopeID}
+                onChange={(e) => setScopeID(e.target.value)}
+                placeholder={`${scope}_id`}
+                autoComplete="off"
+                required
+              />
             </div>
           )}
           <div className="field">
             <label>Value</label>
-            <input type="password" value={value} onChange={(e) => setValue(e.target.value)} required />
+            <input
+              type="password"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              autoComplete="new-password"
+              required
+            />
           </div>
           {error && <div className="form-error" style={{ marginBottom: 14 }}>{error}</div>}
           <button type="submit" className="button" disabled={busy || !name || !value || !scope}>
