@@ -3,6 +3,13 @@
 
 export type Me = { id: string; email: string; name: string; role: string };
 
+export type Passkey = {
+  id: string;
+  name: string;
+  created_at: string;
+  last_used_at?: string | null;
+};
+
 export type Server = {
   id: string;
   name: string;

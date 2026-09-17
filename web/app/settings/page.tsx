@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { apiGet } from "@/lib/api";
-import type { DeploySettings, GitConnection, ListResponse, Me, NotificationTarget, OAuthSettings, UpdateStatus } from "@/lib/types";
+import type { DeploySettings, GitConnection, ListResponse, Me, NotificationTarget, OAuthSettings, Passkey, UpdateStatus } from "@/lib/types";
 import { LogoutButton } from "@/components/LogoutButton";
 import { IconKey, IconShield } from "@/components/icons";
+import { PasskeyManager } from "@/components/PasskeyManager";
 import { TargetManager } from "@/components/notify/TargetManager";
 import { UpdatesPanel } from "@/components/UpdatesPanel";
 import { GitConnections } from "@/components/deploys/GitConnections";
@@ -23,9 +24,15 @@ export default async function SettingsPage() {
   let git: GitConnection[] = [];
   let deploySettings: DeploySettings | null = null;
   let oauthSettings: OAuthSettings[] = [];
+  let passkeys: Passkey[] = [];
   try {
     me = await apiGet<Me>("/me");
   } catch { /* shown below */ }
+  if (me) {
+    try {
+      passkeys = (await apiGet<ListResponse<Passkey>>("/auth/passkeys")).items;
+    } catch { /* passkeys not configured */ }
+  }
   try {
     targets = (await apiGet<ListResponse<NotificationTarget>>("/notification-targets")).items;
   } catch { /* non-admin or unavailable */ }
@@ -69,6 +76,16 @@ export default async function SettingsPage() {
           </div>
           <div style={{ marginTop: 16 }}><LogoutButton /></div>
         </div>
+      )}
+
+      {me && (
+        <>
+          <h2>Security</h2>
+          <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
+            Passkeys you can use to sign in without a password.
+          </p>
+          <PasskeyManager initial={passkeys} />
+        </>
       )}
 
       <h2>Git</h2>

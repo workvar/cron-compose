@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Brand } from "@/components/Brand";
+import { loginWithPasskey } from "@/lib/webauthn";
 
 type AuthConfig = {
   password_login: boolean;
@@ -12,6 +13,7 @@ type AuthConfig = {
   github_start_url?: string;
   gitlab_enabled?: boolean;
   gitlab_start_url?: string;
+  passkey_login?: boolean;
 };
 
 function LoginForm() {
@@ -23,6 +25,7 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -71,6 +74,21 @@ function LoginForm() {
     startOAuth(authCfg?.oidc_start_url);
   }
 
+  async function signInWithPasskey() {
+    setPasskeyBusy(true);
+    setError(null);
+    try {
+      await loginWithPasskey();
+      router.push(next);
+      router.refresh();
+    } catch (e) {
+      if (e instanceof DOMException && (e.name === "NotAllowedError" || e.name === "AbortError")) return;
+      setError((e as Error).message);
+    } finally {
+      setPasskeyBusy(false);
+    }
+  }
+
   return (
     <div className="auth-card">
         <Brand />
@@ -79,8 +97,13 @@ function LoginForm() {
           Welcome back to your control plane.
         </p>
 
-        {(authCfg?.oidc_enabled || authCfg?.github_enabled || authCfg?.gitlab_enabled) && (
+        {(authCfg?.oidc_enabled || authCfg?.github_enabled || authCfg?.gitlab_enabled || authCfg?.passkey_login) && (
           <div className="stack" style={{ marginTop: 20 }}>
+            {authCfg.passkey_login && (
+              <button className="button block secondary" onClick={() => void signInWithPasskey()} type="button" disabled={busy || passkeyBusy}>
+                {passkeyBusy ? "Waiting for passkey…" : "Sign in with passkey"}
+              </button>
+            )}
             {authCfg.oidc_enabled && (
               <button className="button block secondary" onClick={startSSO} type="button">
                 Sign in with SSO
@@ -126,7 +149,7 @@ function LoginForm() {
             />
           </div>
           {error && <p className="form-error">{error}</p>}
-          <button type="submit" className="button block" disabled={busy || !email || !password}>
+          <button type="submit" className="button block" disabled={busy || passkeyBusy || !email || !password}>
             {busy ? "Signing in…" : "Sign in"}
           </button>
         </form>
