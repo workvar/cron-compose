@@ -145,6 +145,31 @@ func TestWebAuthnStoreChallengePutTake(t *testing.T) {
 	}
 }
 
+func TestWebAuthnStoreHasPasskey(t *testing.T) {
+	env := newWebAuthnTestEnv(t)
+	ok, err := env.store.HasPasskey(env.ctx, env.userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("expected no passkey")
+	}
+	c := Cred{
+		ID:           ids.New(),
+		UserID:       env.userID,
+		CredentialID: []byte{20, 21, 22, byte(time.Now().UnixNano() & 0xff)},
+		PublicKey:    []byte{9},
+		Name:         "Laptop",
+	}
+	if err := env.store.InsertCredential(env.ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	ok, err = env.store.HasPasskey(env.ctx, env.userID)
+	if err != nil || !ok {
+		t.Fatalf("got ok=%v err=%v", ok, err)
+	}
+}
+
 func TestWebAuthnStoreChallengeTakeTwice(t *testing.T) {
 	env := newWebAuthnTestEnv(t)
 	chID := ids.New()

@@ -21,6 +21,7 @@ type handler struct {
 	settings  *OAuthSettingsStore
 	envGithub OAuthProvider
 	envGitlab OAuthProvider
+	publicURL string
 }
 
 func (h *handler) config(c fiber.Ctx) error {
@@ -33,8 +34,10 @@ func (h *handler) config(c fiber.Ctx) error {
 			gitlab = p
 		}
 	}
+	_, rpErr := relyingParty(h.publicURL)
 	return c.JSON(fiber.Map{
 		"password_login":   true,
+		"passkey_login":    rpErr == nil,
 		"oidc_enabled":     h.oidcEnabled,
 		"oidc_start_url":   "/api/v1/auth/oidc/start",
 		"github_enabled":   github.Enabled(),
@@ -47,13 +50,15 @@ func (h *handler) config(c fiber.Ctx) error {
 // Register attaches the endpoints that must work before a session exists:
 // /auth/login, /auth/logout, /auth/config. envGithub/envGitlab are the OAuth
 // defaults resolved from env vars at boot; settings is the admin-configurable DB
-// override (nil disables it, e.g. in tests).
+// override (nil disables it, e.g. in tests). publicURL is PUBLIC_BASE_URL /
+// PUBLIC_HTTP_URL; when it has a host, GET /auth/config reports passkey_login.
 //
 // /me is deliberately NOT here. It reads the caller's identity out of the request
 // locals, which only RequireAuth populates, so it has to be registered on the
 // authenticated group instead. See RegisterMe.
-func Register(r fiber.Router, log *slog.Logger, store *Store, secret []byte, oidcEnabled bool, settings *OAuthSettingsStore, envGithub, envGitlab OAuthProvider) {
+func Register(r fiber.Router, log *slog.Logger, store *Store, secret []byte, oidcEnabled bool, settings *OAuthSettingsStore, envGithub, envGitlab OAuthProvider, publicURL string) {
 	h := newHandler(log, store, secret, oidcEnabled, settings, envGithub, envGitlab)
+	h.publicURL = publicURL
 	r.Post("/auth/login", h.login)
 	r.Post("/auth/logout", h.logout)
 	r.Get("/auth/config", h.config)

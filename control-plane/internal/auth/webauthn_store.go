@@ -59,6 +59,15 @@ func (s *WebAuthnStore) InsertCredential(ctx context.Context, c Cred) error {
 	return err
 }
 
+// HasPasskey reports whether the user has at least one enrolled passkey.
+func (s *WebAuthnStore) HasPasskey(ctx context.Context, userID string) (bool, error) {
+	list, err := s.ListByUser(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return len(list) > 0, nil
+}
+
 // ListByUser returns all credentials for a user, newest first.
 func (s *WebAuthnStore) ListByUser(ctx context.Context, userID string) ([]Cred, error) {
 	rows, err := s.pool.Query(ctx, `

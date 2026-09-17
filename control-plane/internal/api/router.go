@@ -81,9 +81,10 @@ func New(d Deps) *fiber.App {
 	writer := audit.NewWriter(d.Pool, d.Log)
 	conns := auth.NewConnStore(d.Pool, d.Crypto)
 	oauthSettings := auth.NewOAuthSettingsStore(d.Pool, d.Crypto)
+	waStore := auth.NewWebAuthnStore(d.Pool)
 
 	v1 := app.Group("/api/v1")
-	auth.Register(v1, d.Log, userStore, d.SessionSecret, d.OIDC != nil, oauthSettings, d.GitHubOAuth, d.GitLabOAuth)
+	auth.Register(v1, d.Log, userStore, d.SessionSecret, d.OIDC != nil, oauthSettings, d.GitHubOAuth, d.GitLabOAuth, d.PublicHTTPURL)
 	postPath := d.OIDCPostPath
 	if postPath == "" {
 		postPath = "/"
@@ -102,6 +103,7 @@ func New(d Deps) *fiber.App {
 
 	authed := v1.Group("", auth.RequireAuth(d.SessionSecret, userStore, d.Log))
 	auth.RegisterMe(authed, d.Log, userStore, d.SessionSecret, d.OIDC != nil)
+	auth.RegisterPasskeys(v1, authed, d.Log, userStore, waStore, d.SessionSecret, d.PublicHTTPURL)
 	servers.Register(authed, d.Log, d.Pool, writer, servers.Endpoints{
 		PublicHTTPURL:    d.PublicHTTPURL,
 		PublicGRPCAddr:   d.PublicGRPCAddr,
