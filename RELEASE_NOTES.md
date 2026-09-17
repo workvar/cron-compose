@@ -1,33 +1,23 @@
-# CronCompose v0.0.8
+# CronCompose v0.0.10
 
-Configure Git OAuth from Settings instead of `.env`, delete a server (and its run
-history) from the UI, and a batch of smaller fixes: a slimmer update banner, editable
-clone-path languages, a Ports server filter, and a password-manager annoyance on
-Secrets.
+Agent and stack updates now say what they are actually doing — fetching the
+release, downloading images and packages, building, stopping the server,
+restarting — with a determinate progress bar. The server Delete action is an
+icon-only trash control so it matches the rest of the header.
 
 ## Highlights
 
-- **Git OAuth from Settings** — GitHub/GitLab OAuth app credentials (client ID,
-  client secret, callback URL, GitLab base URL) can now be plugged in from
-  Settings → Git OAuth, admin-only. Takes effect immediately, no restart. Leave it
-  unset and the control plane falls back to `GITHUB_OAUTH_*`/`GITLAB_OAUTH_*` in
-  `.env` exactly as before, so nothing changes for an existing install that doesn't
-  touch this.
-- **Delete a server** — The server detail page now has a Delete action
-  (admin/owner), which removes the server, its jobs, and its run history. Fixes a
-  related bug: deleting a server with any run history used to fail outright with a
-  foreign-key error, because `runs.server_id` was the one server-scoped table that
-  never cascaded.
-- **Clone paths: add/remove languages** — Settings → Clone paths now lets you add a
-  language that isn't in the default set or drop one you don't use (e.g. Elixir),
-  laid out as a responsive grid with a logo per language instead of a single
-  stacked column.
-- **Ports: filter by server** — A server dropdown next to the search bar scopes the
-  Ports table to one server, on top of the existing text search.
-- **Dashboard update banner, slimmed** — Collapses to one row instead of a
-  headline + paragraph + button column.
-- **Secrets form fix** — The scope field no longer gets auto-highlighted by
-  password managers guessing it's a username field next to the value input.
+- **Live update stages** — The full-screen stack overlay and the per-agent
+  update panel no longer stall on "Building…" / "Restarting…". The agent
+  streams named stages (`UpdateProgress` on the gRPC stream) as `update.sh`
+  runs: git fetch/checkout, Docker image / npm downloads, compiles, migrations,
+  stopping services, restart. `GET /updates` exposes the current stage so a
+  page refresh does not lose the story. When the control plane itself goes
+  down mid-stack-update, the overlay switches to "Stopping the server" then
+  "Restarting services" until the new version answers.
+- **Delete server, restyled** — The server detail header keeps a destructive
+  delete, but it is now a white icon button with a red trash glyph (no "Delete"
+  label). Confirmation is unchanged.
 
 ## Upgrade notes
 
@@ -38,19 +28,19 @@ From Settings → Updates, click **Update** on this host. Or by hand:
 ```sh
 cd cron-compose
 git fetch --tags
-git checkout --force v0.0.8
+git checkout --force v0.0.10
 ./update.sh --no-pull
 ```
 
-This release applies two migrations: `0015_server_delete_cascade.sql` (cascades
-`runs.server_id`, needed for the new Delete action) and
-`0016_oauth_settings.sql` (adds the `oauth_settings` table for the new Git OAuth
-UI — empty until you fill it in, so nothing changes unless you use it). `update.sh`
-runs both automatically; back up Postgres first if you want a rollback path.
+No new database migrations in this release.
 
 ### Agent (Linux / macOS)
 
-No agent changes in this release. Existing agents keep working as-is.
+This release changes the agent protocol (a new `UpdateProgress` message). Older
+agents still apply updates; they just cannot narrate stages, so the UI falls
+back to the coarser online/offline signals. A stack update rebuilds the local
+agent automatically. Standalone agents pick it up the next time they self-update,
+or reinstall:
 
 ```sh
 curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh | \
@@ -59,15 +49,3 @@ curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/insta
        CONTROL_PLANE_ADDR=<host>:9090 \
        bash
 ```
-
-### Optional: Git OAuth via Settings
-
-Nothing changes unless you opt in.
-
-1. Create a GitHub or GitLab OAuth app, using this control plane's public URL plus
-   `/api/auth/<github|gitlab>/callback` as the callback URL (Settings → Git OAuth
-   shows the exact URL it expects).
-2. Paste the client ID and client secret into Settings → Git OAuth and save. GitLab
-   also takes a base URL if you're self-hosted.
-3. That's it — no restart. Use **Revert to .env** to go back to whatever (if
-   anything) is set there.
