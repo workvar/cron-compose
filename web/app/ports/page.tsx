@@ -8,6 +8,7 @@ import { IconSearch } from "@/components/icons";
 import { PortLabelInput } from "@/components/connectors/PortLabelInput";
 import { StepList } from "@/components/connectors/StepList";
 import { useConnectorCommand } from "@/components/connectors/useConnectorCommand";
+import { SearchableSelect } from "@/components/SearchableSelect";
 
 const PORT_KINDS = new Set(["systemd", "pm2"]);
 
@@ -15,6 +16,7 @@ export default function PortsPage() {
   const [rows, setRows] = useState<MappedPort[]>([]);
   const [connectorCount, setConnectorCount] = useState(0);
   const [query, setQuery] = useState("");
+  const [serverFilter, setServerFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [canAct, setCanAct] = useState(false);
@@ -67,7 +69,20 @@ export default function PortsPage() {
     void load();
   }, [load]);
 
-  const visible = useMemo(() => filterMappedPorts(rows, query), [rows, query]);
+  const serverOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const r of rows) if (!seen.has(r.server_id)) seen.set(r.server_id, r.server_name);
+    return [
+      { value: "", label: "All servers" },
+      ...Array.from(seen, ([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label)),
+    ];
+  }, [rows]);
+
+  const scoped = useMemo(
+    () => (serverFilter ? rows.filter((r) => r.server_id === serverFilter) : rows),
+    [rows, serverFilter],
+  );
+  const visible = useMemo(() => filterMappedPorts(scoped, query), [scoped, query]);
 
   async function closePort(row: MappedPort) {
     const okToGo = window.confirm(
@@ -98,15 +113,25 @@ export default function PortsPage() {
         </div>
       </div>
 
-      <div className="search ports-search">
-        <IconSearch />
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by label, port, process, owner, or server…"
-          aria-label="Search ports"
+      <div className="cluster ports-filters" style={{ marginBottom: 18, alignItems: "stretch" }}>
+        <SearchableSelect
+          className="ports-server-filter"
+          value={serverFilter}
+          onChange={setServerFilter}
+          options={serverOptions}
+          placeholder="All servers"
+          aria-label="Filter by server"
         />
+        <div className="search ports-search" style={{ margin: 0 }}>
+          <IconSearch />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by label, port, process, owner, or server…"
+            aria-label="Search ports"
+          />
+        </div>
       </div>
 
       {loadError && <p className="form-error">{loadError}</p>}

@@ -11,17 +11,15 @@ export function UpdateBanner({ status }: { status: UpdateStatus }) {
   const hasStack = pending.some((s) => s.stack);
 
   return (
-    <div className="setup-banner" role="status">
+    <div className="setup-banner slim" role="status">
       <div className="setup-banner-head">
         <span className="setup-banner-dot" style={{ background: "var(--warn)" }} />
         <div>
           <strong>Update available — {status.latest_version}</strong>
           <p>
-            {pending.length} host{pending.length === 1 ? "" : "s"} can build this release from source
-            {hasStack ? " (includes this control-plane stack)" : ""}.
-            {online > 0
-              ? ` ${online} online — update from Settings.`
-              : " Connect agents to apply the update."}
+            {pending.length} host{pending.length === 1 ? "" : "s"} can build this release
+            {hasStack ? " (includes this control-plane stack)" : ""}
+            {online > 0 ? ` · ${online} online` : " · connect agents to apply"}
           </p>
           <div className="setup-banner-actions">
             <Link href="/settings#updates" className="button sm">Open Updates</Link>
