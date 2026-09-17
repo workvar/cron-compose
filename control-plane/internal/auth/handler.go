@@ -100,18 +100,7 @@ func (h *handler) login(c fiber.Ctx) error {
 			"error": fiber.Map{"code": "invalid_credentials", "message": "wrong email or password"},
 		})
 	}
-	exp := time.Now().Add(h.ttl)
-	value := SignSession(h.secret, Session{UserID: u.ID, ExpiresAt: exp})
-	c.Cookie(&fiber.Cookie{
-		Name:     cookieName,
-		Value:    value,
-		Path:     "/",
-		Expires:  exp,
-		HTTPOnly: true,
-		Secure:   false, // dev only; set true behind TLS
-		SameSite: "Lax",
-	})
-	return c.JSON(u)
+	return issueSession(c, h.secret, u, h.ttl)
 }
 
 func (h *handler) logout(c fiber.Ctx) error {

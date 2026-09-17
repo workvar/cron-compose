@@ -100,19 +100,12 @@ func (h *passkeyHandler) loginFinish(c fiber.Ctx) error {
 	if err := h.touchCredential(c.Context(), credential); err != nil && h.log != nil {
 		h.log.Warn("passkey sign count update failed", "err", err)
 	}
+	return h.issueSession(c, wu.user)
+}
+
+func (h *passkeyHandler) issueSession(c fiber.Ctx, u User) error {
 	clearChallengeCookie(c)
-	exp := time.Now().Add(h.ttl)
-	value := SignSession(h.secret, Session{UserID: wu.user.ID, ExpiresAt: exp})
-	c.Cookie(&fiber.Cookie{
-		Name:     cookieName,
-		Value:    value,
-		Path:     "/",
-		Expires:  exp,
-		HTTPOnly: true,
-		Secure:   false, // dev only; set true behind TLS
-		SameSite: "Lax",
-	})
-	return c.JSON(wu.user)
+	return issueSession(c, h.secret, u, h.ttl)
 }
 
 func (h *passkeyHandler) registerBegin(c fiber.Ctx) error {
@@ -227,7 +220,7 @@ func (h *passkeyHandler) loadUser(ctx context.Context, u User) (*webAuthnUser, e
 	}
 	creds := make([]webauthn.Credential, len(list))
 	for i, c := range list {
-		creds[i] = loadWebAuthnCred(c)
+		creds[i] = credFromRow(c)
 	}
 	return &webAuthnUser{user: u, creds: creds}, nil
 }

@@ -36,6 +36,22 @@ func clearSession(c fiber.Ctx) {
 	})
 }
 
+// issueSession writes the cc_session cookie the same way password login does,
+// then returns the user as JSON.
+func issueSession(c fiber.Ctx, secret []byte, u User, ttl time.Duration) error {
+	exp := time.Now().Add(ttl)
+	c.Cookie(&fiber.Cookie{
+		Name:     cookieName,
+		Value:    SignSession(secret, Session{UserID: u.ID, ExpiresAt: exp}),
+		Path:     "/",
+		Expires:  exp,
+		HTTPOnly: true,
+		Secure:   false, // dev only; set true behind TLS
+		SameSite: "Lax",
+	})
+	return c.JSON(u)
+}
+
 func unauthenticated(c fiber.Ctx, message string) error {
 	clearSession(c)
 	return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{

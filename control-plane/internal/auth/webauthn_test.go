@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/croncompose/croncompose/control-plane/internal/ids"
@@ -158,5 +159,115 @@ func TestLoginFinishRejectsMissingChallenge(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("status=%d want 400 body=%s", resp.StatusCode, body)
+	}
+}
+
+func TestCredToPublicKeyStoresJSONNotRawCOSE(t *testing.T) {
+	credID := []byte{0x01, 0x02, 0x03, 0x04}
+	cose := []byte{0xa5, 0x01, 0x02, 0x03}
+	in := &webauthn.Credential{
+		ID:        credID,
+		PublicKey: cose,
+		Flags:     webauthn.CredentialFlags{BackupEligible: true, UserVerified: true},
+		Authenticator: webauthn.Authenticator{
+			SignCount: 7,
+		},
+	}
+	blob, err := credToPublicKey(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !json.Valid(blob) {
+		t.Fatalf("public_key column must be JSON, got %q", blob)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(blob, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := raw["id"]; !ok {
+		t.Fatalf("JSON missing credential id: %s", blob)
+	}
+	flags, _ := raw["flags"].(map[string]any)
+	if flags["backupEligible"] != true {
+		t.Fatalf("JSON missing BackupEligible flag: %s", blob)
+	}
+
+	got := credFromRow(Cred{CredentialID: credID, PublicKey: blob, SignCount: 11})
+	if string(got.ID) != string(credID) {
+		t.Fatalf("id=%v want %v", got.ID, credID)
+	}
+	if !got.Flags.BackupEligible {
+		t.Fatal("BackupEligible not restored from JSON public_key")
+	}
+	if got.Authenticator.SignCount != 11 {
+		t.Fatalf("sign_count overlay: got %d want 11", got.Authenticator.SignCount)
+	}
+	if string(got.PublicKey) == string(blob) {
+		t.Fatal("decoded PublicKey should be COSE bytes, not the JSON column")
+	}
+}
+
+func TestCredFromRowRawByteFallback(t *testing.T) {
+	cose := []byte{9, 8, 7, 6}
+	id := []byte{1, 2, 3}
+	got := credFromRow(Cred{
+		CredentialID:    id,
+		PublicKey:       cose,
+		AttestationType: "none",
+		Transport:       []string{"internal"},
+		SignCount:       3,
+	})
+	if string(got.PublicKey) != string(cose) {
+		t.Fatalf("fallback PublicKey=%v want raw COSE %v", got.PublicKey, cose)
+	}
+	if string(got.ID) != string(id) {
+		t.Fatalf("id=%v want %v", got.ID, id)
+	}
+	if got.Flags.BackupEligible {
+		t.Fatal("raw-byte fallback must not invent BackupEligible")
+	}
+	if got.Authenticator.SignCount != 3 {
+		t.Fatalf("sign_count=%d want 3", got.Authenticator.SignCount)
+	}
+}
+
+func TestPasskeyLoginFinishSetsSessionCookie(t *testing.T) {
+	secret := []byte("test-secret-at-least-16")
+	u := User{ID: "user-abc", Email: "a@example.com", Name: "Ada", Role: "admin"}
+	app := fiber.New()
+	h := &passkeyHandler{secret: secret, ttl: time.Hour}
+	app.Post("/auth/passkey/login/finish", func(c fiber.Ctx) error {
+		return h.issueSession(c, u)
+	})
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodPost, "/auth/passkey/login/finish", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status=%d body=%s", resp.StatusCode, body)
+	}
+
+	var cookie *http.Cookie
+	for _, c := range resp.Cookies() {
+		if c.Name == cookieName {
+			cookie = c
+			break
+		}
+	}
+	if cookie == nil || cookie.Value == "" {
+		t.Fatalf("missing %s cookie: %v", cookieName, resp.Header.Values("Set-Cookie"))
+	}
+	if !cookie.HttpOnly {
+		t.Fatal("cc_session must be HttpOnly")
+	}
+	sess, err := ParseSession(secret, cookie.Value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sess.UserID != u.ID {
+		t.Fatalf("session user=%q want %q", sess.UserID, u.ID)
 	}
 }

@@ -105,7 +105,20 @@ func (u *webAuthnUser) WebAuthnDisplayName() string {
 }
 func (u *webAuthnUser) WebAuthnCredentials() []webauthn.Credential { return u.creds }
 
-func loadWebAuthnCred(c Cred) webauthn.Credential {
+// credToPublicKey encodes a library credential for the public_key column.
+//
+// Contract (no schema change): new enrollments store JSON of webauthn.Credential
+// (id, COSE public key, flags including BackupEligible, attestation). Do not treat
+// this column as raw COSE. SignCount is also written to its own column and overlaid
+// on load via credFromRow.
+func credToPublicKey(credential *webauthn.Credential) ([]byte, error) {
+	return json.Marshal(credential)
+}
+
+// credFromRow restores a library credential from a store row. JSON public_key is
+// the current form. Task 1 fixtures and any pre-JSON rows may still hold raw COSE
+// bytes; that fallback does not invent BackupEligible.
+func credFromRow(c Cred) webauthn.Credential {
 	var wa webauthn.Credential
 	if json.Unmarshal(c.PublicKey, &wa) == nil && len(wa.ID) > 0 && len(wa.PublicKey) > 0 {
 		wa.Authenticator.SignCount = c.SignCount
@@ -125,10 +138,7 @@ func loadWebAuthnCred(c Cred) webauthn.Credential {
 }
 
 func credFromWebAuthn(userID, name string, credential *webauthn.Credential) (Cred, error) {
-	// Persist the full library credential (flags, attestation, COSE key) as JSON in
-	// public_key so login can restore BackupEligible and related fields without a
-	// schema change. SignCount is also stored in its column and overlaid on load.
-	blob, err := json.Marshal(credential)
+	blob, err := credToPublicKey(credential)
 	if err != nil {
 		return Cred{}, err
 	}
