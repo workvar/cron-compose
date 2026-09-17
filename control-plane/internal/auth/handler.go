@@ -9,35 +9,51 @@ import (
 )
 
 type handler struct {
-	log           *slog.Logger
-	store         *Store
-	secret        []byte
-	ttl           time.Duration
-	oidcEnabled   bool
-	githubEnabled bool
-	gitlabEnabled bool
+	log         *slog.Logger
+	store       *Store
+	secret      []byte
+	ttl         time.Duration
+	oidcEnabled bool
+	// settings holds any admin-configured DB override for GitHub/GitLab OAuth
+	// (see OAuthSettingsStore); envGithub/envGitlab are the env-derived fallbacks.
+	// Enabled-ness is resolved per-request so a Settings save takes effect without
+	// a restart.
+	settings  *OAuthSettingsStore
+	envGithub OAuthProvider
+	envGitlab OAuthProvider
 }
 
 func (h *handler) config(c fiber.Ctx) error {
+	github, gitlab := h.envGithub, h.envGitlab
+	if h.settings != nil {
+		if p, err := h.settings.Resolve(c.Context(), "github", h.envGithub); err == nil {
+			github = p
+		}
+		if p, err := h.settings.Resolve(c.Context(), "gitlab", h.envGitlab); err == nil {
+			gitlab = p
+		}
+	}
 	return c.JSON(fiber.Map{
 		"password_login":   true,
 		"oidc_enabled":     h.oidcEnabled,
 		"oidc_start_url":   "/api/v1/auth/oidc/start",
-		"github_enabled":   h.githubEnabled,
+		"github_enabled":   github.Enabled(),
 		"github_start_url": "/api/v1/auth/github/start",
-		"gitlab_enabled":   h.gitlabEnabled,
+		"gitlab_enabled":   gitlab.Enabled(),
 		"gitlab_start_url": "/api/v1/auth/gitlab/start",
 	})
 }
 
 // Register attaches the endpoints that must work before a session exists:
-// /auth/login, /auth/logout, /auth/config.
+// /auth/login, /auth/logout, /auth/config. envGithub/envGitlab are the OAuth
+// defaults resolved from env vars at boot; settings is the admin-configurable DB
+// override (nil disables it, e.g. in tests).
 //
 // /me is deliberately NOT here. It reads the caller's identity out of the request
 // locals, which only RequireAuth populates, so it has to be registered on the
 // authenticated group instead. See RegisterMe.
-func Register(r fiber.Router, log *slog.Logger, store *Store, secret []byte, oidcEnabled, githubEnabled, gitlabEnabled bool) {
-	h := newHandler(log, store, secret, oidcEnabled, githubEnabled, gitlabEnabled)
+func Register(r fiber.Router, log *slog.Logger, store *Store, secret []byte, oidcEnabled bool, settings *OAuthSettingsStore, envGithub, envGitlab OAuthProvider) {
+	h := newHandler(log, store, secret, oidcEnabled, settings, envGithub, envGitlab)
 	r.Post("/auth/login", h.login)
 	r.Post("/auth/logout", h.logout)
 	r.Get("/auth/config", h.config)
@@ -49,12 +65,15 @@ func Register(r fiber.Router, log *slog.Logger, store *Store, secret []byte, oid
 // on the public group would shadow the authenticated one, and the handler would then
 // see an empty user id on every request.
 func RegisterMe(r fiber.Router, log *slog.Logger, store *Store, secret []byte, oidcEnabled bool) {
-	h := newHandler(log, store, secret, oidcEnabled, false, false)
+	h := newHandler(log, store, secret, oidcEnabled, nil, OAuthProvider{}, OAuthProvider{})
 	r.Get("/me", h.me)
 }
 
-func newHandler(log *slog.Logger, store *Store, secret []byte, oidcEnabled, githubEnabled, gitlabEnabled bool) *handler {
-	return &handler{log: log, store: store, secret: secret, ttl: 7 * 24 * time.Hour, oidcEnabled: oidcEnabled, githubEnabled: githubEnabled, gitlabEnabled: gitlabEnabled}
+func newHandler(log *slog.Logger, store *Store, secret []byte, oidcEnabled bool, settings *OAuthSettingsStore, envGithub, envGitlab OAuthProvider) *handler {
+	return &handler{
+		log: log, store: store, secret: secret, ttl: 7 * 24 * time.Hour, oidcEnabled: oidcEnabled,
+		settings: settings, envGithub: envGithub, envGitlab: envGitlab,
+	}
 }
 
 type loginInput struct {

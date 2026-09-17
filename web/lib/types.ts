@@ -244,6 +244,18 @@ export type GitConnection = {
   created_at: string;
 };
 
+// Admin-configured GitHub/GitLab OAuth app credentials (Settings > Git OAuth). The
+// client secret itself is never sent to the browser, only whether one is set.
+export type OAuthSettings = {
+  provider: "github" | "gitlab";
+  client_id: string;
+  has_secret: boolean;
+  redirect_url: string;
+  base_url?: string;
+  configured: boolean;
+  updated_at: string;
+};
+
 export type GitRepo = {
   id: string;
   full_name: string;

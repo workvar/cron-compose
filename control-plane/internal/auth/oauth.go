@@ -40,17 +40,22 @@ func (p OAuthProvider) Enabled() bool {
 type oauthHandler struct {
 	store       *Store
 	conns       *ConnStore
+	settings    *OAuthSettingsStore
 	secret      []byte
 	ttl         time.Duration
-	github      OAuthProvider
-	gitlab      OAuthProvider
+	envGithub   OAuthProvider // env-derived defaults, used when no DB override is configured
+	envGitlab   OAuthProvider
 	postPath    string
 	http        *http.Client
 	defaultRole string
 }
 
-// RegisterOAuth attaches GitHub/GitLab login and "connect git" routes.
-func RegisterOAuth(r fiber.Router, store *Store, conns *ConnStore, secret []byte, github, gitlab OAuthProvider, postPath, defaultRole string) {
+// RegisterOAuth attaches GitHub/GitLab login and "connect git" routes. envGithub and
+// envGitlab are the defaults resolved from GITHUB_OAUTH_*/GITLAB_OAUTH_* env vars at
+// boot; settings holds any admin-configured DB override, which wins per-request when
+// present (see OAuthSettingsStore.Resolve). This lets an admin plug in OAuth app
+// credentials from Settings without restarting the control plane.
+func RegisterOAuth(r fiber.Router, store *Store, conns *ConnStore, settings *OAuthSettingsStore, secret []byte, envGithub, envGitlab OAuthProvider, postPath, defaultRole string) {
 	if postPath == "" {
 		postPath = "/"
 	}
@@ -58,8 +63,8 @@ func RegisterOAuth(r fiber.Router, store *Store, conns *ConnStore, secret []byte
 		defaultRole = "viewer"
 	}
 	h := &oauthHandler{
-		store: store, conns: conns, secret: secret, ttl: 7 * 24 * time.Hour,
-		github: github, gitlab: gitlab, postPath: postPath,
+		store: store, conns: conns, settings: settings, secret: secret, ttl: 7 * 24 * time.Hour,
+		envGithub: envGithub, envGitlab: envGitlab, postPath: postPath,
 		http:        &http.Client{Timeout: 20 * time.Second},
 		defaultRole: defaultRole,
 	}
@@ -69,12 +74,30 @@ func RegisterOAuth(r fiber.Router, store *Store, conns *ConnStore, secret []byte
 	r.Get("/auth/gitlab/callback", h.callbackGitLab)
 }
 
+// resolve returns the provider config a request should use right now: the admin's
+// DB override when one is configured, otherwise the env default the process booted
+// with. Resolved fresh per-request so a Settings save takes effect immediately.
+func (h *oauthHandler) resolve(ctx context.Context, name string) OAuthProvider {
+	envDefault := h.envGithub
+	if name == "gitlab" {
+		envDefault = h.envGitlab
+	}
+	if h.settings == nil {
+		return envDefault
+	}
+	p, err := h.settings.Resolve(ctx, name, envDefault)
+	if err != nil {
+		return envDefault
+	}
+	return p
+}
+
 func (h *oauthHandler) startGitHub(c fiber.Ctx) error {
-	return h.start(c, h.github, githubScopes(c.Query("purpose")))
+	return h.start(c, h.resolve(c.Context(), "github"), githubScopes(c.Query("purpose")))
 }
 
 func (h *oauthHandler) startGitLab(c fiber.Ctx) error {
-	return h.start(c, h.gitlab, gitlabScopes(c.Query("purpose")))
+	return h.start(c, h.resolve(c.Context(), "gitlab"), gitlabScopes(c.Query("purpose")))
 }
 
 func githubScopes(purpose string) string {
@@ -134,11 +157,11 @@ func (h *oauthHandler) start(c fiber.Ctx, p OAuthProvider, scope string) error {
 }
 
 func (h *oauthHandler) callbackGitHub(c fiber.Ctx) error {
-	return h.callback(c, h.github)
+	return h.callback(c, h.resolve(c.Context(), "github"))
 }
 
 func (h *oauthHandler) callbackGitLab(c fiber.Ctx) error {
-	return h.callback(c, h.gitlab)
+	return h.callback(c, h.resolve(c.Context(), "gitlab"))
 }
 
 func (h *oauthHandler) callback(c fiber.Ctx, p OAuthProvider) error {

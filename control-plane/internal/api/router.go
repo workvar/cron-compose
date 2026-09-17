@@ -80,9 +80,10 @@ func New(d Deps) *fiber.App {
 	userStore := auth.NewStore(d.Pool)
 	writer := audit.NewWriter(d.Pool, d.Log)
 	conns := auth.NewConnStore(d.Pool, d.Crypto)
+	oauthSettings := auth.NewOAuthSettingsStore(d.Pool, d.Crypto)
 
 	v1 := app.Group("/api/v1")
-	auth.Register(v1, d.Log, userStore, d.SessionSecret, d.OIDC != nil, d.GitHubOAuth.Enabled(), d.GitLabOAuth.Enabled())
+	auth.Register(v1, d.Log, userStore, d.SessionSecret, d.OIDC != nil, oauthSettings, d.GitHubOAuth, d.GitLabOAuth)
 	postPath := d.OIDCPostPath
 	if postPath == "" {
 		postPath = "/"
@@ -92,7 +93,7 @@ func New(d Deps) *fiber.App {
 	if defaultRole == "" {
 		defaultRole = "viewer"
 	}
-	auth.RegisterOAuth(v1, userStore, conns, d.SessionSecret, d.GitHubOAuth, d.GitLabOAuth, postPath, defaultRole)
+	auth.RegisterOAuth(v1, userStore, conns, oauthSettings, d.SessionSecret, d.GitHubOAuth, d.GitLabOAuth, postPath, defaultRole)
 	agentenroll.Register(v1, d.Log, d.Pool, d.PKI, d.GRPCAddr)
 	setup.Register(v1, setup.NewHandler(
 		d.Log, d.Env, d.DatabaseURL, d.ProjectRoot, d.MigrationsDir, d.BootstrapMode,
@@ -112,6 +113,7 @@ func New(d Deps) *fiber.App {
 	runs.Register(authed, d.Log, d.Pool, d.Gateway.Broker())
 	terminal.Register(authed, d.Log, d.Gateway, writer, d.PublicHTTPURL)
 	audit.Register(authed, d.Log, d.Pool)
+	auth.RegisterOAuthSettings(authed.Group("", auth.RequireRole("admin")), oauthSettings, writer)
 	secrets.Register(authed, d.Log, d.Pool, d.Crypto, writer)
 	notify.Register(authed, d.Log, d.Pool, writer, d.Notifier)
 	updates.Register(authed, d.Log, d.Pool, d.Updates, d.ManualUpdatePolicy, d.Gateway, writer)
