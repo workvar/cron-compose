@@ -171,6 +171,11 @@ func applyStack(ctx context.Context, log *slog.Logger, root, tag string) error {
 }
 
 func applyAgent(ctx context.Context, log *slog.Logger, repo, tag string) (string, error) {
+	goBin, err := findGo()
+	if err != nil {
+		return "", err
+	}
+
 	src, err := os.MkdirTemp("", "croncompose-src-*")
 	if err != nil {
 		return "", err
@@ -188,7 +193,7 @@ func applyAgent(ctx context.Context, log *slog.Logger, repo, tag string) (string
 	}
 	ver := strings.TrimPrefix(tag, "v")
 	ldflags := fmt.Sprintf("-s -w -X github.com/croncompose/croncompose/agent/internal/config.buildVersion=%s", ver)
-	if err := run(ctx, filepath.Join(src, "agent"), "go", "build",
+	if err := runWithPATH(ctx, filepath.Join(src, "agent"), goBin, "build",
 		"-trimpath", "-ldflags", ldflags, "-o", out, "./cmd/agent"); err != nil {
 		return "", fmt.Errorf("go build: %w", err)
 	}
@@ -201,14 +206,83 @@ func applyAgent(ctx context.Context, log *slog.Logger, repo, tag string) (string
 	return installed, nil
 }
 
+// findGo locates a usable Go toolchain even when the agent was started by a
+// supervisor (systemd, launchd) whose service PATH doesn't include a manually
+// installed Go. Mirrors scripts/install-agent.sh's find_go so a self-triggered
+// update finds Go in the same places a fresh interactive install would.
+func findGo() (string, error) {
+	if p, err := exec.LookPath("go"); err == nil {
+		return p, nil
+	}
+	if v := strings.TrimSpace(os.Getenv("AGENT_GO_BIN")); v != "" {
+		if isExecutableFile(v) {
+			return v, nil
+		}
+	}
+	candidates := []string{
+		"/usr/local/go/bin/go",
+		"/usr/lib/go/bin/go",
+		"/opt/go/bin/go",
+		"/usr/lib/go-1.25/bin/go",
+		"/usr/lib/go-1.26/bin/go",
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		candidates = append(candidates,
+			filepath.Join(home, "go", "bin", "go"),
+			filepath.Join(home, ".go", "bin", "go"),
+			filepath.Join(home, ".local", "go", "bin", "go"),
+			filepath.Join(home, "sdk", "go", "bin", "go"),
+		)
+	}
+	for _, c := range candidates {
+		if isExecutableFile(c) {
+			return c, nil
+		}
+	}
+	return "", fmt.Errorf(`"go" not found on PATH or in the usual install locations; ` +
+		"install Go 1.25+ (https://go.dev/dl/) or set AGENT_GO_BIN to its full path")
+}
+
+func isExecutableFile(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return false
+	}
+	return info.Mode()&0o111 != 0
+}
+
 func run(ctx context.Context, dir string, name string, args ...string) error {
+	return runEnv(ctx, dir, os.Environ(), name, args...)
+}
+
+// runWithPATH runs bin (an absolute or relative path, not resolved via PATH)
+// with bin's directory prepended to PATH, so the build itself and anything it
+// shells out to (a linker, cgo's cc, go vet, ...) can find their own tools too.
+func runWithPATH(ctx context.Context, dir, bin string, args ...string) error {
+	binDir := filepath.Dir(bin)
+	env := os.Environ()
+	found := false
+	for i, e := range env {
+		if strings.HasPrefix(e, "PATH=") {
+			env[i] = "PATH=" + binDir + string(os.PathListSeparator) + strings.TrimPrefix(e, "PATH=")
+			found = true
+			break
+		}
+	}
+	if !found {
+		env = append(env, "PATH="+binDir)
+	}
+	return runEnv(ctx, dir, env, bin, args...)
+}
+
+func runEnv(ctx context.Context, dir string, env []string, name string, args ...string) error {
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(cctx, name, args...)
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	cmd.Env = append(os.Environ(), "GOTOOLCHAIN=local")
+	cmd.Env = append(env, "GOTOOLCHAIN=local")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))

@@ -109,9 +109,57 @@ load_env() {
 # Source mode
 # ---------------------------------------------------------------------------
 
+# sudo, and a supervisor's stripped-down service PATH, both commonly lack a
+# manually installed Go (e.g. /usr/local/go/bin). Search the usual places, then
+# the invoking user's PATH, before giving up. Mirrors scripts/install-agent.sh's
+# find_go so a self-triggered update (run.sh from the agent's UpdateAgent RPC,
+# with whatever PATH systemd/launchd gave it) finds Go the same places a normal
+# interactive install would.
+find_go() {
+  local candidate home
+  if command -v go >/dev/null 2>&1; then
+    command -v go
+    return 0
+  fi
+  for candidate in \
+      /usr/local/go/bin/go \
+      /usr/lib/go/bin/go \
+      /opt/go/bin/go \
+      /usr/lib/go-1.25/bin/go \
+      /usr/lib/go-1.26/bin/go; do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  home="${HOME:-}"
+  if [ -n "$home" ]; then
+    for candidate in \
+        "$home/go/bin/go" \
+        "$home/.go/bin/go" \
+        "$home/.local/go/bin/go" \
+        "$home/sdk/go/bin/go"; do
+      if [ -x "$candidate" ]; then
+        printf '%s\n' "$candidate"
+        return 0
+      fi
+    done
+  fi
+  if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+    candidate="$(sudo -u "$SUDO_USER" -H bash -lc 'command -v go' 2>/dev/null || true)"
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+  return 1
+}
+
 build_go_source() {
   step "Building Go binaries"
-  command -v go >/dev/null 2>&1 || die "go not found (needed to rebuild from source)"
+  local go_bin
+  go_bin="$(find_go)" || die "go not found (needed to rebuild from source); install Go 1.25+ from https://go.dev/dl/ or add it to PATH"
+  export PATH="$(dirname "$go_bin"):$PATH"
   export GOTOOLCHAIN=local   # never let `go build` fetch a different toolchain
   local ver ldflags=""
   ver="$(git -C "$REPO_ROOT" describe --tags --always 2>/dev/null || true)"
