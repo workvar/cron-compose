@@ -49,3 +49,5 @@ Thumbs.db
 
 # Local secrets (GitHub App private key, etc.), never commit
 /secrets/
+
+.worktrees/
