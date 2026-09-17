@@ -6,9 +6,11 @@
 // another user without leaving the terminal. Built on the app's SearchableSelect so it
 // matches every other picker in the UI, with allowCustom so an account the list
 // doesn't carry (or a server whose agent couldn't be reached) can still be typed.
+// Unavailable users stay hidden until agent root mode is actually active.
 import { useEffect, useState } from "react";
 import { SearchableSelect, type SelectOption } from "@/components/SearchableSelect";
-import type { SystemUser } from "@/lib/types";
+import type { Server, SystemUser } from "@/lib/types";
+import { visibleTerminalUsers } from "@/lib/terminal-users";
 
 const ROOT = "root";
 const AGENT_USER = ""; // empty run_as means "the agent's own user"
@@ -32,14 +34,22 @@ export function UserSwitcher({ serverId, value, onChange, compact, id }: Props) 
   useEffect(() => {
     let cancelled = false;
     setState("loading");
-    fetch(`/api/servers/${serverId}/terminal/users`)
-      .then((res) => {
+    Promise.all([
+      fetch(`/api/servers/${serverId}/terminal/users`).then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json() as Promise<{ users: SystemUser[] }>;
-      })
-      .then((data) => {
+      }),
+      fetch(`/api/servers/${serverId}`)
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json() as Promise<Server>;
+        })
+        .catch(() => null),
+    ])
+      .then(([data, server]) => {
         if (cancelled) return;
-        setUsers(sortUsers(data.users ?? []));
+        const rootModeActive = !!(server?.agent_root_enabled && server?.agent_euid_root);
+        setUsers(sortUsers(visibleTerminalUsers(data.users ?? [], rootModeActive)));
         setState("ready");
       })
       .catch(() => {
@@ -74,9 +84,7 @@ export function UserSwitcher({ serverId, value, onChange, compact, id }: Props) 
 
 function userLabel(u: SystemUser): string {
   const name = u.username === ROOT ? "root" : u.username;
-  const bits = [`uid ${u.uid}`];
-  if (!u.available) bits.push("needs root agent");
-  return `${name} (${bits.join(", ")})`;
+  return `${name} (uid ${u.uid})`;
 }
 
 // Root first (it's the one people go looking for), then alphabetical.

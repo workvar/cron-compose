@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { apiGet } from "@/lib/api";
-import type { Job, ListResponse, Me, Server } from "@/lib/types";
+import type { Job, ListResponse, Me, Passkey, Server, UpdateStatus } from "@/lib/types";
+import { AgentRootToggle } from "@/components/AgentRootToggle";
 import { JobRow } from "@/components/JobRow";
 import { UpdateServerButton } from "@/components/UpdateServerButton";
 import { ServerActions } from "@/components/ServerActions";
 import { IconChevronLeft, IconPlus, IconTerminal } from "@/components/icons";
-import type { UpdateStatus } from "@/lib/types";
 
 const tone: Record<Server["status"], string> = { online: "ok", offline: "danger", pending: "neutral" };
 
@@ -36,6 +36,14 @@ export default async function ServerDetailPage({ params }: Props) {
   }
   const canTerminal = me?.role === "admin" || me?.role === "owner";
   const updateInfo = updates?.items.find((s) => s.server_id === id);
+  let hasPasskeys = false;
+  if (canTerminal) {
+    try {
+      hasPasskeys = (await apiGet<ListResponse<Passkey>>("/auth/passkeys")).items.length > 0;
+    } catch {
+      hasPasskeys = false;
+    }
+  }
 
   if (error || !server) {
     return (
@@ -69,6 +77,8 @@ export default async function ServerDetailPage({ params }: Props) {
       </div>
 
       {server.description && <p className="subtle" style={{ marginTop: -8, marginBottom: 18 }}>{server.description}</p>}
+
+      {canTerminal && <AgentRootToggle server={server} hasPasskeys={hasPasskeys} />}
 
       {canTerminal && updateInfo && (
         <UpdateServerButton

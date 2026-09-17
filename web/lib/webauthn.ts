@@ -2,7 +2,7 @@
 // (challenge, user.id, credential id / rawId / attestation fields). Browser APIs want
 // ArrayBuffers; POST /auth/passkey/*/finish wants the JSON form.
 
-import type { Passkey } from "./types";
+import type { Passkey, Server } from "./types";
 
 export type { Passkey };
 
@@ -187,4 +187,30 @@ export async function deletePasskey(id: string): Promise<void> {
     credentials: "include",
   });
   if (!res.ok && res.status !== 204) throw new Error(await readError(res, "Could not delete passkey"));
+}
+
+export async function beginStepUp(): Promise<BeginResponse> {
+  return postJSON<BeginResponse>("/api/auth/passkey/step-up/begin", {});
+}
+
+export async function stepUpWithPasskey(): Promise<{
+  challenge_id: string;
+  credential: Record<string, unknown>;
+}> {
+  const begin = await beginStepUp();
+  const cred = await navigator.credentials.get(toRequestOptions(begin.publicKey));
+  if (!cred || cred.type !== "public-key") throw new Error("Passkey verification was cancelled");
+  return {
+    challenge_id: begin.challenge_id,
+    credential: credentialToJSON(cred as PublicKeyCredential),
+  };
+}
+
+export async function setAgentRoot(serverId: string, enabled: boolean): Promise<Server> {
+  const step = await stepUpWithPasskey();
+  return postJSON<Server>(`/api/servers/${encodeURIComponent(serverId)}/agent-root`, {
+    enabled,
+    challenge_id: step.challenge_id,
+    credential: step.credential,
+  });
 }

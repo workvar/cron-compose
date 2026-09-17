@@ -21,13 +21,18 @@ export type Server = {
   agent_version?: string;
   last_seen_at?: string | null;
   created_at: string;
+  agent_root_enabled: boolean;
+  agent_euid_root: boolean;
+  agent_root_changed_at?: string | null;
+  agent_root_changed_by?: string | null;
+  agent_service_user?: string;
 };
 
 // One OS account the web terminal could switch to, from GET
 // /servers/:id/terminal/users. `available` is false when the account exists but the
 // agent on that server isn't running as root, so it can't actually become that user
-// yet (root itself always shows, even when unavailable, so the option to elevate is
-// visible rather than silently missing).
+// yet. Unavailable accounts are hidden until root mode is active
+// (agent_root_enabled && agent_euid_root).
 export type SystemUser = {
   username: string;
   uid: number;

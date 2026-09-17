@@ -42,7 +42,7 @@ export default function TerminalPage({ params }: Props) {
           <h1>Terminal</h1>
           <p className="subtle" style={{ marginTop: 6 }}>
             Opens a shell on this server. Admin/owner only; every session is audited.
-            Switching to another user needs the agent to be running as root.
+            Turn on Agent root access on the server page to switch OS users.
           </p>
         </div>
       </div>
@@ -83,10 +83,7 @@ export default function TerminalPage({ params }: Props) {
             <label htmlFor="term-user">Run as</label>
             <UserSwitcher id="term-user" serverId={id} value={runAs} onChange={setRunAs} />
             <p className="field-hint">
-              Pulled live from the server; root is always listed. Type a name if the account you
-              want isn&apos;t shown. Picking a user the agent can&apos;t yet switch to (agent not
-              running as root) fails with a clear error rather than silently running as the wrong
-              user.
+              Pulled live from the server. Type a name if the account you want isn&apos;t shown.
             </p>
           </div>
 
