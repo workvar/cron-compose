@@ -1,9 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Brand } from "@/components/Brand";
-import { loginWithPasskey } from "@/lib/webauthn";
+import { loginWithPasskey, supportsConditionalMediation } from "@/lib/webauthn";
 
 type AuthConfig = {
   password_login: boolean;
@@ -27,6 +27,8 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [condGen, setCondGen] = useState(0);
+  const condAbort = useRef<AbortController | null>(null);
 
   useEffect(() => {
     fetch("/api/me", { credentials: "include" })
@@ -37,6 +39,26 @@ function LoginForm() {
       .then(setAuthCfg)
       .catch(() => setAuthCfg({ password_login: true, oidc_enabled: false, oidc_start_url: "" }));
   }, [next, router]);
+
+  useEffect(() => {
+    if (!authCfg?.passkey_login) return;
+    const ac = new AbortController();
+    condAbort.current = ac;
+    void (async () => {
+      if (!(await supportsConditionalMediation())) return;
+      try {
+        await loginWithPasskey({ mediation: "conditional", signal: ac.signal });
+        if (ac.signal.aborted) return;
+        router.push(next);
+        router.refresh();
+      } catch (e) {
+        if (ac.signal.aborted) return;
+        if (e instanceof DOMException && (e.name === "NotAllowedError" || e.name === "AbortError")) return;
+        setError((e as Error).message);
+      }
+    })();
+    return () => ac.abort();
+  }, [authCfg?.passkey_login, condGen, next, router]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -75,6 +97,7 @@ function LoginForm() {
   }
 
   async function signInWithPasskey() {
+    condAbort.current?.abort();
     setPasskeyBusy(true);
     setError(null);
     try {
@@ -82,6 +105,7 @@ function LoginForm() {
       router.push(next);
       router.refresh();
     } catch (e) {
+      setCondGen((n) => n + 1);
       if (e instanceof DOMException && (e.name === "NotAllowedError" || e.name === "AbortError")) return;
       setError((e as Error).message);
     } finally {
@@ -129,7 +153,7 @@ function LoginForm() {
             <input
               id="email"
               type="email"
-              autoComplete="email"
+              autoComplete={authCfg?.passkey_login ? "username webauthn" : "email"}
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}

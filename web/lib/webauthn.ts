@@ -61,7 +61,15 @@ export function toCreationOptions(publicKey: Record<string, unknown>): Credentia
   };
 }
 
-export function toRequestOptions(publicKey: Record<string, unknown>): CredentialRequestOptions {
+export type RequestExtras = {
+  mediation?: CredentialMediationRequirement;
+  signal?: AbortSignal;
+};
+
+export function toRequestOptions(
+  publicKey: Record<string, unknown>,
+  extras?: RequestExtras,
+): CredentialRequestOptions {
   const allow = publicKey.allowCredentials as DescriptorJSON[] | undefined;
   return {
     publicKey: {
@@ -69,7 +77,28 @@ export function toRequestOptions(publicKey: Record<string, unknown>): Credential
       challenge: base64urlToBuffer(publicKey.challenge as string),
       ...(allow ? { allowCredentials: allow.map(decodeDescriptor) } : {}),
     },
+    ...(extras?.mediation ? { mediation: extras.mediation } : {}),
+    ...(extras?.signal ? { signal: extras.signal } : {}),
   };
+}
+
+export function normalizePasskeyName(name?: string | null): string {
+  const trimmed = name?.trim() ?? "";
+  return trimmed || "Passkey";
+}
+
+type ConditionalMediationAPI = {
+  isConditionalMediationAvailable?: () => Promise<boolean>;
+};
+
+export async function supportsConditionalMediation(): Promise<boolean> {
+  const api = (globalThis as { PublicKeyCredential?: ConditionalMediationAPI }).PublicKeyCredential;
+  if (!api || typeof api.isConditionalMediationAvailable !== "function") return false;
+  try {
+    return await api.isConditionalMediationAvailable();
+  } catch {
+    return false;
+  }
 }
 
 export function credentialToJSON(cred: PublicKeyCredential): Record<string, unknown> {
@@ -124,20 +153,20 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function registerPasskey(name = "Passkey"): Promise<Passkey> {
+export async function registerPasskey(name?: string | null): Promise<Passkey> {
   const begin = await postJSON<BeginResponse>("/api/auth/passkey/register/begin", {});
   const cred = await navigator.credentials.create(toCreationOptions(begin.publicKey));
   if (!cred || cred.type !== "public-key") throw new Error("Passkey creation was cancelled");
   return postJSON<Passkey>("/api/auth/passkey/register/finish", {
     challenge_id: begin.challenge_id,
-    name,
+    name: normalizePasskeyName(name),
     credential: credentialToJSON(cred as PublicKeyCredential),
   });
 }
 
-export async function loginWithPasskey(): Promise<void> {
+export async function loginWithPasskey(extras?: RequestExtras): Promise<void> {
   const begin = await postJSON<BeginResponse>("/api/auth/passkey/login/begin", {});
-  const cred = await navigator.credentials.get(toRequestOptions(begin.publicKey));
+  const cred = await navigator.credentials.get(toRequestOptions(begin.publicKey, extras));
   if (!cred || cred.type !== "public-key") throw new Error("Passkey sign-in was cancelled");
   await postJSON("/api/auth/passkey/login/finish", {
     challenge_id: begin.challenge_id,

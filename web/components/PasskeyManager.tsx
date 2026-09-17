@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { IconKey, IconPlus } from "@/components/icons";
 import type { Passkey } from "@/lib/types";
-import { deletePasskey, registerPasskey } from "@/lib/webauthn";
+import { deletePasskey, normalizePasskeyName, registerPasskey } from "@/lib/webauthn";
 
 function usedLabel(p: Passkey): string {
   if (p.last_used_at) return `Last used ${new Date(p.last_used_at).toLocaleString()}`;
@@ -16,15 +16,18 @@ function isCancelled(err: unknown): boolean {
 
 export function PasskeyManager({ initial }: { initial: Passkey[] }) {
   const [items, setItems] = useState(initial);
+  const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function add() {
+    const labeled = normalizePasskeyName(name);
     setBusy(true);
     setError(null);
     try {
-      const created = await registerPasskey();
+      const created = await registerPasskey(labeled);
       setItems((prev) => [created, ...prev]);
+      setName("");
     } catch (err) {
       if (isCancelled(err)) return;
       setError((err as Error).message || "Could not add passkey");
@@ -79,6 +82,17 @@ export function PasskeyManager({ initial }: { initial: Passkey[] }) {
 
       {error && <p className="form-error">{error}</p>}
 
+      <div>
+        <label htmlFor="passkey-name">Name</label>
+        <input
+          id="passkey-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Passkey"
+          autoComplete="off"
+          disabled={busy}
+        />
+      </div>
       <div>
         <button type="button" className="button" disabled={busy} onClick={() => void add()}>
           <IconPlus /> {busy ? "Waiting for passkey…" : "Add passkey"}
