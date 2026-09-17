@@ -41,6 +41,9 @@ func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, writer audit
 		stepUp:    stepUp,
 		roots:     store,
 	}
+	if gw != nil {
+		h.rootCmd = gw
+	}
 	r.Get("/servers", h.list)
 	r.Get("/servers/:id", h.get)
 

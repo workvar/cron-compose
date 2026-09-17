@@ -140,14 +140,17 @@ func (s *service) handleAgentMessage(ctx context.Context, serverID string, msg *
 
 func (s *service) onHello(ctx context.Context, serverID string, h *agentv1.Hello) error {
 	_, err := s.pool.Exec(ctx, `
-		update servers set agent_version = $1, os = $2, arch = $3, status = 'online', last_seen_at = now()
+		update servers set
+			agent_version = $1,
+			os = $2,
+			arch = $3,
+			status = 'online',
+			last_seen_at = now(),
+			agent_euid_root = $5,
+			agent_service_user = case when $6 <> '' then $6 else agent_service_user end
 		where id = $4
-	`, h.GetAgentVersion(), h.GetOs(), h.GetArch(), serverID)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	`, h.GetAgentVersion(), h.GetOs(), h.GetArch(), serverID, h.GetEuidRoot(), h.GetServiceUser())
+	return err
 }
 
 func (s *service) onHeartbeat(ctx context.Context, serverID string, _ *agentv1.Heartbeat) error {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
+	"github.com/croncompose/croncompose/control-plane/internal/agentgw"
 	"github.com/croncompose/croncompose/control-plane/internal/auth"
 )
 
@@ -26,6 +27,10 @@ type stepUpVerifier interface {
 
 type agentRootStore interface {
 	SetAgentRootEnabled(ctx context.Context, id string, enabled bool, changedBy string) (Server, error)
+}
+
+type agentRootSender interface {
+	SendAgentRootCommand(serverID string, enabled bool) error
 }
 
 func (h *handler) setAgentRoot(c fiber.Ctx) error {
@@ -59,5 +64,21 @@ func (h *handler) setAgentRoot(c fiber.Ctx) error {
 		action = "server.agent_root.enable"
 	}
 	h.audit.Write(c.Context(), userID, action, "server", srv.ID, nil)
+	if err := h.pushAgentRoot(srv.ID, in.Enabled); err != nil {
+		if errors.Is(err, agentgw.ErrAgentOffline) {
+			return jsonError(c, fiber.StatusServiceUnavailable, "agent_offline", err)
+		}
+		return jsonError(c, fiber.StatusInternalServerError, "send_failed", err)
+	}
 	return c.JSON(srv)
+}
+
+func (h *handler) pushAgentRoot(serverID string, enabled bool) error {
+	if h.rootCmd != nil {
+		return h.rootCmd.SendAgentRootCommand(serverID, enabled)
+	}
+	if h.gateway != nil {
+		return h.gateway.SendAgentRootCommand(serverID, enabled)
+	}
+	return nil
 }

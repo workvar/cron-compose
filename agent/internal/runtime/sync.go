@@ -32,6 +32,9 @@ func (r *Runtime) handleServerMessage(ctx context.Context, msg *agentv1.ServerMe
 		// Reads /etc/passwd (or shells out on macOS); fast, but keep it off the
 		// receive loop so a slow directory-service lookup can never stall it.
 		go r.handleListUsersRequest(body.ListUsersRequest)
+	case *agentv1.ServerMessage_AgentRootCommand:
+		// Task 7 runs privctl; Task 6 only acknowledges the new message type.
+		r.log.Info("agent root command (stub)", "enabled", body.AgentRootCommand.GetEnabled())
 	}
 }
 

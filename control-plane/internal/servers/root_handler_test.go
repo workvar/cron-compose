@@ -12,6 +12,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
+	"github.com/croncompose/croncompose/control-plane/internal/agentgw"
 	"github.com/croncompose/croncompose/control-plane/internal/auth"
 )
 
@@ -63,15 +64,17 @@ func TestAgentRootRejectsBadAssertion(t *testing.T) {
 }
 
 // Production change that would fail this test: skipping the DB flag / audit
-// after a valid step-up, or sending an agent command from this handler.
+// after a valid step-up, or not pushing AgentRootCommand after the persist.
 func TestAgentRootToggleSuccess(t *testing.T) {
 	roots := &fakeRootStore{srv: Server{ID: "srv-1", Name: "pi"}}
 	auditLog := &recordingAudit{}
+	sender := &stubRootSender{}
 	h := &handler{
 		passkeys: stubPasskeys{has: true},
 		stepUp:   stubPasskeys{},
 		roots:    roots,
 		audit:    auditLog,
+		rootCmd:  sender,
 	}
 	app := newAgentRootApp(t, h, "user-1", "admin")
 
@@ -94,16 +97,21 @@ func TestAgentRootToggleSuccess(t *testing.T) {
 	if !got.AgentRootEnabled || got.ID != "srv-1" {
 		t.Fatalf("got %+v", got)
 	}
+	if sender.calls != 1 || sender.serverID != "srv-1" || !sender.enabled {
+		t.Fatalf("send calls=%d id=%q enabled=%v", sender.calls, sender.serverID, sender.enabled)
+	}
 }
 
 func TestAgentRootDisableAuditsDisable(t *testing.T) {
 	roots := &fakeRootStore{srv: Server{ID: "srv-1"}}
 	auditLog := &recordingAudit{}
+	sender := &stubRootSender{}
 	h := &handler{
 		passkeys: stubPasskeys{has: true},
 		stepUp:   stubPasskeys{},
 		roots:    roots,
 		audit:    auditLog,
+		rootCmd:  sender,
 	}
 	app := newAgentRootApp(t, h, "user-1", "admin")
 
@@ -118,6 +126,36 @@ func TestAgentRootDisableAuditsDisable(t *testing.T) {
 	}
 	if len(auditLog.actions) != 1 || auditLog.actions[0] != "server.agent_root.disable" {
 		t.Fatalf("audit=%v", auditLog.actions)
+	}
+	if sender.calls != 1 || sender.enabled {
+		t.Fatalf("send calls=%d enabled=%v want demote", sender.calls, sender.enabled)
+	}
+}
+
+// Production change that would fail this test: treating a disconnected agent as
+// success (200) instead of matching SendAgentUpdate's agent_offline error.
+func TestAgentRootOfflineAfterPersist(t *testing.T) {
+	roots := &fakeRootStore{srv: Server{ID: "srv-1"}}
+	h := &handler{
+		passkeys: stubPasskeys{has: true},
+		stepUp:   stubPasskeys{},
+		roots:    roots,
+		audit:    &recordingAudit{},
+		rootCmd:  &stubRootSender{err: agentgw.ErrAgentOffline},
+	}
+	app := newAgentRootApp(t, h, "user-1", "admin")
+
+	resp := postAgentRoot(t, app, "srv-1", `{"enabled":true,"challenge_id":"ch-1","credential":{"id":"ok"}}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status=%d want 503 body=%s", resp.StatusCode, body)
+	}
+	if got := errorCode(t, resp); got != "agent_offline" {
+		t.Fatalf("code=%q want agent_offline", got)
+	}
+	if roots.setCalls != 1 {
+		t.Fatal("flag must be persisted even when the agent is offline")
 	}
 }
 
@@ -199,6 +237,20 @@ func (s stubPasskeys) HasPasskey(context.Context, string) (bool, error) {
 
 func (s stubPasskeys) VerifyStepUp(context.Context, string, string, []byte) error {
 	return s.stepErr
+}
+
+type stubRootSender struct {
+	serverID string
+	enabled  bool
+	err      error
+	calls    int
+}
+
+func (s *stubRootSender) SendAgentRootCommand(serverID string, enabled bool) error {
+	s.calls++
+	s.serverID = serverID
+	s.enabled = enabled
+	return s.err
 }
 
 type fakeRootStore struct {

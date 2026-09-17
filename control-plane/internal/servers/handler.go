@@ -26,6 +26,7 @@ type handler struct {
 	passkeys  passkeyChecker
 	stepUp    stepUpVerifier
 	roots     agentRootStore
+	rootCmd   agentRootSender
 }
 
 func (h *handler) list(c fiber.Ctx) error {

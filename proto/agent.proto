@@ -65,6 +65,7 @@ message ServerMessage {
     TerminalInput    terminal_input    = 6; // web terminal: open / stdin / resize / close
     DeployCommand    deploy_command    = 7; // clone + install on the target host
     ListUsersRequest list_users_request = 8; // web terminal: who can this box switch to?
+    AgentRootCommand agent_root_command = 9; // elevate or demote the agent process
   }
 }
 
@@ -76,6 +77,8 @@ message Hello {
   string arch          = 3;
   string sync_cursor   = 4; // last applied SyncJobs cursor, may be empty on first connect
   repeated string capabilities = 5;
+  bool   euid_root     = 6; // true when the agent process effective uid is 0
+  string service_user  = 7; // intended non-root user when demoted
 }
 
 message Heartbeat {
@@ -164,6 +167,12 @@ message UpdateAgent {
   string download_url   = 2;
   string sha256         = 3;  // hex digest of the binary at download_url; required
   bool   restart        = 4;  // exit after swapping so the supervisor restarts us
+}
+
+// AgentRootCommand asks the agent to elevate (enabled=true) or demote (enabled=false)
+// via the privileged helper. Task 6 carries the message; Task 7 runs privctl.
+message AgentRootCommand {
+  bool enabled = 1;
 }
 
 // UpdateProgress is a live stage report while an agent (or the stack it hosts)

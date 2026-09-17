@@ -8,7 +8,10 @@ import (
 	"crypto/tls"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -151,12 +154,7 @@ func (r *Runtime) connectAndServe(ctx context.Context, addr string) error {
 
 	// Enqueue Hello and a periodic heartbeat. The drain loop is the sole sender.
 	r.queue(&agentv1.AgentMessage{
-		Body: &agentv1.AgentMessage_Hello{Hello: &agentv1.Hello{
-			AgentVersion: r.cfg.AgentVersion,
-			Os:           runtime.GOOS,
-			Arch:         runtime.GOARCH,
-			Capabilities: []string{"terminal", "connectors.lifecycle", "connectors.config", "deploys"},
-		}},
+		Body: &agentv1.AgentMessage_Hello{Hello: r.newHello()},
 	})
 
 	go r.heartbeatLoop(connCtx)
@@ -220,6 +218,32 @@ func (r *Runtime) drainLoop(ctx context.Context, stream agentv1.AgentService_Age
 			return
 		}
 	}
+}
+
+func (r *Runtime) newHello() *agentv1.Hello {
+	return &agentv1.Hello{
+		AgentVersion: r.cfg.AgentVersion,
+		Os:           runtime.GOOS,
+		Arch:         runtime.GOARCH,
+		Capabilities: []string{"terminal", "connectors.lifecycle", "connectors.config", "deploys"},
+		EuidRoot:     os.Geteuid() == 0,
+		ServiceUser:  serviceUser(r.cfg.DataDir),
+	}
+}
+
+// serviceUser is the intended non-root account to restore on demote. Prefer the
+// install marker; fall back to USER so Hello still reports something before Task 7
+// writes the marker.
+func serviceUser(dataDir string) string {
+	if dataDir != "" {
+		b, err := os.ReadFile(filepath.Join(dataDir, ".run", "agent-service-user"))
+		if err == nil {
+			if s := strings.TrimSpace(string(b)); s != "" {
+				return s
+			}
+		}
+	}
+	return os.Getenv("USER")
 }
 
 func (r *Runtime) heartbeatLoop(ctx context.Context) {

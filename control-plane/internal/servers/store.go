@@ -132,7 +132,7 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 }
 
 // SetAgentRootEnabled persists the desired agent-root flag and who changed it.
-// It does not send an agent command; Task 6 wires that.
+// The HTTP handler pushes AgentRootCommand after this write.
 func (s *Store) SetAgentRootEnabled(ctx context.Context, id string, enabled bool, changedBy string) (Server, error) {
 	tag, err := s.pool.Exec(ctx, `
 		update servers
