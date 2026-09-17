@@ -103,12 +103,12 @@ func New(d Deps) *fiber.App {
 
 	authed := v1.Group("", auth.RequireAuth(d.SessionSecret, userStore, d.Log))
 	auth.RegisterMe(authed, d.Log, userStore, d.SessionSecret, d.OIDC != nil)
-	auth.RegisterPasskeys(v1, authed, d.Log, userStore, waStore, d.SessionSecret, d.PublicHTTPURL)
+	stepUp := auth.RegisterPasskeys(v1, authed, d.Log, userStore, waStore, d.SessionSecret, d.PublicHTTPURL)
 	servers.Register(authed, d.Log, d.Pool, writer, servers.Endpoints{
 		PublicHTTPURL:    d.PublicHTTPURL,
 		PublicGRPCAddr:   d.PublicGRPCAddr,
 		InstallScriptURL: d.InstallScriptURL,
-	}, d.Gateway)
+	}, d.Gateway, stepUp)
 	jobs.Register(authed, d.Log, d.Pool, d.Gateway, writer)
 	connectors.Register(authed, d.Log, d.Pool, d.Gateway, writer)
 	templates.Register(authed, d.Log, d.Pool, writer)

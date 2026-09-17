@@ -16,14 +16,37 @@ import (
 const (
 	purposeEnroll      = "enroll"
 	purposeLogin       = "login"
+	purposeStepUp      = "step_up"
 	challengeTTL       = 5 * time.Minute
-	challengeCookie    = "cc_webauthn"
+	stepUpChallengeTTL = 2 * time.Minute
+	ChallengeCookie    = "cc_webauthn"
 	rpDisplayName      = "CronCompose"
 	defaultPasskeyName = "Passkey"
 )
 
 // ErrChallengeExpired is returned when a challenge is taken after ExpiresAt.
 var ErrChallengeExpired = errors.New("webauthn challenge expired")
+
+// ErrPasskeyRequired is returned when step-up is attempted without an enrolled passkey.
+var ErrPasskeyRequired = errors.New("passkey required")
+
+// StepUp verifies a fresh WebAuthn assertion for privileged mutations.
+// Password authentication must never implement this interface.
+type StepUp interface {
+	HasPasskey(ctx context.Context, userID string) (bool, error)
+	VerifyStepUp(ctx context.Context, userID, challengeID string, assertion []byte) error
+}
+
+type disabledStepUp struct{}
+
+func (disabledStepUp) HasPasskey(context.Context, string) (bool, error) { return false, nil }
+
+func (disabledStepUp) VerifyStepUp(context.Context, string, string, []byte) error {
+	return ErrPasskeyRequired
+}
+
+// DisabledStepUp rejects every step-up until WebAuthn is configured.
+func DisabledStepUp() StepUp { return disabledStepUp{} }
 
 // relyingPartyInfo is the WebAuthn RP ID (hostname) and allowed origins derived
 // from PUBLIC_BASE_URL / PUBLIC_HTTP_URL.
@@ -56,6 +79,19 @@ func relyingParty(publicURL string) (relyingPartyInfo, error) {
 func rejectExpiredChallenge(ch *Challenge) error {
 	if ch == nil || !time.Now().Before(ch.ExpiresAt) {
 		return ErrChallengeExpired
+	}
+	return nil
+}
+
+func assertStepUpChallenge(ch *Challenge, userID string) error {
+	if ch == nil {
+		return ErrChallengeNotFound
+	}
+	if ch.Purpose != purposeStepUp {
+		return fmt.Errorf("challenge is not a step-up ceremony")
+	}
+	if ch.UserID == nil || *ch.UserID != userID {
+		return fmt.Errorf("challenge belongs to another user")
 	}
 	return nil
 }

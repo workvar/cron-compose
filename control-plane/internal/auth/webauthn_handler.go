@@ -38,13 +38,13 @@ type passkeyView struct {
 
 // RegisterPasskeys attaches passwordless login (public) and enroll/list/delete
 // (authenticated) routes when a Relying Party can be derived from publicURL.
-func RegisterPasskeys(public, authed fiber.Router, log *slog.Logger, users *Store, waStore *WebAuthnStore, secret []byte, publicURL string) {
+func RegisterPasskeys(public, authed fiber.Router, log *slog.Logger, users *Store, waStore *WebAuthnStore, secret []byte, publicURL string) StepUp {
 	wa, err := newWebAuthn(publicURL)
 	if err != nil {
 		if log != nil {
 			log.Info("passkeys disabled", "err", err)
 		}
-		return
+		return disabledStepUp{}
 	}
 	h := &passkeyHandler{
 		log: log, users: users, store: waStore, wa: wa, secret: secret, ttl: 7 * 24 * time.Hour,
@@ -53,8 +53,10 @@ func RegisterPasskeys(public, authed fiber.Router, log *slog.Logger, users *Stor
 	public.Post("/auth/passkey/login/finish", h.loginFinish)
 	authed.Post("/auth/passkey/register/begin", h.registerBegin)
 	authed.Post("/auth/passkey/register/finish", h.registerFinish)
+	authed.Post("/auth/passkey/step-up/begin", h.stepUpBegin)
 	authed.Get("/auth/passkeys", h.list)
 	authed.Delete("/auth/passkeys/:id", h.delete)
+	return h
 }
 
 func (h *passkeyHandler) loginBegin(c fiber.Ctx) error {
@@ -213,6 +215,81 @@ func (h *passkeyHandler) delete(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
+func (h *passkeyHandler) stepUpBegin(c fiber.Ctx) error {
+	u, err := h.users.GetByID(c.Context(), CurrentUserID(c))
+	if err != nil {
+		return jsonErr(c, fiber.StatusUnauthorized, "unauthenticated", err)
+	}
+	ok, err := h.store.HasPasskey(c.Context(), u.ID)
+	if err != nil {
+		return jsonErr(c, fiber.StatusInternalServerError, "list_failed", err)
+	}
+	if !ok {
+		return jsonErr(c, fiber.StatusForbidden, "passkey_required", errors.New("enroll a passkey before continuing"))
+	}
+	wu, err := h.loadUser(c.Context(), u)
+	if err != nil {
+		return jsonErr(c, fiber.StatusInternalServerError, "list_failed", err)
+	}
+	assertion, session, err := h.wa.BeginLogin(wu, webauthn.WithUserVerification(protocol.VerificationRequired))
+	if err != nil {
+		return jsonErr(c, fiber.StatusInternalServerError, "webauthn_failed", err)
+	}
+	userID := u.ID
+	chID, err := h.putSession(c, &userID, purposeStepUp, session)
+	if err != nil {
+		return jsonErr(c, fiber.StatusInternalServerError, "challenge_failed", err)
+	}
+	return c.JSON(fiber.Map{"publicKey": assertion.Response, "challenge_id": chID})
+}
+
+func (h *passkeyHandler) HasPasskey(ctx context.Context, userID string) (bool, error) {
+	if h == nil || h.store == nil {
+		return false, nil
+	}
+	return h.store.HasPasskey(ctx, userID)
+}
+
+func (h *passkeyHandler) VerifyStepUp(ctx context.Context, userID, challengeID string, assertion []byte) error {
+	if h == nil || h.wa == nil || h.store == nil {
+		return ErrPasskeyRequired
+	}
+	ch, err := takeLiveChallenge(ctx, h.store, challengeID)
+	if err != nil {
+		return err
+	}
+	if err := assertStepUpChallenge(ch, userID); err != nil {
+		return err
+	}
+	session, err := decodeSession(ch.Challenge)
+	if err != nil {
+		return err
+	}
+	parsed, err := protocol.ParseCredentialRequestResponseBytes(assertion)
+	if err != nil {
+		return err
+	}
+	u, err := h.users.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	wu, err := h.loadUser(ctx, u)
+	if err != nil {
+		return err
+	}
+	if len(wu.creds) == 0 {
+		return ErrPasskeyRequired
+	}
+	credential, err := h.wa.ValidateLogin(wu, *session, parsed)
+	if err != nil {
+		return err
+	}
+	if err := h.touchCredential(ctx, credential); err != nil && h.log != nil {
+		h.log.Warn("passkey sign count update failed", "err", err)
+	}
+	return nil
+}
+
 func (h *passkeyHandler) loadUser(ctx context.Context, u User) (*webAuthnUser, error) {
 	list, err := h.store.ListByUser(ctx, u.ID)
 	if err != nil {
@@ -249,13 +326,16 @@ func (h *passkeyHandler) putSession(c fiber.Ctx, userID *string, purpose string,
 	}
 	chID := ids.New()
 	exp := time.Now().Add(challengeTTL)
+	if purpose == purposeStepUp {
+		exp = time.Now().Add(stepUpChallengeTTL)
+	}
 	if err := h.store.PutChallenge(c.Context(), Challenge{
 		ID: chID, UserID: userID, Purpose: purpose, Challenge: blob, ExpiresAt: exp,
 	}); err != nil {
 		return "", err
 	}
 	c.Cookie(&fiber.Cookie{
-		Name:     challengeCookie,
+		Name:     ChallengeCookie,
 		Value:    chID,
 		Path:     "/",
 		Expires:  exp,
@@ -280,7 +360,7 @@ func parseFinish(c fiber.Ctx) (passkeyFinishInput, []byte, error) {
 	var in passkeyFinishInput
 	_ = c.Bind().Body(&in)
 	if in.ChallengeID == "" {
-		in.ChallengeID = c.Cookies(challengeCookie)
+		in.ChallengeID = c.Cookies(ChallengeCookie)
 	}
 	cred := in.Credential
 	if len(cred) == 0 || string(cred) == "null" {
@@ -315,7 +395,7 @@ func challengeErr(c fiber.Ctx, err error) error {
 
 func clearChallengeCookie(c fiber.Ctx) {
 	c.Cookie(&fiber.Cookie{
-		Name:     challengeCookie,
+		Name:     ChallengeCookie,
 		Value:    "",
 		Path:     "/",
 		Expires:  time.Unix(0, 0),

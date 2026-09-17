@@ -79,10 +79,16 @@ func RequireAuth(secret []byte, store *Store, log *slog.Logger) fiber.Handler {
 			}
 			return unauthenticated(c, "unknown user")
 		}
-		c.Locals(ctxUserID, u.ID)
-		c.Locals(ctxRole, u.Role)
+		AttachIdentity(c, u.ID, u.Role)
 		return c.Next()
 	}
+}
+
+// AttachIdentity stores user id and role on the request. RequireAuth calls this
+// after validating a session; tests use it to skip cookie parsing.
+func AttachIdentity(c fiber.Ctx, userID, role string) {
+	c.Locals(ctxUserID, userID)
+	c.Locals(ctxRole, role)
 }
 
 // RequireRole gates a route by minimum role rank. Use after RequireAuth.
@@ -115,8 +121,7 @@ func OptionalAuth(secret []byte, store *Store, log *slog.Logger) fiber.Handler {
 		if err != nil {
 			return c.Next()
 		}
-		c.Locals(ctxUserID, u.ID)
-		c.Locals(ctxRole, u.Role)
+		AttachIdentity(c, u.ID, u.Role)
 		return c.Next()
 	}
 }

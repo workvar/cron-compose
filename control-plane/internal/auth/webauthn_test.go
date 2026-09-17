@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -56,6 +57,69 @@ func TestLiveChallengeIsAccepted(t *testing.T) {
 	ch := &Challenge{ExpiresAt: time.Now().Add(time.Minute)}
 	if err := rejectExpiredChallenge(ch); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestStepUpChallengeRejectsLoginPurpose(t *testing.T) {
+	uid := "u1"
+	err := assertStepUpChallenge(&Challenge{Purpose: purposeLogin, UserID: &uid}, uid)
+	if err == nil {
+		t.Fatal("password session / login challenge must not satisfy step-up")
+	}
+}
+
+func TestStepUpChallengeRejectsOtherUser(t *testing.T) {
+	other := "u2"
+	err := assertStepUpChallenge(&Challenge{Purpose: purposeStepUp, UserID: &other}, "u1")
+	if err == nil {
+		t.Fatal("expected user mismatch")
+	}
+}
+
+func TestStepUpChallengeRejectsNilUser(t *testing.T) {
+	err := assertStepUpChallenge(&Challenge{Purpose: purposeStepUp}, "u1")
+	if err == nil {
+		t.Fatal("discoverable login challenges must not satisfy step-up")
+	}
+}
+
+func TestStepUpChallengeAcceptsMatchingUser(t *testing.T) {
+	uid := "u1"
+	if err := assertStepUpChallenge(&Challenge{Purpose: purposeStepUp, UserID: &uid}, uid); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDisabledStepUpRequiresPasskey(t *testing.T) {
+	s := DisabledStepUp()
+	ok, err := s.HasPasskey(context.Background(), "u1")
+	if err != nil || ok {
+		t.Fatalf("has=%v err=%v", ok, err)
+	}
+	if err := s.VerifyStepUp(context.Background(), "u1", "ch", []byte(`{}`)); !errors.Is(err, ErrPasskeyRequired) {
+		t.Fatalf("got %v want ErrPasskeyRequired", err)
+	}
+}
+
+func TestVerifyStepUpRejectsLoginChallenge(t *testing.T) {
+	env := newWebAuthnTestEnv(t)
+	wa, err := newWebAuthn("https://cron.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &passkeyHandler{users: NewStore(env.pool), store: env.store, wa: wa}
+	chID := ids.New()
+	if err := env.store.PutChallenge(env.ctx, Challenge{
+		ID:        chID,
+		UserID:    &env.userID,
+		Purpose:   purposeLogin,
+		Challenge: []byte(`{"challenge":"x"}`),
+		ExpiresAt: time.Now().Add(time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.VerifyStepUp(env.ctx, env.userID, chID, []byte(`{"id":"not-a-passkey"}`)); err == nil {
+		t.Fatal("login challenge must not satisfy step-up")
 	}
 }
 

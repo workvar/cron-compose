@@ -25,7 +25,9 @@ func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 const selectColumns = `
   id, name, coalesce(description,''), coalesce(os,''), coalesce(arch,''),
   labels, status, coalesce(agent_version,''), coalesce(cert_fingerprint,''),
-  last_seen_at, created_at
+  last_seen_at, created_at,
+  agent_root_enabled, agent_euid_root, agent_root_changed_at, agent_root_changed_by,
+  coalesce(agent_service_user,'')
 `
 
 func scan(row pgx.Row) (Server, error) {
@@ -36,6 +38,8 @@ func scan(row pgx.Row) (Server, error) {
 		&s.ID, &s.Name, &s.Description, &s.OS, &s.Arch,
 		&labelsRaw, &s.Status, &s.AgentVersion, &s.CertFingerprint,
 		&lastSeen, &s.CreatedAt,
+		&s.AgentRootEnabled, &s.AgentEuidRoot, &s.AgentRootChangedAt, &s.AgentRootChangedBy,
+		&s.AgentServiceUser,
 	); err != nil {
 		return s, err
 	}
@@ -125,4 +129,23 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// SetAgentRootEnabled persists the desired agent-root flag and who changed it.
+// It does not send an agent command; Task 6 wires that.
+func (s *Store) SetAgentRootEnabled(ctx context.Context, id string, enabled bool, changedBy string) (Server, error) {
+	tag, err := s.pool.Exec(ctx, `
+		update servers
+		set agent_root_enabled = $2,
+		    agent_root_changed_at = now(),
+		    agent_root_changed_by = $3
+		where id = $1
+	`, id, enabled, changedBy)
+	if err != nil {
+		return Server{}, err
+	}
+	if tag.RowsAffected() == 0 {
+		return Server{}, ErrNotFound
+	}
+	return s.Get(ctx, id)
 }

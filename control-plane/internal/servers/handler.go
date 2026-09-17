@@ -23,6 +23,9 @@ type handler struct {
 	audit     audit.Writer
 	endpoints Endpoints
 	gateway   *agentgw.Gateway
+	passkeys  passkeyChecker
+	stepUp    stepUpVerifier
+	roots     agentRootStore
 }
 
 func (h *handler) list(c fiber.Ctx) error {
