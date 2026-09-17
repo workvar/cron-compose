@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { beginUpdating } from "@/lib/updating";
 import { useAgentUpdateProgress } from "@/lib/useAgentUpdateProgress";
+import { UpdateProgressMeter } from "@/components/UpdateProgressMeter";
 
 type Props = {
   serverId: string;
@@ -28,7 +29,7 @@ export function UpdateServerButton({
   // Non-stack agent updates get their own narrated, refresh-proof progress.
   // Stack updates hand off to the full-screen UpdatingOverlay instead, since
   // the whole control-plane host goes down while it rebuilds itself.
-  const { phase, elapsed, start } = useAgentUpdateProgress(
+  const { phase, detail, percent, elapsed, start } = useAgentUpdateProgress(
     serverId,
     targetVersion,
     !stack && updateAvailable,
@@ -59,19 +60,11 @@ export function UpdateServerButton({
   }
 
   const title = stack ? "Stack update available" : "Agent update available";
-  const detail = stack
+  const detailCopy = stack
     ? "This host will git-checkout the release, rebuild web + control plane + agent, then restart."
     : "This agent will clone the release tag, rebuild itself from source, and restart.";
 
-  const active = phase !== "idle" && phase !== "timeout";
-  const progressLabel =
-    phase === "restarting" ? "Restarting agent…" : phase === "building" ? "Building from source…" : null;
-  const clock = active
-    ? `${Math.floor(elapsed / 60_000)}:${Math.floor((elapsed % 60_000) / 1000)
-        .toString()
-        .padStart(2, "0")}`
-    : null;
-
+  const active = phase !== "idle" && phase !== "timeout" && phase !== "failed";
   const buttonLabel = busy
     ? "Updating…"
     : stack
@@ -80,40 +73,37 @@ export function UpdateServerButton({
         : "Update"
       : phase === "done"
         ? "Updated"
-        : phase === "timeout"
+        : phase === "timeout" || phase === "failed"
           ? "Retry"
           : active
             ? (
                 <span className="cluster" style={{ gap: 6, flexWrap: "nowrap" }}>
                   <span className="agent-spinner" aria-hidden />
-                  {phase === "restarting" ? "Restarting…" : "Building…"}
+                  {phase === "restarting" || phase === "stopping" ? "Restarting…" : "Updating…"}
                 </span>
               )
             : "Update";
 
-  // `active` already covers "done" (it's neither "idle" nor "timeout").
   const disabled = !canUpdate || busy || stackStarted || active;
 
   return (
     <div className="panel" style={{ marginBottom: 18 }}>
       <div className="row" style={{ alignItems: "flex-start" }}>
-        <div>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, color: "var(--text)" }}>{title}</div>
           <p className="subtle" style={{ margin: "6px 0 0", fontSize: 13 }}>
             {currentVersion ? `Running ${currentVersion}. ` : ""}
-            Version {targetVersion} is available. {detail}
+            Version {targetVersion} is available. {detailCopy}
             {stack && stackStarted && " Update started."}
           </p>
-          {!stack && progressLabel && (
-            <p
-              className="subtle"
-              role="status"
-              aria-live="polite"
-              style={{ margin: "8px 0 0", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}
-            >
-              <span className="agent-spinner" aria-hidden />
-              {progressLabel} {clock && <span className="mono">({clock})</span>}
-            </p>
+          {!stack && active && phase !== "done" && (
+            <UpdateProgressMeter
+              stack={false}
+              phase={phase}
+              detail={detail}
+              percent={percent}
+              elapsedMs={elapsed}
+            />
           )}
           {!stack && phase === "done" && (
             <p className="subtle" style={{ margin: "8px 0 0", fontSize: 13, color: "var(--ok, #1c8a4f)" }}>
@@ -123,6 +113,11 @@ export function UpdateServerButton({
           {!stack && phase === "timeout" && (
             <p className="form-error" style={{ margin: "8px 0 0", fontSize: 13 }}>
               This is taking longer than expected. Check the agent's update log on the server, then refresh.
+            </p>
+          )}
+          {!stack && phase === "failed" && (
+            <p className="form-error" style={{ margin: "8px 0 0", fontSize: 13 }}>
+              {detail || "The update failed. Check the agent's log on the server, then retry."}
             </p>
           )}
           {error && <p className="form-error" style={{ marginTop: 8 }}>{error}</p>}

@@ -1,64 +1,93 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { clearUpdating, readUpdating, type UpdatingState } from "@/lib/updating";
+import { clearUpdating, patchUpdating, readUpdating, type UpdatingState } from "@/lib/updating";
+import { UpdateProgressMeter } from "@/components/UpdateProgressMeter";
+import type { UpdatePhase } from "@/lib/update-progress";
+import type { UpdateStatus } from "@/lib/types";
 
 const MAX_MS = 45 * 60 * 1000;
-const POLL_MS = 3000;
+const POLL_MS = 1500;
 
-async function updatesReachable(): Promise<boolean> {
+function asPhase(raw: string | undefined): UpdatePhase | null {
+  if (!raw) return null;
+  const known: UpdatePhase[] = [
+    "offered", "fetching", "cloning", "downloading", "building", "installing",
+    "migrating", "stopping", "restarting", "verifying", "done", "failed", "timeout",
+  ];
+  return known.includes(raw as UpdatePhase) ? (raw as UpdatePhase) : null;
+}
+
+async function pollUpdates(): Promise<UpdateStatus | null> {
   try {
     const res = await fetch("/api/updates", { cache: "no-store", signal: AbortSignal.timeout(4000) });
-    return res.ok;
+    if (!res.ok) return null;
+    return (await res.json()) as UpdateStatus;
   } catch {
-    return false;
+    return null;
   }
 }
 
-async function updateSettled(state: UpdatingState): Promise<boolean> {
-  try {
-    const res = await fetch("/api/updates", { cache: "no-store", signal: AbortSignal.timeout(4000) });
-    if (!res.ok) return false;
-    const body = (await res.json()) as {
-      latest_version?: string;
-      items?: {
-        server_id: string;
-        stack?: boolean;
-        current_version?: string;
-        update_available?: boolean;
-      }[];
-    };
-    const want = state.targetVersion.replace(/^v/, "");
-    const items = body.items ?? [];
-    const watched =
-      state.serverIds.length > 0
-        ? items.filter((s) => state.serverIds.includes(s.server_id))
-        : items.filter((s) => s.stack);
-    if (watched.length === 0) {
-      // Fall back: any host already on the target.
-      return items.some((s) => (s.current_version || "").replace(/^v/, "") === want);
-    }
-    return watched.every((s) => {
-      const cur = (s.current_version || "").replace(/^v/, "");
-      return cur === want || s.update_available === false;
-    });
-  } catch {
-    return false;
+function watchedItems(body: UpdateStatus, state: UpdatingState) {
+  const items = body.items ?? [];
+  return state.serverIds.length > 0
+    ? items.filter((s) => state.serverIds.includes(s.server_id))
+    : items.filter((s) => s.stack);
+}
+
+function updateSettled(body: UpdateStatus, state: UpdatingState): boolean {
+  const want = state.targetVersion.replace(/^v/, "");
+  const items = body.items ?? [];
+  const watched = watchedItems(body, state);
+  if (watched.length === 0) {
+    return items.some((s) => (s.current_version || "").replace(/^v/, "") === want);
   }
+  return watched.every((s) => {
+    const cur = (s.current_version || "").replace(/^v/, "");
+    return cur === want || s.update_available === false;
+  });
+}
+
+function bestProgress(body: UpdateStatus, state: UpdatingState): {
+  phase: UpdatePhase;
+  detail?: string;
+  percent?: number;
+} | null {
+  const watched = watchedItems(body, state);
+  let best: { phase: UpdatePhase; detail?: string; percent: number } | null = null;
+  for (const item of watched) {
+    const phase = asPhase(item.update_phase);
+    if (!phase) continue;
+    const percent = item.update_percent ?? 0;
+    if (!best || percent >= best.percent) {
+      best = { phase, detail: item.update_detail, percent };
+    }
+  }
+  return best;
 }
 
 export function UpdatingOverlay() {
   const [state, setState] = useState<UpdatingState | null>(null);
-  const [phase, setPhase] = useState<"building" | "restarting" | "done" | "timeout">("building");
+  const [phase, setPhase] = useState<UpdatePhase>("offered");
+  const [detail, setDetail] = useState("Sending the update command to the agent");
+  const [percent, setPercent] = useState(5);
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
-    setState(readUpdating());
+    const existing = readUpdating();
+    setState(existing);
+    if (existing) {
+      setPhase(asPhase(existing.phase) ?? "building");
+      if (existing.detail) setDetail(existing.detail);
+      if (existing.percent) setPercent(existing.percent);
+    }
     function onEvt(e: Event) {
-      const detail = (e as CustomEvent<UpdatingState | null>).detail;
-      setState(detail);
-      if (detail) {
-        setPhase("building");
+      const next = (e as CustomEvent<UpdatingState | null>).detail;
+      setState(next);
+      if (next) {
+        setPhase(asPhase(next.phase) ?? "offered");
+        setDetail(next.detail || "Sending the update command to the agent");
+        setPercent(next.percent || 5);
         setElapsed(0);
       }
     }
@@ -78,24 +107,46 @@ export function UpdatingOverlay() {
       setElapsed(age);
       if (age > MAX_MS) {
         setPhase("timeout");
+        setDetail("This is taking longer than expected. Check .run/update.log on the server, then refresh.");
         window.clearInterval(tick);
         return;
       }
       void (async () => {
-        const up = await updatesReachable();
-        if (!up) {
+        const body = await pollUpdates();
+        if (!body) {
+          const next: UpdatePhase = sawDown ? "restarting" : "stopping";
+          const copy = sawDown
+            ? "Restarting services — waiting for the control plane to come back"
+            : "Stopping the server so it can restart on the new version";
+          const pct = sawDown ? 90 : 85;
           sawDown = true;
-          setPhase("restarting");
+          setPhase(next);
+          setDetail(copy);
+          setPercent((p) => (p < pct ? pct : p));
+          patchUpdating({ phase: next, detail: copy, percent: pct });
           return;
         }
+        const live = bestProgress(body, state);
+        if (live && live.phase !== "done") {
+          setPhase(live.phase);
+          if (live.detail) setDetail(live.detail);
+          if (live.percent && live.percent > 0) setPercent(live.percent);
+          patchUpdating({ phase: live.phase, detail: live.detail, percent: live.percent });
+        }
         if (sawDown || age > 20_000) {
-          if (await updateSettled(state)) {
+          if (updateSettled(body, state)) {
             setPhase("done");
+            setDetail("Update complete. Reloading…");
+            setPercent(100);
             window.clearInterval(tick);
             window.setTimeout(() => {
               clearUpdating();
               window.location.reload();
             }, 900);
+          } else if (sawDown && !live) {
+            setPhase("restarting");
+            setDetail("Restarting services — waiting for the control plane to come back");
+            setPercent((p) => (p < 90 ? 90 : p));
           }
         }
       })();
@@ -109,19 +160,6 @@ export function UpdatingOverlay() {
 
   if (!state?.stack) return null;
 
-  const minutes = Math.floor(elapsed / 60_000);
-  const seconds = Math.floor((elapsed % 60_000) / 1000);
-  const clock = `${minutes}:${seconds.toString().padStart(2, "0")}`;
-
-  const copy =
-    phase === "done"
-      ? "Update complete. Reloading…"
-      : phase === "timeout"
-        ? "This is taking longer than expected. Check .run/update.log on the server, then refresh."
-        : phase === "restarting"
-          ? "Restarting services…"
-          : `Building ${state.targetVersion} from source…`;
-
   return (
     <div className="updating-overlay" role="status" aria-live="polite" aria-busy={phase !== "done"}>
       <div className="updating-card">
@@ -131,8 +169,13 @@ export function UpdatingOverlay() {
           <span className="updating-core">CC</span>
         </div>
         <h1 className="updating-title">CronCompose is updating</h1>
-        <p className="updating-copy">{copy}</p>
-        <p className="updating-meta mono">{clock}</p>
+        <UpdateProgressMeter
+          stack
+          phase={phase}
+          detail={detail}
+          percent={percent}
+          elapsedMs={elapsed}
+        />
         {phase === "timeout" && (
           <button type="button" className="button sm" onClick={() => { clearUpdating(); setState(null); }}>
             Dismiss

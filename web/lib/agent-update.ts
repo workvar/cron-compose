@@ -10,11 +10,23 @@ const PREFIX = "cc-agent-updating:";
 export type AgentUpdatingState = {
   targetVersion: string;
   startedAt: number;
+  phase?: string;
+  detail?: string;
+  percent?: number;
 };
 
 export function beginAgentUpdating(serverId: string, targetVersion: string): void {
+  writeAgentUpdating(serverId, { targetVersion, startedAt: Date.now(), phase: "offered", detail: "Sending the update command to the agent", percent: 5 });
+}
+
+export function patchAgentUpdating(serverId: string, patch: Partial<Pick<AgentUpdatingState, "phase" | "detail" | "percent">>): void {
+  const current = readAgentUpdating(serverId);
+  if (!current) return;
+  writeAgentUpdating(serverId, { ...current, ...patch });
+}
+
+function writeAgentUpdating(serverId: string, state: AgentUpdatingState): void {
   if (typeof window === "undefined") return;
-  const state: AgentUpdatingState = { targetVersion, startedAt: Date.now() };
   try {
     sessionStorage.setItem(PREFIX + serverId, JSON.stringify(state));
   } catch {

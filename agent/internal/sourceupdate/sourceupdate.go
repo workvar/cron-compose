@@ -3,8 +3,10 @@
 package sourceupdate
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -14,6 +16,15 @@ import (
 
 	"github.com/croncompose/croncompose/agent/internal/selfupdate"
 )
+
+// Reporter is called as the update moves through named stages. Nil is safe.
+type Reporter func(phase, detail string, percent int)
+
+func (r Reporter) report(phase, detail string, percent int) {
+	if r != nil {
+		r(phase, detail, percent)
+	}
+}
 
 // IsSource reports whether this update instruction means "clone/build from git"
 // rather than "download a binary". A notes-only GitHub release is a source update:
@@ -97,7 +108,7 @@ type Result struct {
 // Apply checks out targetVersion from the GitHub repo in downloadURL and builds.
 // On a control-plane checkout it starts update.sh (which restarts the stack).
 // On a standalone agent it builds a replacement binary and swaps it in place.
-func Apply(ctx context.Context, log *slog.Logger, downloadURL, targetVersion, currentVersion string) (Result, error) {
+func Apply(ctx context.Context, log *slog.Logger, downloadURL, targetVersion, currentVersion string, report Reporter) (Result, error) {
 	repo := repoFromGitHubURL(downloadURL)
 	if repo == "" {
 		return Result{}, fmt.Errorf("not a github source url: %s", downloadURL)
@@ -111,24 +122,26 @@ func Apply(ctx context.Context, log *slog.Logger, downloadURL, targetVersion, cu
 
 	if root := FindStackRoot(); root != "" {
 		log.Info("source update: rebuilding stack", "root", root, "tag", targetVersion)
-		if err := applyStack(ctx, log, root, targetVersion); err != nil {
+		report.report("fetching", "Fetching release tags", 8)
+		if err := applyStack(ctx, log, root, targetVersion, report); err != nil {
 			return Result{}, err
 		}
 		return Result{RestartNow: false, Path: root}, nil
 	}
 
 	log.Info("source update: rebuilding agent", "repo", repo, "tag", targetVersion)
-	path, err := applyAgent(ctx, log, repo, targetVersion)
+	path, err := applyAgent(ctx, log, repo, targetVersion, report)
 	if err != nil {
 		return Result{}, err
 	}
 	return Result{RestartNow: true, Path: path}, nil
 }
 
-func applyStack(ctx context.Context, log *slog.Logger, root, tag string) error {
+func applyStack(ctx context.Context, log *slog.Logger, root, tag string, report Reporter) error {
 	if err := run(ctx, root, "git", "fetch", "--tags", "--force", "origin"); err != nil {
 		return fmt.Errorf("git fetch: %w", err)
 	}
+	report.report("fetching", "Checking out the new version", 15)
 	if err := run(ctx, root, "git", "checkout", "--force", tag); err != nil {
 		return fmt.Errorf("git checkout %s: %w", tag, err)
 	}
@@ -151,26 +164,44 @@ func applyStack(ctx context.Context, log *slog.Logger, root, tag string) error {
 			return fmt.Errorf("open update log: %w", err)
 		}
 	}
+	pr, pw := io.Pipe()
 	cmd := exec.Command("bash", update, "--no-pull")
 	cmd.Dir = root
 	cmd.Env = os.Environ()
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
+	cmd.Stdout = io.MultiWriter(logFile, pw)
+	cmd.Stderr = cmd.Stdout
 	cmd.Stdin = nil
 	detach(cmd)
+	go func() {
+		defer pr.Close()
+		watchUpdateLog(pr, report)
+	}()
 	if err := cmd.Start(); err != nil {
+		_ = pw.Close()
 		_ = logFile.Close()
 		return fmt.Errorf("start update.sh: %w", err)
 	}
 	log.Info("update.sh started", "pid", cmd.Process.Pid, "log", logFile.Name())
+	report.report("building", "Starting the stack updater", 20)
 	go func() {
 		_ = cmd.Wait()
+		_ = pw.Close()
 		_ = logFile.Close()
 	}()
 	return nil
 }
 
-func applyAgent(ctx context.Context, log *slog.Logger, repo, tag string) (string, error) {
+func watchUpdateLog(r io.Reader, report Reporter) {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		if step, ok := ParseUpdateStep(sc.Text()); ok {
+			report.report(step.Phase, step.Detail, step.Percent)
+		}
+	}
+}
+
+func applyAgent(ctx context.Context, log *slog.Logger, repo, tag string, report Reporter) (string, error) {
 	goBin, err := findGo()
 	if err != nil {
 		return "", err
@@ -182,6 +213,7 @@ func applyAgent(ctx context.Context, log *slog.Logger, repo, tag string) (string
 	}
 	defer os.RemoveAll(src)
 
+	report.report("cloning", "Cloning the release tag", 15)
 	url := "https://github.com/" + repo
 	if err := run(ctx, "", "git", "clone", "--depth", "1", "--branch", tag, url, src); err != nil {
 		return "", fmt.Errorf("git clone: %w", err)
@@ -191,6 +223,7 @@ func applyAgent(ctx context.Context, log *slog.Logger, repo, tag string) (string
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		return "", err
 	}
+	report.report("building", "Compiling the agent from source", 45)
 	ver := strings.TrimPrefix(tag, "v")
 	ldflags := fmt.Sprintf("-s -w -X github.com/croncompose/croncompose/agent/internal/config.buildVersion=%s", ver)
 	if err := runWithPATH(ctx, filepath.Join(src, "agent"), goBin, "build",
@@ -198,11 +231,13 @@ func applyAgent(ctx context.Context, log *slog.Logger, repo, tag string) (string
 		return "", fmt.Errorf("go build: %w", err)
 	}
 
+	report.report("installing", "Installing the new agent binary", 80)
 	installed, err := selfupdate.InstallFile(out)
 	if err != nil {
 		return "", err
 	}
 	log.Info("agent binary replaced", "path", installed)
+	report.report("restarting", "Restarting the agent on the new binary", 90)
 	return installed, nil
 }
 

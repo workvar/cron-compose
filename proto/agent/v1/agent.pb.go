@@ -200,6 +200,7 @@ type AgentMessage struct {
 	//	*AgentMessage_TerminalOutput
 	//	*AgentMessage_DeployEvent
 	//	*AgentMessage_ListUsersResult
+	//	*AgentMessage_UpdateProgress
 	Body          isAgentMessage_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -341,6 +342,15 @@ func (x *AgentMessage) GetListUsersResult() *ListUsersResult {
 	return nil
 }
 
+func (x *AgentMessage) GetUpdateProgress() *UpdateProgress {
+	if x != nil {
+		if x, ok := x.Body.(*AgentMessage_UpdateProgress); ok {
+			return x.UpdateProgress
+		}
+	}
+	return nil
+}
+
 type isAgentMessage_Body interface {
 	isAgentMessage_Body()
 }
@@ -389,6 +399,10 @@ type AgentMessage_ListUsersResult struct {
 	ListUsersResult *ListUsersResult `protobuf:"bytes,11,opt,name=list_users_result,json=listUsersResult,proto3,oneof"` // reply to a ListUsersRequest
 }
 
+type AgentMessage_UpdateProgress struct {
+	UpdateProgress *UpdateProgress `protobuf:"bytes,12,opt,name=update_progress,json=updateProgress,proto3,oneof"` // self-update / stack rebuild stage
+}
+
 func (*AgentMessage_Hello) isAgentMessage_Body() {}
 
 func (*AgentMessage_Heartbeat) isAgentMessage_Body() {}
@@ -410,6 +424,8 @@ func (*AgentMessage_TerminalOutput) isAgentMessage_Body() {}
 func (*AgentMessage_DeployEvent) isAgentMessage_Body() {}
 
 func (*AgentMessage_ListUsersResult) isAgentMessage_Body() {}
+
+func (*AgentMessage_UpdateProgress) isAgentMessage_Body() {}
 
 type ServerMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1451,6 +1467,78 @@ func (x *UpdateAgent) GetRestart() bool {
 	return false
 }
 
+// UpdateProgress is a live stage report while an agent (or the stack it hosts)
+// applies UpdateAgent. Ephemeral: not persisted in the agent outbox. Phases:
+// offered | fetching | cloning | downloading | building | installing |
+// migrating | stopping | restarting | verifying | done | failed.
+type UpdateProgress struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TargetVersion string                 `protobuf:"bytes,1,opt,name=target_version,json=targetVersion,proto3" json:"target_version,omitempty"`
+	Phase         string                 `protobuf:"bytes,2,opt,name=phase,proto3" json:"phase,omitempty"`
+	Detail        string                 `protobuf:"bytes,3,opt,name=detail,proto3" json:"detail,omitempty"`    // human-readable: "Stopping the server so it can restart"
+	Percent       int32                  `protobuf:"varint,4,opt,name=percent,proto3" json:"percent,omitempty"` // 0-100
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateProgress) Reset() {
+	*x = UpdateProgress{}
+	mi := &file_agent_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateProgress) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateProgress) ProtoMessage() {}
+
+func (x *UpdateProgress) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateProgress.ProtoReflect.Descriptor instead.
+func (*UpdateProgress) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *UpdateProgress) GetTargetVersion() string {
+	if x != nil {
+		return x.TargetVersion
+	}
+	return ""
+}
+
+func (x *UpdateProgress) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *UpdateProgress) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
+}
+
+func (x *UpdateProgress) GetPercent() int32 {
+	if x != nil {
+		return x.Percent
+	}
+	return 0
+}
+
 type DiscoveredConnector struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Kind        string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`         // nginx|apache|caddy|traefik|haproxy|pm2|systemd|docker|cron|ufw
@@ -1475,7 +1563,7 @@ type DiscoveredConnector struct {
 
 func (x *DiscoveredConnector) Reset() {
 	*x = DiscoveredConnector{}
-	mi := &file_agent_proto_msgTypes[15]
+	mi := &file_agent_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1487,7 +1575,7 @@ func (x *DiscoveredConnector) String() string {
 func (*DiscoveredConnector) ProtoMessage() {}
 
 func (x *DiscoveredConnector) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[15]
+	mi := &file_agent_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1500,7 +1588,7 @@ func (x *DiscoveredConnector) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscoveredConnector.ProtoReflect.Descriptor instead.
 func (*DiscoveredConnector) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{15}
+	return file_agent_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *DiscoveredConnector) GetKind() string {
@@ -1623,7 +1711,7 @@ type ConnectorResource struct {
 
 func (x *ConnectorResource) Reset() {
 	*x = ConnectorResource{}
-	mi := &file_agent_proto_msgTypes[16]
+	mi := &file_agent_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1635,7 +1723,7 @@ func (x *ConnectorResource) String() string {
 func (*ConnectorResource) ProtoMessage() {}
 
 func (x *ConnectorResource) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[16]
+	mi := &file_agent_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1648,7 +1736,7 @@ func (x *ConnectorResource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectorResource.ProtoReflect.Descriptor instead.
 func (*ConnectorResource) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{16}
+	return file_agent_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ConnectorResource) GetType() string {
@@ -1710,7 +1798,7 @@ type ConnectorEvent struct {
 
 func (x *ConnectorEvent) Reset() {
 	*x = ConnectorEvent{}
-	mi := &file_agent_proto_msgTypes[17]
+	mi := &file_agent_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1722,7 +1810,7 @@ func (x *ConnectorEvent) String() string {
 func (*ConnectorEvent) ProtoMessage() {}
 
 func (x *ConnectorEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[17]
+	mi := &file_agent_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1735,7 +1823,7 @@ func (x *ConnectorEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectorEvent.ProtoReflect.Descriptor instead.
 func (*ConnectorEvent) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{17}
+	return file_agent_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ConnectorEvent) GetTs() *timestamppb.Timestamp {
@@ -1769,7 +1857,7 @@ type ConnectorCommand struct {
 
 func (x *ConnectorCommand) Reset() {
 	*x = ConnectorCommand{}
-	mi := &file_agent_proto_msgTypes[18]
+	mi := &file_agent_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1781,7 +1869,7 @@ func (x *ConnectorCommand) String() string {
 func (*ConnectorCommand) ProtoMessage() {}
 
 func (x *ConnectorCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[18]
+	mi := &file_agent_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1794,7 +1882,7 @@ func (x *ConnectorCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectorCommand.ProtoReflect.Descriptor instead.
 func (*ConnectorCommand) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{18}
+	return file_agent_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ConnectorCommand) GetRequestId() string {
@@ -1872,7 +1960,7 @@ type ConnectorStep struct {
 
 func (x *ConnectorStep) Reset() {
 	*x = ConnectorStep{}
-	mi := &file_agent_proto_msgTypes[19]
+	mi := &file_agent_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1884,7 +1972,7 @@ func (x *ConnectorStep) String() string {
 func (*ConnectorStep) ProtoMessage() {}
 
 func (x *ConnectorStep) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[19]
+	mi := &file_agent_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1897,7 +1985,7 @@ func (x *ConnectorStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectorStep.ProtoReflect.Descriptor instead.
 func (*ConnectorStep) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{19}
+	return file_agent_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ConnectorStep) GetName() string {
@@ -1943,7 +2031,7 @@ type ConnectorResult struct {
 
 func (x *ConnectorResult) Reset() {
 	*x = ConnectorResult{}
-	mi := &file_agent_proto_msgTypes[20]
+	mi := &file_agent_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1955,7 +2043,7 @@ func (x *ConnectorResult) String() string {
 func (*ConnectorResult) ProtoMessage() {}
 
 func (x *ConnectorResult) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[20]
+	mi := &file_agent_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1968,7 +2056,7 @@ func (x *ConnectorResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectorResult.ProtoReflect.Descriptor instead.
 func (*ConnectorResult) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{20}
+	return file_agent_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ConnectorResult) GetRequestId() string {
@@ -2037,7 +2125,7 @@ type TerminalInput struct {
 
 func (x *TerminalInput) Reset() {
 	*x = TerminalInput{}
-	mi := &file_agent_proto_msgTypes[21]
+	mi := &file_agent_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2049,7 +2137,7 @@ func (x *TerminalInput) String() string {
 func (*TerminalInput) ProtoMessage() {}
 
 func (x *TerminalInput) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[21]
+	mi := &file_agent_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2062,7 +2150,7 @@ func (x *TerminalInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalInput.ProtoReflect.Descriptor instead.
 func (*TerminalInput) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{21}
+	return file_agent_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *TerminalInput) GetSessionId() string {
@@ -2141,7 +2229,7 @@ type TerminalOutput struct {
 
 func (x *TerminalOutput) Reset() {
 	*x = TerminalOutput{}
-	mi := &file_agent_proto_msgTypes[22]
+	mi := &file_agent_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2153,7 +2241,7 @@ func (x *TerminalOutput) String() string {
 func (*TerminalOutput) ProtoMessage() {}
 
 func (x *TerminalOutput) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[22]
+	mi := &file_agent_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2166,7 +2254,7 @@ func (x *TerminalOutput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TerminalOutput.ProtoReflect.Descriptor instead.
 func (*TerminalOutput) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{22}
+	return file_agent_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *TerminalOutput) GetSessionId() string {
@@ -2213,7 +2301,7 @@ type ListUsersRequest struct {
 
 func (x *ListUsersRequest) Reset() {
 	*x = ListUsersRequest{}
-	mi := &file_agent_proto_msgTypes[23]
+	mi := &file_agent_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2225,7 +2313,7 @@ func (x *ListUsersRequest) String() string {
 func (*ListUsersRequest) ProtoMessage() {}
 
 func (x *ListUsersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[23]
+	mi := &file_agent_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2238,7 +2326,7 @@ func (x *ListUsersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListUsersRequest.ProtoReflect.Descriptor instead.
 func (*ListUsersRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{23}
+	return file_agent_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListUsersRequest) GetRequestId() string {
@@ -2264,7 +2352,7 @@ type SystemUser struct {
 
 func (x *SystemUser) Reset() {
 	*x = SystemUser{}
-	mi := &file_agent_proto_msgTypes[24]
+	mi := &file_agent_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2276,7 +2364,7 @@ func (x *SystemUser) String() string {
 func (*SystemUser) ProtoMessage() {}
 
 func (x *SystemUser) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[24]
+	mi := &file_agent_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2289,7 +2377,7 @@ func (x *SystemUser) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SystemUser.ProtoReflect.Descriptor instead.
 func (*SystemUser) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{24}
+	return file_agent_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *SystemUser) GetUsername() string {
@@ -2338,7 +2426,7 @@ type ListUsersResult struct {
 
 func (x *ListUsersResult) Reset() {
 	*x = ListUsersResult{}
-	mi := &file_agent_proto_msgTypes[25]
+	mi := &file_agent_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2350,7 +2438,7 @@ func (x *ListUsersResult) String() string {
 func (*ListUsersResult) ProtoMessage() {}
 
 func (x *ListUsersResult) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[25]
+	mi := &file_agent_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2363,7 +2451,7 @@ func (x *ListUsersResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListUsersResult.ProtoReflect.Descriptor instead.
 func (*ListUsersResult) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{25}
+	return file_agent_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ListUsersResult) GetRequestId() string {
@@ -2402,7 +2490,7 @@ type DeployApp struct {
 
 func (x *DeployApp) Reset() {
 	*x = DeployApp{}
-	mi := &file_agent_proto_msgTypes[26]
+	mi := &file_agent_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2414,7 +2502,7 @@ func (x *DeployApp) String() string {
 func (*DeployApp) ProtoMessage() {}
 
 func (x *DeployApp) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[26]
+	mi := &file_agent_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2427,7 +2515,7 @@ func (x *DeployApp) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeployApp.ProtoReflect.Descriptor instead.
 func (*DeployApp) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{26}
+	return file_agent_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *DeployApp) GetName() string {
@@ -2509,7 +2597,7 @@ type DeployCommand struct {
 
 func (x *DeployCommand) Reset() {
 	*x = DeployCommand{}
-	mi := &file_agent_proto_msgTypes[27]
+	mi := &file_agent_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2521,7 +2609,7 @@ func (x *DeployCommand) String() string {
 func (*DeployCommand) ProtoMessage() {}
 
 func (x *DeployCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[27]
+	mi := &file_agent_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2534,7 +2622,7 @@ func (x *DeployCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeployCommand.ProtoReflect.Descriptor instead.
 func (*DeployCommand) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{27}
+	return file_agent_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *DeployCommand) GetRunId() string {
@@ -2663,7 +2751,7 @@ type HealthCheck struct {
 
 func (x *HealthCheck) Reset() {
 	*x = HealthCheck{}
-	mi := &file_agent_proto_msgTypes[28]
+	mi := &file_agent_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2675,7 +2763,7 @@ func (x *HealthCheck) String() string {
 func (*HealthCheck) ProtoMessage() {}
 
 func (x *HealthCheck) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[28]
+	mi := &file_agent_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2688,7 +2776,7 @@ func (x *HealthCheck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthCheck.ProtoReflect.Descriptor instead.
 func (*HealthCheck) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{28}
+	return file_agent_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *HealthCheck) GetPath() string {
@@ -2733,7 +2821,7 @@ type DeployEvent struct {
 
 func (x *DeployEvent) Reset() {
 	*x = DeployEvent{}
-	mi := &file_agent_proto_msgTypes[29]
+	mi := &file_agent_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2745,7 +2833,7 @@ func (x *DeployEvent) String() string {
 func (*DeployEvent) ProtoMessage() {}
 
 func (x *DeployEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[29]
+	mi := &file_agent_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2758,7 +2846,7 @@ func (x *DeployEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeployEvent.ProtoReflect.Descriptor instead.
 func (*DeployEvent) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{29}
+	return file_agent_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *DeployEvent) GetRunId() string {
@@ -2842,7 +2930,7 @@ const file_agent_proto_rawDesc = "" +
 	"\rserver_ca_pem\x18\x03 \x01(\fR\vserverCaPem\x125\n" +
 	"\x17control_plane_grpc_addr\x18\x04 \x01(\tR\x14controlPlaneGrpcAddr\x12\x1f\n" +
 	"\vagent_token\x18\x05 \x01(\tR\n" +
-	"agentToken\"\xad\x06\n" +
+	"agentToken\"\xfe\x06\n" +
 	"\fAgentMessage\x123\n" +
 	"\x05hello\x18\x01 \x01(\v2\x1b.croncompose.agent.v1.HelloH\x00R\x05hello\x12?\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x1f.croncompose.agent.v1.HeartbeatH\x00R\theartbeat\x12@\n" +
@@ -2857,7 +2945,8 @@ const file_agent_proto_rawDesc = "" +
 	"\x0fterminal_output\x18\t \x01(\v2$.croncompose.agent.v1.TerminalOutputH\x00R\x0eterminalOutput\x12F\n" +
 	"\fdeploy_event\x18\n" +
 	" \x01(\v2!.croncompose.agent.v1.DeployEventH\x00R\vdeployEvent\x12S\n" +
-	"\x11list_users_result\x18\v \x01(\v2%.croncompose.agent.v1.ListUsersResultH\x00R\x0flistUsersResultB\x06\n" +
+	"\x11list_users_result\x18\v \x01(\v2%.croncompose.agent.v1.ListUsersResultH\x00R\x0flistUsersResult\x12O\n" +
+	"\x0fupdate_progress\x18\f \x01(\v2$.croncompose.agent.v1.UpdateProgressH\x00R\x0eupdateProgressB\x06\n" +
 	"\x04body\"\xe4\x04\n" +
 	"\rServerMessage\x12=\n" +
 	"\tsync_jobs\x18\x01 \x01(\v2\x1e.croncompose.agent.v1.SyncJobsH\x00R\bsyncJobs\x127\n" +
@@ -2954,7 +3043,12 @@ const file_agent_proto_rawDesc = "" +
 	"\x0etarget_version\x18\x01 \x01(\tR\rtargetVersion\x12!\n" +
 	"\fdownload_url\x18\x02 \x01(\tR\vdownloadUrl\x12\x16\n" +
 	"\x06sha256\x18\x03 \x01(\tR\x06sha256\x12\x18\n" +
-	"\arestart\x18\x04 \x01(\bR\arestart\"\x80\x05\n" +
+	"\arestart\x18\x04 \x01(\bR\arestart\"\x7f\n" +
+	"\x0eUpdateProgress\x12%\n" +
+	"\x0etarget_version\x18\x01 \x01(\tR\rtargetVersion\x12\x14\n" +
+	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x16\n" +
+	"\x06detail\x18\x03 \x01(\tR\x06detail\x12\x18\n" +
+	"\apercent\x18\x04 \x01(\x05R\apercent\"\x80\x05\n" +
 	"\x13DiscoveredConnector\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x1a\n" +
 	"\binstance\x18\x02 \x01(\tR\binstance\x12\x18\n" +
@@ -3119,7 +3213,7 @@ func file_agent_proto_rawDescGZIP() []byte {
 	return file_agent_proto_rawDescData
 }
 
-var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
+var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
 var file_agent_proto_goTypes = []any{
 	(*EnrollRequest)(nil),         // 0: croncompose.agent.v1.EnrollRequest
 	(*EnrollResponse)(nil),        // 1: croncompose.agent.v1.EnrollResponse
@@ -3136,28 +3230,29 @@ var file_agent_proto_goTypes = []any{
 	(*RunNow)(nil),                // 12: croncompose.agent.v1.RunNow
 	(*CancelRun)(nil),             // 13: croncompose.agent.v1.CancelRun
 	(*UpdateAgent)(nil),           // 14: croncompose.agent.v1.UpdateAgent
-	(*DiscoveredConnector)(nil),   // 15: croncompose.agent.v1.DiscoveredConnector
-	(*ConnectorResource)(nil),     // 16: croncompose.agent.v1.ConnectorResource
-	(*ConnectorEvent)(nil),        // 17: croncompose.agent.v1.ConnectorEvent
-	(*ConnectorCommand)(nil),      // 18: croncompose.agent.v1.ConnectorCommand
-	(*ConnectorStep)(nil),         // 19: croncompose.agent.v1.ConnectorStep
-	(*ConnectorResult)(nil),       // 20: croncompose.agent.v1.ConnectorResult
-	(*TerminalInput)(nil),         // 21: croncompose.agent.v1.TerminalInput
-	(*TerminalOutput)(nil),        // 22: croncompose.agent.v1.TerminalOutput
-	(*ListUsersRequest)(nil),      // 23: croncompose.agent.v1.ListUsersRequest
-	(*SystemUser)(nil),            // 24: croncompose.agent.v1.SystemUser
-	(*ListUsersResult)(nil),       // 25: croncompose.agent.v1.ListUsersResult
-	(*DeployApp)(nil),             // 26: croncompose.agent.v1.DeployApp
-	(*DeployCommand)(nil),         // 27: croncompose.agent.v1.DeployCommand
-	(*HealthCheck)(nil),           // 28: croncompose.agent.v1.HealthCheck
-	(*DeployEvent)(nil),           // 29: croncompose.agent.v1.DeployEvent
-	nil,                           // 30: croncompose.agent.v1.JobDef.EnvEntry
-	nil,                           // 31: croncompose.agent.v1.JobDef.SecretsEntry
-	nil,                           // 32: croncompose.agent.v1.DiscoveredConnector.DetailEntry
-	nil,                           // 33: croncompose.agent.v1.ConnectorResource.AttributesEntry
-	nil,                           // 34: croncompose.agent.v1.DeployApp.EnvEntry
-	nil,                           // 35: croncompose.agent.v1.DeployCommand.EnvEntry
-	(*timestamppb.Timestamp)(nil), // 36: google.protobuf.Timestamp
+	(*UpdateProgress)(nil),        // 15: croncompose.agent.v1.UpdateProgress
+	(*DiscoveredConnector)(nil),   // 16: croncompose.agent.v1.DiscoveredConnector
+	(*ConnectorResource)(nil),     // 17: croncompose.agent.v1.ConnectorResource
+	(*ConnectorEvent)(nil),        // 18: croncompose.agent.v1.ConnectorEvent
+	(*ConnectorCommand)(nil),      // 19: croncompose.agent.v1.ConnectorCommand
+	(*ConnectorStep)(nil),         // 20: croncompose.agent.v1.ConnectorStep
+	(*ConnectorResult)(nil),       // 21: croncompose.agent.v1.ConnectorResult
+	(*TerminalInput)(nil),         // 22: croncompose.agent.v1.TerminalInput
+	(*TerminalOutput)(nil),        // 23: croncompose.agent.v1.TerminalOutput
+	(*ListUsersRequest)(nil),      // 24: croncompose.agent.v1.ListUsersRequest
+	(*SystemUser)(nil),            // 25: croncompose.agent.v1.SystemUser
+	(*ListUsersResult)(nil),       // 26: croncompose.agent.v1.ListUsersResult
+	(*DeployApp)(nil),             // 27: croncompose.agent.v1.DeployApp
+	(*DeployCommand)(nil),         // 28: croncompose.agent.v1.DeployCommand
+	(*HealthCheck)(nil),           // 29: croncompose.agent.v1.HealthCheck
+	(*DeployEvent)(nil),           // 30: croncompose.agent.v1.DeployEvent
+	nil,                           // 31: croncompose.agent.v1.JobDef.EnvEntry
+	nil,                           // 32: croncompose.agent.v1.JobDef.SecretsEntry
+	nil,                           // 33: croncompose.agent.v1.DiscoveredConnector.DetailEntry
+	nil,                           // 34: croncompose.agent.v1.ConnectorResource.AttributesEntry
+	nil,                           // 35: croncompose.agent.v1.DeployApp.EnvEntry
+	nil,                           // 36: croncompose.agent.v1.DeployCommand.EnvEntry
+	(*timestamppb.Timestamp)(nil), // 37: google.protobuf.Timestamp
 }
 var file_agent_proto_depIdxs = []int32{
 	4,  // 0: croncompose.agent.v1.AgentMessage.hello:type_name -> croncompose.agent.v1.Hello
@@ -3166,45 +3261,46 @@ var file_agent_proto_depIdxs = []int32{
 	7,  // 3: croncompose.agent.v1.AgentMessage.run_started:type_name -> croncompose.agent.v1.RunStarted
 	8,  // 4: croncompose.agent.v1.AgentMessage.log_chunk:type_name -> croncompose.agent.v1.LogChunk
 	9,  // 5: croncompose.agent.v1.AgentMessage.run_finished:type_name -> croncompose.agent.v1.RunFinished
-	17, // 6: croncompose.agent.v1.AgentMessage.connector_event:type_name -> croncompose.agent.v1.ConnectorEvent
-	20, // 7: croncompose.agent.v1.AgentMessage.connector_result:type_name -> croncompose.agent.v1.ConnectorResult
-	22, // 8: croncompose.agent.v1.AgentMessage.terminal_output:type_name -> croncompose.agent.v1.TerminalOutput
-	29, // 9: croncompose.agent.v1.AgentMessage.deploy_event:type_name -> croncompose.agent.v1.DeployEvent
-	25, // 10: croncompose.agent.v1.AgentMessage.list_users_result:type_name -> croncompose.agent.v1.ListUsersResult
-	11, // 11: croncompose.agent.v1.ServerMessage.sync_jobs:type_name -> croncompose.agent.v1.SyncJobs
-	12, // 12: croncompose.agent.v1.ServerMessage.run_now:type_name -> croncompose.agent.v1.RunNow
-	13, // 13: croncompose.agent.v1.ServerMessage.cancel_run:type_name -> croncompose.agent.v1.CancelRun
-	14, // 14: croncompose.agent.v1.ServerMessage.update_agent:type_name -> croncompose.agent.v1.UpdateAgent
-	18, // 15: croncompose.agent.v1.ServerMessage.connector_command:type_name -> croncompose.agent.v1.ConnectorCommand
-	21, // 16: croncompose.agent.v1.ServerMessage.terminal_input:type_name -> croncompose.agent.v1.TerminalInput
-	27, // 17: croncompose.agent.v1.ServerMessage.deploy_command:type_name -> croncompose.agent.v1.DeployCommand
-	23, // 18: croncompose.agent.v1.ServerMessage.list_users_request:type_name -> croncompose.agent.v1.ListUsersRequest
-	36, // 19: croncompose.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
-	36, // 20: croncompose.agent.v1.RunStarted.started_at:type_name -> google.protobuf.Timestamp
-	36, // 21: croncompose.agent.v1.RunFinished.finished_at:type_name -> google.protobuf.Timestamp
-	30, // 22: croncompose.agent.v1.JobDef.env:type_name -> croncompose.agent.v1.JobDef.EnvEntry
-	31, // 23: croncompose.agent.v1.JobDef.secrets:type_name -> croncompose.agent.v1.JobDef.SecretsEntry
-	10, // 24: croncompose.agent.v1.SyncJobs.upsert:type_name -> croncompose.agent.v1.JobDef
-	32, // 25: croncompose.agent.v1.DiscoveredConnector.detail:type_name -> croncompose.agent.v1.DiscoveredConnector.DetailEntry
-	16, // 26: croncompose.agent.v1.DiscoveredConnector.resources:type_name -> croncompose.agent.v1.ConnectorResource
-	33, // 27: croncompose.agent.v1.ConnectorResource.attributes:type_name -> croncompose.agent.v1.ConnectorResource.AttributesEntry
-	36, // 28: croncompose.agent.v1.ConnectorEvent.ts:type_name -> google.protobuf.Timestamp
-	15, // 29: croncompose.agent.v1.ConnectorEvent.connectors:type_name -> croncompose.agent.v1.DiscoveredConnector
-	19, // 30: croncompose.agent.v1.ConnectorResult.steps:type_name -> croncompose.agent.v1.ConnectorStep
-	24, // 31: croncompose.agent.v1.ListUsersResult.users:type_name -> croncompose.agent.v1.SystemUser
-	34, // 32: croncompose.agent.v1.DeployApp.env:type_name -> croncompose.agent.v1.DeployApp.EnvEntry
-	35, // 33: croncompose.agent.v1.DeployCommand.env:type_name -> croncompose.agent.v1.DeployCommand.EnvEntry
-	26, // 34: croncompose.agent.v1.DeployCommand.apps:type_name -> croncompose.agent.v1.DeployApp
-	28, // 35: croncompose.agent.v1.DeployCommand.health:type_name -> croncompose.agent.v1.HealthCheck
-	0,  // 36: croncompose.agent.v1.AgentService.Enroll:input_type -> croncompose.agent.v1.EnrollRequest
-	2,  // 37: croncompose.agent.v1.AgentService.AgentStream:input_type -> croncompose.agent.v1.AgentMessage
-	1,  // 38: croncompose.agent.v1.AgentService.Enroll:output_type -> croncompose.agent.v1.EnrollResponse
-	3,  // 39: croncompose.agent.v1.AgentService.AgentStream:output_type -> croncompose.agent.v1.ServerMessage
-	38, // [38:40] is the sub-list for method output_type
-	36, // [36:38] is the sub-list for method input_type
-	36, // [36:36] is the sub-list for extension type_name
-	36, // [36:36] is the sub-list for extension extendee
-	0,  // [0:36] is the sub-list for field type_name
+	18, // 6: croncompose.agent.v1.AgentMessage.connector_event:type_name -> croncompose.agent.v1.ConnectorEvent
+	21, // 7: croncompose.agent.v1.AgentMessage.connector_result:type_name -> croncompose.agent.v1.ConnectorResult
+	23, // 8: croncompose.agent.v1.AgentMessage.terminal_output:type_name -> croncompose.agent.v1.TerminalOutput
+	30, // 9: croncompose.agent.v1.AgentMessage.deploy_event:type_name -> croncompose.agent.v1.DeployEvent
+	26, // 10: croncompose.agent.v1.AgentMessage.list_users_result:type_name -> croncompose.agent.v1.ListUsersResult
+	15, // 11: croncompose.agent.v1.AgentMessage.update_progress:type_name -> croncompose.agent.v1.UpdateProgress
+	11, // 12: croncompose.agent.v1.ServerMessage.sync_jobs:type_name -> croncompose.agent.v1.SyncJobs
+	12, // 13: croncompose.agent.v1.ServerMessage.run_now:type_name -> croncompose.agent.v1.RunNow
+	13, // 14: croncompose.agent.v1.ServerMessage.cancel_run:type_name -> croncompose.agent.v1.CancelRun
+	14, // 15: croncompose.agent.v1.ServerMessage.update_agent:type_name -> croncompose.agent.v1.UpdateAgent
+	19, // 16: croncompose.agent.v1.ServerMessage.connector_command:type_name -> croncompose.agent.v1.ConnectorCommand
+	22, // 17: croncompose.agent.v1.ServerMessage.terminal_input:type_name -> croncompose.agent.v1.TerminalInput
+	28, // 18: croncompose.agent.v1.ServerMessage.deploy_command:type_name -> croncompose.agent.v1.DeployCommand
+	24, // 19: croncompose.agent.v1.ServerMessage.list_users_request:type_name -> croncompose.agent.v1.ListUsersRequest
+	37, // 20: croncompose.agent.v1.Heartbeat.ts:type_name -> google.protobuf.Timestamp
+	37, // 21: croncompose.agent.v1.RunStarted.started_at:type_name -> google.protobuf.Timestamp
+	37, // 22: croncompose.agent.v1.RunFinished.finished_at:type_name -> google.protobuf.Timestamp
+	31, // 23: croncompose.agent.v1.JobDef.env:type_name -> croncompose.agent.v1.JobDef.EnvEntry
+	32, // 24: croncompose.agent.v1.JobDef.secrets:type_name -> croncompose.agent.v1.JobDef.SecretsEntry
+	10, // 25: croncompose.agent.v1.SyncJobs.upsert:type_name -> croncompose.agent.v1.JobDef
+	33, // 26: croncompose.agent.v1.DiscoveredConnector.detail:type_name -> croncompose.agent.v1.DiscoveredConnector.DetailEntry
+	17, // 27: croncompose.agent.v1.DiscoveredConnector.resources:type_name -> croncompose.agent.v1.ConnectorResource
+	34, // 28: croncompose.agent.v1.ConnectorResource.attributes:type_name -> croncompose.agent.v1.ConnectorResource.AttributesEntry
+	37, // 29: croncompose.agent.v1.ConnectorEvent.ts:type_name -> google.protobuf.Timestamp
+	16, // 30: croncompose.agent.v1.ConnectorEvent.connectors:type_name -> croncompose.agent.v1.DiscoveredConnector
+	20, // 31: croncompose.agent.v1.ConnectorResult.steps:type_name -> croncompose.agent.v1.ConnectorStep
+	25, // 32: croncompose.agent.v1.ListUsersResult.users:type_name -> croncompose.agent.v1.SystemUser
+	35, // 33: croncompose.agent.v1.DeployApp.env:type_name -> croncompose.agent.v1.DeployApp.EnvEntry
+	36, // 34: croncompose.agent.v1.DeployCommand.env:type_name -> croncompose.agent.v1.DeployCommand.EnvEntry
+	27, // 35: croncompose.agent.v1.DeployCommand.apps:type_name -> croncompose.agent.v1.DeployApp
+	29, // 36: croncompose.agent.v1.DeployCommand.health:type_name -> croncompose.agent.v1.HealthCheck
+	0,  // 37: croncompose.agent.v1.AgentService.Enroll:input_type -> croncompose.agent.v1.EnrollRequest
+	2,  // 38: croncompose.agent.v1.AgentService.AgentStream:input_type -> croncompose.agent.v1.AgentMessage
+	1,  // 39: croncompose.agent.v1.AgentService.Enroll:output_type -> croncompose.agent.v1.EnrollResponse
+	3,  // 40: croncompose.agent.v1.AgentService.AgentStream:output_type -> croncompose.agent.v1.ServerMessage
+	39, // [39:41] is the sub-list for method output_type
+	37, // [37:39] is the sub-list for method input_type
+	37, // [37:37] is the sub-list for extension type_name
+	37, // [37:37] is the sub-list for extension extendee
+	0,  // [0:37] is the sub-list for field type_name
 }
 
 func init() { file_agent_proto_init() }
@@ -3224,6 +3320,7 @@ func file_agent_proto_init() {
 		(*AgentMessage_TerminalOutput)(nil),
 		(*AgentMessage_DeployEvent)(nil),
 		(*AgentMessage_ListUsersResult)(nil),
+		(*AgentMessage_UpdateProgress)(nil),
 	}
 	file_agent_proto_msgTypes[3].OneofWrappers = []any{
 		(*ServerMessage_SyncJobs)(nil),
@@ -3241,7 +3338,7 @@ func file_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_proto_rawDesc), len(file_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   36,
+			NumMessages:   37,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

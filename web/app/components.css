@@ -54,6 +54,24 @@ a.panel:hover {
 .button.ghost:hover { background: var(--surface-2); color: var(--text); }
 .button.danger { background: var(--danger); }
 .button.danger:hover { background: #bd433e; }
+.button.icon-danger {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0;
+  background: #fff;
+  color: var(--danger);
+  border: 1px solid var(--border-strong);
+}
+@media (hover: hover) and (pointer: fine) {
+  .button.icon-danger:hover {
+    background: var(--danger-bg);
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 35%, var(--border-strong));
+  }
+}
+.button.icon-danger:active { transform: scale(0.97); }
+.button.icon-danger:disabled { opacity: 0.45; }
 .button.block { width: 100%; }
 .button.sm { padding: 8px 14px; font-size: 13px; }
 

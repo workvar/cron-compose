@@ -51,6 +51,7 @@ message AgentMessage {
     TerminalOutput  terminal_output  = 9; // web terminal: pty / command output
     DeployEvent     deploy_event     = 10; // git clone / install progress
     ListUsersResult list_users_result = 11; // reply to a ListUsersRequest
+    UpdateProgress  update_progress   = 12; // self-update / stack rebuild stage
   }
 }
 
@@ -163,6 +164,17 @@ message UpdateAgent {
   string download_url   = 2;
   string sha256         = 3;  // hex digest of the binary at download_url; required
   bool   restart        = 4;  // exit after swapping so the supervisor restarts us
+}
+
+// UpdateProgress is a live stage report while an agent (or the stack it hosts)
+// applies UpdateAgent. Ephemeral: not persisted in the agent outbox. Phases:
+// offered | fetching | cloning | downloading | building | installing |
+// migrating | stopping | restarting | verifying | done | failed.
+message UpdateProgress {
+  string target_version = 1;
+  string phase          = 2;
+  string detail         = 3; // human-readable: "Stopping the server so it can restart"
+  int32  percent        = 4; // 0-100
 }
 
 // ---- Connectors ----

@@ -43,6 +43,10 @@ export type UpdateServerStatus = {
   can_update: boolean;
   /** True when this agent runs on the control-plane host (full stack rebuild). */
   stack?: boolean;
+  /** Live self-update stage from the agent, when an update is in flight. */
+  update_phase?: string;
+  update_detail?: string;
+  update_percent?: number;
 };
 
 export type UpdateStatus = {

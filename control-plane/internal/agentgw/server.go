@@ -55,6 +55,7 @@ type Gateway struct {
 	resolver    SecretResolver
 	onFailed    FailedRunHook
 	onDeployFin DeployFinishedHook
+	progress    *UpdateProgressTracker
 	grpc        *grpc.Server
 	lis         net.Listener
 }
@@ -71,6 +72,7 @@ func New(addr string, log *slog.Logger, pool *pgxpool.Pool, bundle *pki.Bundle, 
 		terminals: NewTerminalBus(),
 		pending:   NewPendingRequests(),
 		users:     NewPendingUserRequests(),
+		progress:  NewUpdateProgressTracker(),
 		resolver:  resolver,
 	}
 }
@@ -88,10 +90,17 @@ func (g *Gateway) SendAgentUpdate(serverID string, up *agentv1.UpdateAgent) erro
 	if up == nil {
 		return errors.New("nil update")
 	}
-	return g.registry.Send(serverID, &agentv1.ServerMessage{
+	if err := g.registry.Send(serverID, &agentv1.ServerMessage{
 		Body: &agentv1.ServerMessage_UpdateAgent{UpdateAgent: up},
-	})
+	}); err != nil {
+		return err
+	}
+	g.progress.Offer(serverID, up.GetTargetVersion())
+	return nil
 }
+
+// UpdateProgress exposes the in-memory self-update stage tracker for GET /updates.
+func (g *Gateway) UpdateProgress() *UpdateProgressTracker { return g.progress }
 
 // SetFailedRunHook installs a hook invoked when a run ends with a non-success status.
 // Set this once, before Start, so the stream handler picks it up.
@@ -146,7 +155,7 @@ func (g *Gateway) Start(_ context.Context) error {
 
 	creds := credentials.NewTLS(tlsCfg)
 	g.grpc = grpc.NewServer(grpc.Creds(creds))
-	agentv1.RegisterAgentServiceServer(g.grpc, newService(g.log, g.pool, g.registry, g.broker, g.terminals, g.pending, g.users, g.logMaxBytes, g.update, g.resolver, g.onFailed, g.onDeployFin))
+	agentv1.RegisterAgentServiceServer(g.grpc, newService(g.log, g.pool, g.registry, g.broker, g.terminals, g.pending, g.users, g.logMaxBytes, g.update, g.resolver, g.onFailed, g.onDeployFin, g.progress))
 
 	go func() {
 		g.log.Info("grpc listening (mTLS)", "addr", g.addr)

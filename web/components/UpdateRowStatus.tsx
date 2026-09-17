@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useAgentUpdateProgress } from "@/lib/useAgentUpdateProgress";
+import { effectivePhase } from "@/lib/update-progress";
 
 type Props = {
   serverId: string;
@@ -10,6 +11,19 @@ type Props = {
   /** True once the update POST for this row has resolved 200 OK. */
   started: boolean;
   busyLabel: boolean;
+};
+
+const SHORT: Record<string, string> = {
+  offered: "Sending…",
+  fetching: "Fetching…",
+  cloning: "Cloning…",
+  downloading: "Downloading…",
+  building: "Building…",
+  installing: "Installing…",
+  migrating: "Migrating…",
+  stopping: "Stopping…",
+  restarting: "Restarting…",
+  verifying: "Verifying…",
 };
 
 /**
@@ -34,15 +48,16 @@ export function UpdateRowStatus({ serverId, targetVersion, stack, started, busyL
   if (busyLabel) return <>Updating…</>;
   if (stack) return <>{started ? "Started" : "Update"}</>;
 
-  if (phase === "building" || phase === "restarting") {
+  if (phase === "done") return <>Updated</>;
+  if (phase === "timeout" || phase === "failed") return <>Retry</>;
+  if (phase !== "idle") {
+    const shown = effectivePhase(phase, false);
     return (
       <span className="cluster" style={{ gap: 6, flexWrap: "nowrap", justifyContent: "flex-end" }}>
         <span className="agent-spinner" aria-hidden />
-        {phase === "restarting" ? "Restarting…" : "Building…"}
+        {SHORT[shown] ?? "Updating…"}
       </span>
     );
   }
-  if (phase === "done") return <>Updated</>;
-  if (phase === "timeout") return <>Retry</>;
   return <>Update</>;
 }

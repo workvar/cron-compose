@@ -31,6 +31,9 @@ type ServerStatus struct {
 	UpdateAvailable bool   `json:"update_available"`
 	CanUpdate       bool   `json:"can_update"`
 	Stack           bool   `json:"stack,omitempty"`
+	UpdatePhase     string `json:"update_phase,omitempty"`
+	UpdateDetail    string `json:"update_detail,omitempty"`
+	UpdatePercent   int    `json:"update_percent,omitempty"`
 }
 
 // StatusResponse is returned by GET /updates.
@@ -73,6 +76,11 @@ func (h *handler) status(c fiber.Ctx) error {
 			CurrentVersion: srv.AgentVersion,
 		}
 		item.Stack = srv.Labels["croncompose.role"] == "stack"
+		if p := h.gateway.UpdateProgress().Snapshot(srv.ID, srv.AgentVersion); p != nil {
+			item.UpdatePhase = p.Phase
+			item.UpdateDetail = p.Detail
+			item.UpdatePercent = p.Percent
+		}
 		if policy.Active() && srv.AgentVersion != "" {
 			item.UpdateAvailable = !agentgw.VersionsEqual(srv.AgentVersion, policy.Version) &&
 				agentgw.VersionNewer(srv.AgentVersion, policy.Version)

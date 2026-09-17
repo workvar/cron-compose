@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Server } from "@/lib/types";
+import { IconTrash } from "@/components/icons";
 
 // Delete is the only destructive action here, so this stays a single button rather
 // than growing into a full edit form like ProjectActions. Gated to admin/owner by
@@ -29,8 +30,15 @@ export function ServerActions({ server }: { server: Server }) {
 
   return (
     <div className="stack" style={{ gap: 6, alignItems: "flex-end" }}>
-      <button type="button" className="button sm danger" onClick={remove} disabled={busy}>
-        {busy ? "Deleting…" : "Delete"}
+      <button
+        type="button"
+        className="button icon-danger"
+        onClick={remove}
+        disabled={busy}
+        aria-label={busy ? "Deleting server" : `Delete server ${server.name}`}
+        title="Delete server"
+      >
+        <IconTrash />
       </button>
       {error && <p className="form-error" style={{ margin: 0 }}>{error}</p>}
     </div>
