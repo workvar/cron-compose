@@ -1,28 +1,35 @@
-# CronCompose v0.0.7
+# CronCompose v0.0.8
 
-Agent updates now tell you what's actually happening, and keep telling you after a
-refresh.
+Configure Git OAuth from Settings instead of `.env`, delete a server (and its run
+history) from the UI, and a batch of smaller fixes: a slimmer update banner, editable
+clone-path languages, a Ports server filter, and a password-manager annoyance on
+Secrets.
 
 ## Highlights
 
-- **Live agent update progress** — Clicking **Update** on a server no longer just
-  flips to a static "Started" label. The panel now polls the control plane and shows
-  the real phase — *Building from source…*, *Restarting agent…*, then *Updated* — with
-  a spinner and an elapsed-time clock, both on the server detail page and in
-  Settings → Updates.
-- **Survives a page refresh** — The in-progress state is now tracked per server
-  (not just in memory), so reloading the page while an agent is mid-rebuild no longer
-  shows a fresh, clickable "Update" button. It picks up right where the update left
-  off and disables itself correctly until the agent reports the new version or the
-  attempt times out (20 minutes), at which point you can retry.
-- Whole-stack (control-plane host) updates are unaffected — they still hand off to the
-  existing full-screen update overlay, since that host goes down during its own
-  rebuild.
+- **Git OAuth from Settings** — GitHub/GitLab OAuth app credentials (client ID,
+  client secret, callback URL, GitLab base URL) can now be plugged in from
+  Settings → Git OAuth, admin-only. Takes effect immediately, no restart. Leave it
+  unset and the control plane falls back to `GITHUB_OAUTH_*`/`GITLAB_OAUTH_*` in
+  `.env` exactly as before, so nothing changes for an existing install that doesn't
+  touch this.
+- **Delete a server** — The server detail page now has a Delete action
+  (admin/owner), which removes the server, its jobs, and its run history. Fixes a
+  related bug: deleting a server with any run history used to fail outright with a
+  foreign-key error, because `runs.server_id` was the one server-scoped table that
+  never cascaded.
+- **Clone paths: add/remove languages** — Settings → Clone paths now lets you add a
+  language that isn't in the default set or drop one you don't use (e.g. Elixir),
+  laid out as a responsive grid with a logo per language instead of a single
+  stacked column.
+- **Ports: filter by server** — A server dropdown next to the search bar scopes the
+  Ports table to one server, on top of the existing text search.
+- **Dashboard update banner, slimmed** — Collapses to one row instead of a
+  headline + paragraph + button column.
+- **Secrets form fix** — The scope field no longer gets auto-highlighted by
+  password managers guessing it's a username field next to the value input.
 
 ## Upgrade notes
-
-This is a web-only UI change: no database migration, no agent protocol change, no
-control-plane API change.
 
 ### Control plane (source install)
 
@@ -31,15 +38,19 @@ From Settings → Updates, click **Update** on this host. Or by hand:
 ```sh
 cd cron-compose
 git fetch --tags
-git checkout --force v0.0.7
+git checkout --force v0.0.8
 ./update.sh --no-pull
 ```
 
+This release applies two migrations: `0015_server_delete_cascade.sql` (cascades
+`runs.server_id`, needed for the new Delete action) and
+`0016_oauth_settings.sql` (adds the `oauth_settings` table for the new Git OAuth
+UI — empty until you fill it in, so nothing changes unless you use it). `update.sh`
+runs both automatically; back up Postgres first if you want a rollback path.
+
 ### Agent (Linux / macOS)
 
-No agent changes in this release. Existing agents keep working; update them from
-Settings → Updates or Servers → *host* to pick up the new progress UI once their
-control plane is on v0.0.7.
+No agent changes in this release. Existing agents keep working as-is.
 
 ```sh
 curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh | \
@@ -48,3 +59,15 @@ curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/insta
        CONTROL_PLANE_ADDR=<host>:9090 \
        bash
 ```
+
+### Optional: Git OAuth via Settings
+
+Nothing changes unless you opt in.
+
+1. Create a GitHub or GitLab OAuth app, using this control plane's public URL plus
+   `/api/auth/<github|gitlab>/callback` as the callback URL (Settings → Git OAuth
+   shows the exact URL it expects).
+2. Paste the client ID and client secret into Settings → Git OAuth and save. GitLab
+   also takes a base URL if you're self-hosted.
+3. That's it — no restart. Use **Revert to .env** to go back to whatever (if
+   anything) is set there.
