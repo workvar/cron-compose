@@ -82,6 +82,23 @@ type Settings struct {
 	UpdatedAt     time.Time         `json:"updated_at"`
 }
 
+// MaxDirEntries is the cap for recursive directory listings.
+const MaxDirEntries = 2000
+
+// DirEntry is one directory in a listing.
+type DirEntry struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// DirList is GET /git/dirs.
+type DirList struct {
+	Path      string     `json:"path"`
+	Recursive bool       `json:"recursive"`
+	Truncated bool       `json:"truncated"`
+	Items     []DirEntry `json:"items"`
+}
+
 // Repo is a provider repository the user can import.
 type Repo struct {
 	ID            string `json:"id"`
