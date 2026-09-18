@@ -100,6 +100,33 @@ func TestPm2ReturnsSystemdRequiredError(t *testing.T) {
 	}
 }
 
+// Production change that would fail this test: waiting on `systemctl restart`
+// of the unit that contains this helper, so systemd SIGTERMs CombinedOutput.
+func TestRestartDoesNotBlockOnUnit(t *testing.T) {
+	env := newPrivctlEnv(t)
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$*\" >> \"$CC_PRIVCTL_SYSTEMCTL_LOG\"\n" +
+		"noblock=0\n" +
+		"restart=0\n" +
+		"for a in \"$@\"; do\n" +
+		"  [ \"$a\" = restart ] && restart=1\n" +
+		"  [ \"$a\" = --no-block ] && noblock=1\n" +
+		"done\n" +
+		"if [ \"$restart\" = 1 ] && [ \"$noblock\" != 1 ]; then echo 'blocking restart' >&2; exit 99; fi\n" +
+		"exit 0\n"
+	if err := os.WriteFile(env.systemctlBin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	putMarker(t, env.dataDir, "agent-supervisor", "systemd")
+	if err := run([]string{"elevate"}); err != nil {
+		t.Fatal(err)
+	}
+	log := readFile(t, env.systemctlLog)
+	if !strings.Contains(log, "--no-block") || !strings.Contains(log, "restart") {
+		t.Fatalf("expected --no-block restart, got %q", log)
+	}
+}
+
 func TestNoSystemctlReturnsSystemdRequiredError(t *testing.T) {
 	dir := t.TempDir()
 	dataDir := filepath.Join(dir, "data")
@@ -125,6 +152,7 @@ type privctlEnv struct {
 	dataDir      string
 	dropIn       string
 	systemctlLog string
+	systemctlBin string
 	unit         string
 }
 
@@ -149,7 +177,7 @@ func newPrivctlEnv(t *testing.T) privctlEnv {
 	t.Setenv("CC_PRIVCTL_UNIT", unit)
 	t.Setenv("CC_PRIVCTL_SYSTEMCTL_LOG", logPath)
 	t.Setenv("SUDO_USER", "croncompose")
-	return privctlEnv{dataDir: dataDir, dropIn: filepath.Join(dropDir, "root.conf"), systemctlLog: logPath, unit: unit}
+	return privctlEnv{dataDir: dataDir, dropIn: filepath.Join(dropDir, "root.conf"), systemctlLog: logPath, systemctlBin: fake, unit: unit}
 }
 
 func putMarker(t *testing.T, dataDir, name, value string) {

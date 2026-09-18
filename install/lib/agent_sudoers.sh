@@ -141,6 +141,31 @@ install_agent_sudoers() {
   return 1
 }
 
+# Copy agent-privctl to the documented sudoers path. Best-effort: missing source is
+# a no-op so callers can invoke this after a skipped agent build.
+install_agent_privctl() {
+  local src="${1:-}" dest="${AGENT_PRIVCTL_BIN}"
+  [ -n "$src" ] || return 0
+  if [ ! -x "$src" ]; then
+    _as_warn "agent-privctl not built at $src; skipping $dest"
+    return 0
+  fi
+  if [ "$(id -u)" -eq 0 ]; then
+    install -d -m 0755 "$(dirname "$dest")" || return 1
+    install -m 0755 -o root -g root "$src" "$dest" || return 1
+    _as_ok "installed $dest"
+    return 0
+  fi
+  if command -v sudo >/dev/null 2>&1; then
+    sudo install -d -m 0755 "$(dirname "$dest")" || return 1
+    sudo install -m 0755 -o root -g root "$src" "$dest" || return 1
+    _as_ok "installed $dest"
+    return 0
+  fi
+  _as_warn "cannot install $dest without root"
+  return 1
+}
+
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   set -euo pipefail
   install_agent_sudoers "${1:-}"

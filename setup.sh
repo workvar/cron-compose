@@ -55,6 +55,8 @@ export NONINTERACTIVE
 . "$LIB_DIR/setup_db.sh"
 # shellcheck source=install/lib/database.sh
 . "$LIB_DIR/database.sh"
+# shellcheck source=install/lib/agent_sudoers.sh
+. "$LIB_DIR/agent_sudoers.sh"
 
 banner() {
   printf '%s\n' "$C_CYAN$C_BOLD" >&2
@@ -154,6 +156,7 @@ build_tools() {
   ok "agent"
   ( cd "$REPO_ROOT/agent" && go build -o bin/agent-privctl ./cmd/agent-privctl ) || die "agent-privctl build failed"
   ok "agent-privctl"
+  install_agent_privctl "$REPO_ROOT/agent/bin/agent-privctl" || true
 }
 
 provision_setup_database() {

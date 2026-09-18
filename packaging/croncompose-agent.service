@@ -12,7 +12,8 @@ EnvironmentFile=-/etc/croncompose/agent.env
 ExecStart=/usr/local/bin/croncompose-agent run
 Restart=always
 RestartSec=5s
-NoNewPrivileges=true
+# NoNewPrivileges must stay off: the service user runs
+# `sudo -n /usr/libexec/croncompose/agent-privctl elevate|demote`, which needs setuid.
 ProtectSystem=full
 ProtectHome=true
 PrivateTmp=true

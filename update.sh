@@ -207,6 +207,7 @@ restart_source() {
   if [ "${CC_ENABLE_AGENT:-0}" = 1 ] && [ "$(uname -s)" = "Linux" ]; then
     # shellcheck source=install/lib/agent_sudoers.sh
     . "$REPO_ROOT/install/lib/agent_sudoers.sh"
+    install_agent_privctl "$REPO_ROOT/agent/bin/agent-privctl" || true
     install_agent_sudoers "$(id -un)" || true
   fi
 }

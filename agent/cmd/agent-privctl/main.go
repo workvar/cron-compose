@@ -95,7 +95,7 @@ func reloadAndRestart(systemctl string) error {
 	if err := runAbs(systemctl, "daemon-reload"); err != nil {
 		return err
 	}
-	return runAbs(systemctl, "restart", unit)
+	return runAbs(systemctl, "--no-block", "restart", unit)
 }
 
 func runAbs(bin string, args ...string) error {
