@@ -36,7 +36,7 @@ type passkeyView struct {
 	LastUsedAt *time.Time `json:"last_used_at"`
 }
 
-// RegisterPasskeys attaches passwordless login (public) and enroll/list/delete
+// RegisterPasskeys attaches passwordless login (public) and enroll/list/rename/delete
 // (authenticated) routes when a Relying Party can be derived from publicURL.
 func RegisterPasskeys(public, authed fiber.Router, log *slog.Logger, users *Store, waStore *WebAuthnStore, secret []byte, publicURL string) StepUp {
 	wa, err := newWebAuthn(publicURL)
@@ -55,6 +55,7 @@ func RegisterPasskeys(public, authed fiber.Router, log *slog.Logger, users *Stor
 	authed.Post("/auth/passkey/register/finish", h.registerFinish)
 	authed.Post("/auth/passkey/step-up/begin", h.stepUpBegin)
 	authed.Get("/auth/passkeys", h.list)
+	authed.Patch("/auth/passkeys/:id", h.rename)
 	authed.Delete("/auth/passkeys/:id", h.delete)
 	return h
 }
@@ -202,6 +203,25 @@ func (h *passkeyHandler) list(c fiber.Ctx) error {
 		})
 	}
 	return c.JSON(fiber.Map{"items": out})
+}
+
+func (h *passkeyHandler) rename(c fiber.Ctx) error {
+	var in struct {
+		Name string `json:"name"`
+	}
+	if err := c.Bind().Body(&in); err != nil {
+		return badRequest(c, "bad_request", err)
+	}
+	row, err := h.store.UpdateName(c.Context(), CurrentUserID(c), c.Params("id"), in.Name)
+	if errors.Is(err, ErrNotFound) {
+		return jsonErr(c, fiber.StatusNotFound, "not_found", err)
+	}
+	if err != nil {
+		return jsonErr(c, fiber.StatusInternalServerError, "rename_failed", err)
+	}
+	return c.JSON(passkeyView{
+		ID: row.ID, Name: row.Name, CreatedAt: row.CreatedAt, LastUsedAt: row.LastUsedAt,
+	})
 }
 
 func (h *passkeyHandler) delete(c fiber.Ctx) error {

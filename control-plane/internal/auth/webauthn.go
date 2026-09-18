@@ -24,6 +24,14 @@ const (
 	defaultPasskeyName = "Passkey"
 )
 
+func normalizePasskeyName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return defaultPasskeyName
+	}
+	return name
+}
+
 // ErrChallengeExpired is returned when a challenge is taken after ExpiresAt.
 var ErrChallengeExpired = errors.New("webauthn challenge expired")
 
@@ -182,9 +190,7 @@ func credFromWebAuthn(userID, name string, credential *webauthn.Credential) (Cre
 	for i, t := range credential.Transport {
 		transports[i] = string(t)
 	}
-	if name == "" {
-		name = defaultPasskeyName
-	}
+	name = normalizePasskeyName(name)
 	return Cred{
 		UserID:          userID,
 		CredentialID:    credential.ID,

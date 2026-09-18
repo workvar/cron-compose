@@ -195,6 +195,66 @@ func TestNewWebAuthnFromPublicURL(t *testing.T) {
 	}
 }
 
+func TestPasskeyRename(t *testing.T) {
+	env := newWebAuthnTestEnv(t)
+	credPK := ids.New()
+	c := Cred{
+		ID:           credPK,
+		UserID:       env.userID,
+		CredentialID: []byte{30, 31, 32, byte(time.Now().UnixNano() & 0xff)},
+		PublicKey:    []byte{9},
+		Name:         "Old",
+	}
+	if err := env.store.InsertCredential(env.ctx, c); err != nil {
+		t.Fatal(err)
+	}
+
+	h := &passkeyHandler{store: env.store}
+	app := fiber.New()
+	app.Use(func(c fiber.Ctx) error {
+		AttachIdentity(c, env.userID, "admin")
+		return c.Next()
+	})
+	app.Patch("/auth/passkeys/:id", h.rename)
+
+	req := httptest.NewRequest(http.MethodPatch, "/auth/passkeys/"+credPK, strings.NewReader(`{"name":"  New name  "}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status=%d body=%s", resp.StatusCode, body)
+	}
+	var got passkeyView
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "New name" || got.ID != credPK {
+		t.Fatalf("got %+v", got)
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/auth/passkeys/"+credPK, strings.NewReader(`{"name":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	app2 := fiber.New()
+	app2.Use(func(c fiber.Ctx) error {
+		AttachIdentity(c, ids.New(), "admin")
+		return c.Next()
+	})
+	app2.Patch("/auth/passkeys/:id", h.rename)
+	resp2, err := app2.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusNotFound {
+		body, _ := io.ReadAll(resp2.Body)
+		t.Fatalf("wrong user status=%d body=%s", resp2.StatusCode, body)
+	}
+}
+
 func TestPasskeyRoutesAbsentWhenRPMissing(t *testing.T) {
 	app := fiber.New()
 	v1 := app.Group("/api/v1")

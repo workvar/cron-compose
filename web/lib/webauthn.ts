@@ -187,6 +187,17 @@ export async function deletePasskey(id: string): Promise<void> {
   if (!res.ok && res.status !== 204) throw new Error(await readError(res, "Could not delete passkey"));
 }
 
+export async function renamePasskey(id: string, name?: string | null): Promise<Passkey> {
+  const res = await fetch(`/api/auth/passkeys/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: normalizePasskeyName(name) }),
+  });
+  if (!res.ok) throw new Error(await readError(res, "Could not rename passkey"));
+  return res.json() as Promise<Passkey>;
+}
+
 export async function beginStepUp(): Promise<BeginResponse> {
   return postJSON<BeginResponse>("/api/auth/passkey/step-up/begin", {});
 }

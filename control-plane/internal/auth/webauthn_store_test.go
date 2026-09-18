@@ -55,6 +55,38 @@ func TestWebAuthnStoreGetByCredentialID(t *testing.T) {
 	}
 }
 
+func TestWebAuthnStoreUpdateName(t *testing.T) {
+	env := newWebAuthnTestEnv(t)
+	credPK := ids.New()
+	c := Cred{
+		ID:           credPK,
+		UserID:       env.userID,
+		CredentialID: []byte{13, 14, 15, byte(time.Now().UnixNano() & 0xff)},
+		PublicKey:    []byte{9},
+		Name:         "Old name",
+	}
+	if err := env.store.InsertCredential(env.ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	got, err := env.store.UpdateName(env.ctx, env.userID, credPK, "  Work laptop  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "Work laptop" {
+		t.Fatalf("name=%q", got.Name)
+	}
+	blank, err := env.store.UpdateName(env.ctx, env.userID, credPK, "   ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blank.Name != "Passkey" {
+		t.Fatalf("blank name=%q", blank.Name)
+	}
+	if _, err := env.store.UpdateName(env.ctx, ids.New(), credPK, "Nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("wrong user: got %v want ErrNotFound", err)
+	}
+}
+
 func TestWebAuthnStoreDelete(t *testing.T) {
 	env := newWebAuthnTestEnv(t)
 	credPK := ids.New()

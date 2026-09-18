@@ -135,6 +135,31 @@ func (s *WebAuthnStore) Delete(ctx context.Context, userID, credPK string) error
 	return nil
 }
 
+// UpdateName renames a credential owned by the given user.
+func (s *WebAuthnStore) UpdateName(ctx context.Context, userID, credPK, name string) (*Cred, error) {
+	name = normalizePasskeyName(name)
+	var c Cred
+	var signCount int64
+	err := s.pool.QueryRow(ctx, `
+		update webauthn_credentials
+		set name = $3
+		where id = $1 and user_id = $2
+		returning id, user_id, credential_id, public_key, attestation_type, transport,
+		          sign_count, name, created_at, last_used_at
+	`, credPK, userID, name).Scan(
+		&c.ID, &c.UserID, &c.CredentialID, &c.PublicKey, &c.AttestationType, &c.Transport,
+		&signCount, &c.Name, &c.CreatedAt, &c.LastUsedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	c.SignCount = uint32(signCount)
+	return &c, nil
+}
+
 // UpdateSignCount sets the signature counter for a credential.
 func (s *WebAuthnStore) UpdateSignCount(ctx context.Context, credPK string, n uint32) error {
 	tag, err := s.pool.Exec(ctx, `
