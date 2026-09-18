@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"os"
 	"sync"
 
 	"github.com/croncompose/croncompose/agent/internal/selfupdate"
@@ -61,7 +60,8 @@ func (r *Runtime) handleUpdate(ctx context.Context, u *agentv1.UpdateAgent) {
 		}
 		r.log.Info("exiting so the supervisor restarts the new binary")
 		report("restarting", "Restarting the agent on the new binary", 90)
-		os.Exit(0)
+		selfupdate.ClearPinnedAgentVersion()
+		selfupdate.FlushAndExit()
 	}
 
 	if err := req.Validate(r.cfg.AgentVersion); err != nil {
@@ -90,7 +90,8 @@ func (r *Runtime) handleUpdate(ctx context.Context, u *agentv1.UpdateAgent) {
 
 	r.log.Info("exiting so the supervisor restarts the new binary")
 	report("restarting", "Restarting the agent on the new binary", 90)
-	os.Exit(0)
+	selfupdate.ClearPinnedAgentVersion()
+	selfupdate.FlushAndExit()
 }
 
 func (r *Runtime) reportUpdate(target, phase, detail string, percent int) {

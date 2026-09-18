@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { OAuthSettings } from "@/lib/types";
+import { defaultOAuthCallbackUrl, oauthAppSaveReady } from "@/lib/git-oauth";
 
 type Draft = {
   client_id: string;
@@ -32,7 +33,7 @@ export function GitOAuthSetupModal({
   provider: "github" | "gitlab";
   open: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (provider: "github" | "gitlab") => void;
 }) {
   const label = provider === "github" ? "GitHub" : "GitLab";
   const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -50,7 +51,11 @@ export function GitOAuthSetupModal({
         if (!r.ok) throw new Error(r.status === 403 ? "Only admins can configure OAuth apps." : await r.text());
         const data = (await r.json()) as { items?: OAuthSettings[] };
         const row = (data.items ?? []).find((s) => s.provider === provider);
-        setDraft(draftFrom(row));
+        const next = draftFrom(row);
+        if (!next.redirect_url) {
+          next.redirect_url = defaultOAuthCallbackUrl(window.location.origin, provider);
+        }
+        setDraft(next);
         setHasSecret(!!row?.has_secret);
       })
       .catch((e) => setError((e as Error).message))
@@ -83,8 +88,19 @@ export function GitOAuthSetupModal({
           base_url: draft.base_url.trim(),
         }),
       });
-      if (!res.ok) throw new Error(await res.text());
-      onSaved();
+      if (!res.ok) {
+        let msg = await res.text();
+        try {
+          const j = JSON.parse(msg) as { error?: { message?: string } };
+          if (j.error?.message) msg = j.error.message;
+        } catch { /* keep raw body */ }
+        throw new Error(msg || `Save failed (HTTP ${res.status})`);
+      }
+      const saved = (await res.json()) as OAuthSettings;
+      if (!saved.configured) {
+        throw new Error("Client ID and secret are both required.");
+      }
+      onSaved(provider);
       onClose();
     } catch (e) {
       setError((e as Error).message);
@@ -106,7 +122,7 @@ export function GitOAuthSetupModal({
           <div>
             <h2 id="oauth-setup-title" style={{ margin: 0 }}>{label} OAuth app</h2>
             <p className="subtle" style={{ margin: "6px 0 0", fontSize: 13 }}>
-              Paste the OAuth app credentials, save, then click Connect {label} again.
+              Paste the OAuth app credentials. Saving sends you to {label} to connect your account.
             </p>
           </div>
           <button type="button" className="button ghost sm" onClick={onClose} aria-label="Close">
@@ -177,10 +193,10 @@ export function GitOAuthSetupModal({
               <button
                 type="button"
                 className="button sm"
-                disabled={busy || !draft.client_id.trim()}
+                disabled={busy || !oauthAppSaveReady(draft.client_id, draft.client_secret, hasSecret)}
                 onClick={() => void save()}
               >
-                {busy ? "Saving…" : "Save"}
+                {busy ? "Saving…" : `Save and connect ${label}`}
               </button>
             </div>
           </>

@@ -49,6 +49,12 @@ func TestElevateWritesDropInAndMarkers(t *testing.T) {
 	if !strings.Contains(body, "ProtectHome=false") {
 		t.Fatalf("drop-in missing ProtectHome=false (packaged unit hardening):\n%s", body)
 	}
+	if !strings.Contains(body, "UnsetEnvironment=AGENT_VERSION") {
+		t.Fatalf("drop-in missing UnsetEnvironment=AGENT_VERSION:\n%s", body)
+	}
+	if !strings.Contains(body, "ProtectSystem=false") {
+		t.Fatalf("drop-in missing ProtectSystem=false:\n%s", body)
+	}
 
 	if got := getMarker(t, env.dataDir, "agent-service-user"); got == "" {
 		t.Fatal("expected agent-service-user marker")

@@ -108,6 +108,29 @@ export function useAgentUpdateProgress(serverId: string, targetVersion: string |
             applyLive("done", "Update complete — refreshing…", 100);
             clearAgentUpdating(serverId);
             window.setTimeout(() => router.refresh(), 600);
+            return;
+          }
+          // Came back online still on the old version after we saw a restart —
+          // usually Environment=AGENT_VERSION is pinned in the systemd unit.
+          if (
+            item.status === "online" &&
+            sawDownRef.current &&
+            want.length > 0 &&
+            cur.length > 0 &&
+            cur !== want &&
+            age > 45_000 &&
+            (live === "restarting" || live === "installing" || !live)
+          ) {
+            if (cancelled) return;
+            applyLive(
+              "failed",
+              "Agent restarted but still reports " + (item.current_version || "the old version") +
+                ". The service likely pins Environment=AGENT_VERSION. On the host run: " +
+                "sudo mkdir -p /etc/systemd/system/croncompose-agent.service.d && " +
+                "echo -e '[Service]\\nUnsetEnvironment=AGENT_VERSION' | sudo tee /etc/systemd/system/croncompose-agent.service.d/unset-agent-version.conf && " +
+                "sudo systemctl daemon-reload && sudo systemctl restart croncompose-agent",
+              0,
+            );
           }
         } catch {
           // Transient network hiccup — keep polling, don't flip phase on it.

@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 // buildVersion is set at link time by the release workflow (-ldflags -X ...).
@@ -29,13 +30,25 @@ func Load() (Config, error) {
 		ControlPlaneHTTPBase: env("CONTROL_PLANE_HTTP", "http://localhost:8080/api/v1"),
 		ControlPlaneSNI:      env("CONTROL_PLANE_SNI", "localhost"),
 		DataDir:              env("DATA_DIR", defaultDataDir),
-		AgentVersion:         env("AGENT_VERSION", buildVersion),
+		AgentVersion:         resolveAgentVersion(),
 		SelfUpdate:           envBool("AGENT_SELF_UPDATE", true),
 	}
 	if c.ControlPlaneAddr == "" {
 		return c, fmt.Errorf("CONTROL_PLANE_ADDR is required")
 	}
 	return c, nil
+}
+
+// resolveAgentVersion prefers the version linked into the binary. Installers used
+// to pin Environment=AGENT_VERSION in the systemd unit, which made Hello keep
+// reporting the install-time tag after a successful self-update. AGENT_VERSION
+// still wins for local/dev binaries whose linked version is the placeholder.
+func resolveAgentVersion() string {
+	linked := strings.TrimSpace(buildVersion)
+	if linked != "" && linked != "0.1.0-dev" {
+		return linked
+	}
+	return env("AGENT_VERSION", buildVersion)
 }
 
 // envBool reads a boolean env var. Anything that is plainly a "no" turns it off; an

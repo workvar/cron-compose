@@ -225,7 +225,6 @@ Environment=CONTROL_PLANE_ADDR=${CONTROL_PLANE_ADDR}
 Environment=CONTROL_PLANE_HTTP=${CONTROL_PLANE_HTTP}
 Environment=CONTROL_PLANE_SNI=${SNI}
 Environment=DATA_DIR=${DATA_DIR}
-Environment=AGENT_VERSION=${AGENT_VERSION}
 ExecStart=${BIN_PATH} run
 Restart=always
 RestartSec=5s
@@ -235,6 +234,10 @@ WantedBy=multi-user.target
 EOF
 
   echo "==> enrolling"
+  # AGENT_VERSION is only for this one-shot enroll process. Do not bake it into
+  # the unit: self-update replaces the binary's linked version, and a pinned
+  # Environment=AGENT_VERSION would keep Hello reporting the install-time tag
+  # forever (UI stuck on "restarting").
   sudo -u croncompose \
     CONTROL_PLANE_ADDR="$CONTROL_PLANE_ADDR" \
     CONTROL_PLANE_HTTP="$CONTROL_PLANE_HTTP" \
@@ -287,8 +290,6 @@ install_darwin() {
         <string>${SNI}</string>
         <key>DATA_DIR</key>
         <string>${DATA_DIR}</string>
-        <key>AGENT_VERSION</key>
-        <string>${AGENT_VERSION}</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

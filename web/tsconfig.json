@@ -43,6 +43,7 @@
     "lib/webauthn.test.ts",
     "lib/terminal-users.test.ts",
     "lib/agent-root.test.ts",
-    "lib/parse-dotenv.test.ts"
+    "lib/parse-dotenv.test.ts",
+    "lib/git-oauth.test.ts"
   ]
 }
