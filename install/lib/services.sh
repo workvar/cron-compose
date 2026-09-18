@@ -76,7 +76,7 @@ print_summary() {
   info "Config + secrets live in .env (mode 600). Runtime state in: $RUNTIME_DIR"
   if [ "${ENABLE_AGENT:-0}" = "1" ]; then
     info "A local agent is enrolled and running on this machine."
-    info "Agent sudoers: /etc/sudoers.d/croncompose-agent (for Ports + connectors; re-run install/lib/agent_sudoers.sh if needed)"
+    info "Agent sudoers: /etc/sudoers.d/croncompose-agent (Ports, connectors, agent-privctl elevate|demote; re-run install/lib/agent_sudoers.sh if needed)"
   fi
   dim "For production, set Advertise host to a real DNS name, front the API/UI with TLS,"
   dim "and replace the self-signed CA under $RUNTIME_DIR/tls with your own PKI."

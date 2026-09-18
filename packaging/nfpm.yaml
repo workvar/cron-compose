@@ -24,6 +24,13 @@ contents:
     file_info:
       mode: 0755
 
+  - src: ./dist/agent-privctl
+    dst: /usr/libexec/croncompose/agent-privctl
+    file_info:
+      mode: 0755
+      owner: root
+      group: root
+
   - src: ./packaging/croncompose-agent.service
     dst: /lib/systemd/system/croncompose-agent.service
     file_info:

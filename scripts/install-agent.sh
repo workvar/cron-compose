@@ -36,6 +36,7 @@ if [ "$GITHUB_REPO" = "__REPO__" ] || [ -z "$GITHUB_REPO" ]; then
 fi
 SNI="${CONTROL_PLANE_SNI:-${CONTROL_PLANE_ADDR%%:*}}"
 BIN_PATH=/usr/local/bin/croncompose-agent
+PRIVCTL_PATH=/usr/libexec/croncompose/agent-privctl
 
 UNIT_PATH=/etc/systemd/system/croncompose-agent.service
 PLIST_LABEL=com.croncompose.agent
@@ -157,9 +158,16 @@ build_from_source() {
       -ldflags="-s -w -X github.com/croncompose/croncompose/agent/internal/config.buildVersion=${ver}" \
       -o "$BIN_PATH.tmp" \
       ./cmd/agent
+    go build -trimpath \
+      -ldflags="-s -w" \
+      -o "$PRIVCTL_PATH.tmp" \
+      ./cmd/agent-privctl
   )
   chmod 0755 "$BIN_PATH.tmp"
   mv "$BIN_PATH.tmp" "$BIN_PATH"
+  install -d -m 0755 "$(dirname "$PRIVCTL_PATH")"
+  install -m 0755 -o root -g root "$PRIVCTL_PATH.tmp" "$PRIVCTL_PATH"
+  rm -f "$PRIVCTL_PATH.tmp"
   rm -rf "$SRC"
   trap - EXIT
 }

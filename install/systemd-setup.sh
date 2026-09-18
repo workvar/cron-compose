@@ -88,6 +88,11 @@ if [ "$CC_ENABLE_AGENT" = "1" ]; then
   echo "  + croncompose-agent.service"
   UNITS="$UNITS croncompose-agent.service"
   if [ "$writing_to_etc" = "1" ]; then
+    if [ -x "$REPO_ROOT/agent/bin/agent-privctl" ]; then
+      install -d -m 0755 /usr/libexec/croncompose
+      install -m 0755 -o root -g root "$REPO_ROOT/agent/bin/agent-privctl" /usr/libexec/croncompose/agent-privctl
+      echo "  + /usr/libexec/croncompose/agent-privctl"
+    fi
     install_agent_sudoers "$SVC_USER" || true
   fi
 fi

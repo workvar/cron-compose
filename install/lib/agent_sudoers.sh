@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Install passwordless sudo grants so the CronCompose agent can inspect listen
-# sockets (Ports page) and drive connectors (systemctl, nginx, …).
+# sockets (Ports page), drive connectors (systemctl, nginx, …), and invoke the
+# agent-privctl elevate/demote helper. Never grants NOPASSWD: ALL.
 #
 # Usage:
 #   source this file, then:  install_agent_sudoers <unix-user>
@@ -11,6 +12,8 @@
 
 AGENT_SUDOERS_MARKER='# CronCompose agent (managed by installer)'
 AGENT_SUDOERS_FILE=/etc/sudoers.d/croncompose-agent
+# Documented install path. Sudoers pins this exact argv; do not grant NOPASSWD: ALL.
+AGENT_PRIVCTL_BIN="${AGENT_PRIVCTL_BIN:-/usr/libexec/croncompose/agent-privctl}"
 
 _as_log() {
   if declare -F step >/dev/null 2>&1; then step "$@"
@@ -59,14 +62,16 @@ agent_sudoers_path_list() {
 }
 
 agent_sudoers_content() {
-  local user="$1" paths
+  local user="$1" paths privctl="${AGENT_PRIVCTL_BIN}"
   paths="$(agent_sudoers_path_list)"
-  [ -n "$paths" ] || return 1
-  cat <<EOF
-$AGENT_SUDOERS_MARKER
-# Socket inspection (Ports page) and connector lifecycle for user $user.
-$user ALL=(root) NOPASSWD: $paths
-EOF
+  printf '%s\n' "$AGENT_SUDOERS_MARKER"
+  printf '%s\n' "# Socket inspection (Ports page) and connector lifecycle for user $user."
+  if [ -n "$paths" ]; then
+    printf '%s ALL=(root) NOPASSWD: %s\n' "$user" "$paths"
+  fi
+  printf '%s\n' "# Agent root access: only elevate|demote. Never NOPASSWD: ALL."
+  printf 'Defaults:%s env_keep += "DATA_DIR CC_RUNTIME_DIR"\n' "$user"
+  printf '%s ALL=(root) NOPASSWD: %s elevate, %s demote\n' "$user" "$privctl" "$privctl"
 }
 
 _write_agent_sudoers_file() {
@@ -88,16 +93,16 @@ install_agent_sudoers() {
   [ -n "$user" ] || { _as_warn "install_agent_sudoers: missing user"; return 1; }
   [ "$(uname -s)" = "Linux" ] || return 0
 
-  local paths dest="$AGENT_SUDOERS_FILE"
+  local paths dest="$AGENT_SUDOERS_FILE" privctl="${AGENT_PRIVCTL_BIN}"
   paths="$(agent_sudoers_path_list)"
   if [ -z "$paths" ]; then
-    _as_warn "no connector binaries found (ss, lsof, systemctl, …); skipping sudoers"
-    return 0
+    _as_warn "no connector binaries found (ss, lsof, systemctl, …); writing privctl grants only"
   fi
 
   if [ -f "$dest" ] && ! grep -qF "$AGENT_SUDOERS_MARKER" "$dest" 2>/dev/null; then
     _as_warn "$dest exists and is not managed by CronCompose; leaving it unchanged"
-    _as_dim "Add manually: $user ALL=(root) NOPASSWD: $paths"
+    [ -n "$paths" ] && _as_dim "Add manually: $user ALL=(root) NOPASSWD: $paths"
+    _as_dim "And: $user ALL=(root) NOPASSWD: $privctl elevate, $privctl demote"
     return 0
   fi
 
@@ -125,12 +130,14 @@ install_agent_sudoers() {
     rm -f "$tmp"
     sudo rm -f "$dest" 2>/dev/null || true
     _as_warn "could not install $dest (sudo denied or visudo rejected the file)"
-    _as_dim "Add manually: $user ALL=(root) NOPASSWD: $paths"
+    [ -n "$paths" ] && _as_dim "Add manually: $user ALL=(root) NOPASSWD: $paths"
+    _as_dim "And: $user ALL=(root) NOPASSWD: $privctl elevate, $privctl demote"
     return 1
   fi
 
   _as_warn "cannot write $dest without root"
-  _as_dim "Add manually: $user ALL=(root) NOPASSWD: $paths"
+  [ -n "$paths" ] && _as_dim "Add manually: $user ALL=(root) NOPASSWD: $paths"
+  _as_dim "And: $user ALL=(root) NOPASSWD: $privctl elevate, $privctl demote"
   return 1
 }
 

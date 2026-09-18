@@ -152,6 +152,8 @@ build_tools() {
   ok "control-plane"
   ( cd "$REPO_ROOT/agent" && go build -o bin/agent ./cmd/agent ) || die "agent build failed"
   ok "agent"
+  ( cd "$REPO_ROOT/agent" && go build -o bin/agent-privctl ./cmd/agent-privctl ) || die "agent-privctl build failed"
+  ok "agent-privctl"
 }
 
 provision_setup_database() {

@@ -88,8 +88,14 @@ the tag, rebuild web + control plane + agent via `update.sh`, restart, and strip
 build inputs again.
 
 On Linux the installer also writes `/etc/sudoers.d/croncompose-agent` with grants
-for `systemctl`, `systemd-analyze`, `ss`, and `lsof` when that file does not already
-exist.
+for connector/Ports binaries plus the two `agent-privctl` commands:
+
+```
+<agent-user> ALL=(root) NOPASSWD: /usr/libexec/croncompose/agent-privctl elevate, /usr/libexec/croncompose/agent-privctl demote
+```
+
+Never grant `NOPASSWD: ALL`. The installer skips the file when a non-managed drop-in
+already exists.
 
 ## Agent socket inspection (Ports page)
 
@@ -116,6 +122,19 @@ sudo ./install/lib/agent_sudoers.sh <agent-user>
 The file written is `/etc/sudoers.d/croncompose-agent` (managed marker in the file).
 If you already have a custom sudoers drop-in with another name, merge the paths from
 `install/lib/agent_sudoers.sh` or remove the conflict.
+
+## Agent root access
+
+An admin/owner can enable **Agent root access** per server after a passkey (WebAuthn)
+step-up. The agent then runs `sudo -n /usr/libexec/croncompose/agent-privctl elevate`,
+which writes a systemd drop-in `User=root` and restarts `croncompose-agent.service`.
+Turning the switch off sends `demote` and restores the original service user.
+
+Agents under pm2 (no systemd) cannot run as root; the helper fails with
+`systemd required to run agent as root under pm2`.
+
+WebAuthn relying-party ID is the hostname of `PUBLIC_BASE_URL` (or `PUBLIC_HTTP_URL`).
+Set it to the URL operators open in the browser.
 
 ## Metrics
 

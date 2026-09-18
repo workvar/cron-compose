@@ -169,6 +169,7 @@ build_go_source() {
   ( cd cli           && go build -o bin/cc            ./cmd/cc      ) || die "cli build failed";           ok "cc"
   if [ "${CC_ENABLE_AGENT:-0}" = 1 ] && [ -d agent ]; then
     ( cd agent && go build -ldflags "$ldflags" -o bin/agent ./cmd/agent ) || die "agent build failed"; ok "agent"
+    ( cd agent && go build -o bin/agent-privctl ./cmd/agent-privctl ) || die "agent-privctl build failed"; ok "agent-privctl"
   fi
 }
 

@@ -1,15 +1,11 @@
 package runtime
 
 import (
-	"context"
-	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/croncompose/croncompose/agent/internal/config"
-	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
 )
 
 // Production change that would fail this test: ignoring .run/agent-service-user
@@ -51,13 +47,4 @@ func TestNewHelloReportsEuidAndServiceUser(t *testing.T) {
 	if h.GetAgentVersion() != "test" {
 		t.Fatalf("agent_version=%q", h.GetAgentVersion())
 	}
-}
-
-func TestHandleAgentRootCommandStubDoesNotPanic(t *testing.T) {
-	r := &Runtime{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
-	r.handleServerMessage(context.Background(), &agentv1.ServerMessage{
-		Body: &agentv1.ServerMessage_AgentRootCommand{
-			AgentRootCommand: &agentv1.AgentRootCommand{Enabled: true},
-		},
-	})
 }

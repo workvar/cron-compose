@@ -57,6 +57,7 @@ control-plane:
 
 agent:
 	cd agent && go build -o bin/agent ./cmd/agent
+	cd agent && go build -o bin/agent-privctl ./cmd/agent-privctl
 
 cli:
 	cd cli && go build -o bin/cc ./cmd/cc

@@ -23,6 +23,8 @@ build_go() {
   if [ "${ENABLE_AGENT:-0}" = "1" ]; then
     ( cd "$REPO_ROOT/agent" && go build -ldflags "$ldflags" -o bin/agent ./cmd/agent ) || die "agent build failed"
     ok "agent"
+    ( cd "$REPO_ROOT/agent" && go build -o bin/agent-privctl ./cmd/agent-privctl ) || die "agent-privctl build failed"
+    ok "agent-privctl"
   fi
 }
 

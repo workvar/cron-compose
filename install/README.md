@@ -197,8 +197,15 @@ control plane only; run agents on Linux/macOS hosts and point them at this contr
 plane (see `scripts/install-agent.sh`).
 
 On Linux, installers also write `/etc/sudoers.d/croncompose-agent` so the agent can
-inspect listen sockets (Ports page) and drive connectors (`systemctl`, `nginx`, …).
-The helper is `install/lib/agent_sudoers.sh`; run it manually to refresh:
+inspect listen sockets (Ports page), drive connectors (`systemctl`, `nginx`, …), and
+run the root helper at `/usr/libexec/croncompose/agent-privctl`. The helper is
+allowlisted as two argv forms only — never `NOPASSWD: ALL`:
+
+```
+<agent-user> ALL=(root) NOPASSWD: /usr/libexec/croncompose/agent-privctl elevate, /usr/libexec/croncompose/agent-privctl demote
+```
+
+`install/lib/agent_sudoers.sh` writes that file; run it manually to refresh:
 
 ```sh
 sudo ./install/lib/agent_sudoers.sh "$(whoami)"    # source install (pm2 user)
@@ -206,6 +213,9 @@ sudo ./install/lib/agent_sudoers.sh croncompose    # standalone agent package
 ```
 
 `./update.sh` re-applies this when `CC_ENABLE_AGENT=1`.
+
+Passkeys (WebAuthn) use the hostname of `PUBLIC_BASE_URL` as the relying-party ID.
+Set that URL to the hostname browsers actually use, or enroll and login will fail.
 
 ## Non-interactive install
 

@@ -13,9 +13,16 @@ control plane, and the control plane relays over the stream the agent already di
 ## Access control
 
 Opening a terminal is admin/owner only. It is the most powerful action in the product: a
-shell runs as the agent's operating-system user (often root, depending on how the agent
-was installed), so it can do anything that user can. Viewers and operators cannot open a
-terminal, and the entry point is hidden from them in the UI.
+shell runs as the agent's operating-system user (often a dedicated unprivileged account),
+so it can do anything that user can. Viewers and operators cannot open a terminal, and
+the entry point is hidden from them in the UI.
+
+**Root mode** is `agent_root_enabled` **and** the agent reporting `euid_root`. Until both
+are true, the user picker shows only the agent's own account — other OS users are hidden
+(no “needs root agent” tease). Enabling Agent root access on the server page (passkey
+step-up, admin/owner) tells the agent to elevate via `agent-privctl`; after restart,
+Hello reports `euid_root` and the full user list appears. Turning the switch off sends
+`demote`. If elevation fails, the helper/sudoers error is shown instead of a locked list.
 
 Every session is written to the audit log: `terminal.open` and `terminal.close`, each
 tagged with the actor, the server, the session id, and the mode.
@@ -108,9 +115,11 @@ The web build (`next build`) and `tsc --noEmit` were verified green.
 
 ## Security notes and future work
 
-- The shell runs as the agent's user with no extra sandboxing. Running the agent as a
-  dedicated, least-privilege user is recommended; honoring a per-session `run_as_user`
-  (via sudo allowlist, mirroring the connectors `privexec` design) is future work.
+- The shell runs as the selected OS user with no extra sandboxing. Running the agent as a
+  dedicated, least-privilege user is recommended; other OS users appear in the picker
+  only when root mode is active (agent is euid 0 after Agent root access). Honoring a
+  per-session `run_as_user` without that switch is limited to accounts the agent can
+  already become.
 - The WebSocket handshake is guarded against cross-site WebSocket hijacking by an Origin
   check: a browser Origin is accepted only when it is same-origin (same hostname as the
   request), the configured `PUBLIC_HTTP_URL` host, or a loopback address (so `next dev`

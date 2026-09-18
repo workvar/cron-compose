@@ -40,6 +40,11 @@ This is the highest-risk boundary: an agent runs whatever scripts the control pl
   ports for CronCompose.
 - The agent should run as a dedicated unprivileged system user, not root, unless a
   specific job's `run_as_user` requires elevation (and that should be rare and explicit).
+- **Agent root access** is a per-server exception: after passkey step-up, the agent
+  restarts as root via `/usr/libexec/croncompose/agent-privctl elevate|demote`. Sudoers
+  grants only those two argv forms (plus existing connector/Ports paths) — never
+  `NOPASSWD: ALL`. Disabling the switch must demote; a failed demotion is an ops
+  incident. Passkeys use the hostname of `PUBLIC_BASE_URL` as the WebAuthn RP ID.
 
 ## Secrets
 
