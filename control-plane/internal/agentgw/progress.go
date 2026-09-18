@@ -1,6 +1,7 @@
 package agentgw
 
 import (
+	"strings"
 	"sync"
 	"time"
 )
@@ -20,10 +21,14 @@ type AgentUpdateProgress struct {
 type UpdateProgressTracker struct {
 	mu       sync.Mutex
 	byServer map[string]AgentUpdateProgress
+	rootErr  map[string]string
 }
 
 func NewUpdateProgressTracker() *UpdateProgressTracker {
-	return &UpdateProgressTracker{byServer: map[string]AgentUpdateProgress{}}
+	return &UpdateProgressTracker{
+		byServer: map[string]AgentUpdateProgress{},
+		rootErr:  map[string]string{},
+	}
 }
 
 // Offer records that the control plane just pushed UpdateAgent to this server.
@@ -41,6 +46,19 @@ func (t *UpdateProgressTracker) Offer(serverID, targetVersion string) {
 
 func (t *UpdateProgressTracker) Record(serverID string, p AgentUpdateProgress) {
 	if t == nil || serverID == "" {
+		return
+	}
+	// Privctl reuses UpdateProgress with phase=failed and no target version.
+	// Drop those so GET /updates never treats an agent-root failure as a self-update.
+	if strings.TrimSpace(p.TargetVersion) == "" {
+		if p.Phase == "failed" && strings.TrimSpace(p.Detail) != "" {
+			t.mu.Lock()
+			if t.rootErr == nil {
+				t.rootErr = map[string]string{}
+			}
+			t.rootErr[serverID] = p.Detail
+			t.mu.Unlock()
+		}
 		return
 	}
 	t.mu.Lock()
@@ -74,6 +92,17 @@ func (t *UpdateProgressTracker) Snapshot(serverID, currentVersion string) *Agent
 		out.Percent = 100
 	}
 	return &out
+}
+
+// AgentRootError is the last privctl failure for this server, if any. Empty
+// when the agent has not reported one. Never mixed into Snapshot / GET /updates.
+func (t *UpdateProgressTracker) AgentRootError(serverID string) string {
+	if t == nil {
+		return ""
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.rootErr[serverID]
 }
 
 func (t *UpdateProgressTracker) Clear(serverID string) {

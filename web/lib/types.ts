@@ -26,6 +26,7 @@ export type Server = {
   agent_root_changed_at?: string | null;
   agent_root_changed_by?: string | null;
   agent_service_user?: string;
+  agent_root_error?: string | null;
 };
 
 // One OS account the web terminal could switch to, from GET

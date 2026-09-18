@@ -85,6 +85,11 @@ func (h *handler) get(c fiber.Ctx) error {
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "get_failed", err)
 	}
+	if h.gateway != nil {
+		if msg := h.gateway.UpdateProgress().AgentRootError(srv.ID); msg != "" {
+			srv.AgentRootError = msg
+		}
+	}
 	return c.JSON(srv)
 }
 

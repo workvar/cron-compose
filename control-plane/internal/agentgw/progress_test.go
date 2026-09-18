@@ -1,6 +1,9 @@
 package agentgw
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestUpdateProgressTrackerOfferAndRecord(t *testing.T) {
 	tr := NewUpdateProgressTracker()
@@ -58,5 +61,32 @@ func TestUpdateProgressTrackerClear(t *testing.T) {
 	tr.Clear("srv1")
 	if tr.Snapshot("srv1", "v1") != nil {
 		t.Fatal("cleared progress should be gone")
+	}
+}
+
+// Production change that would fail this test: recording privctl UpdateProgress
+// {phase:failed, target empty} so GET /updates shows an agent-root failure.
+func TestUpdateProgressTrackerIgnoresAgentRootFailure(t *testing.T) {
+	tr := NewUpdateProgressTracker()
+	tr.Offer("srv1", "v1.2.0")
+	tr.Record("srv1", AgentUpdateProgress{
+		Phase:  "failed",
+		Detail: "elevate: sudo: a password is required; grant: ALL=(root) NOPASSWD: /usr/libexec/croncompose/agent-privctl elevate",
+	})
+	got := tr.Snapshot("srv1", "v1.1.0")
+	if got == nil || got.Phase != "offered" || got.TargetVersion != "v1.2.0" {
+		t.Fatalf("agent-root failure must not replace self-update progress, got %+v", got)
+	}
+
+	tr2 := NewUpdateProgressTracker()
+	tr2.Record("srv2", AgentUpdateProgress{
+		Phase:  "failed",
+		Detail: "demote: systemd required to run agent as root under pm2",
+	})
+	if tr2.Snapshot("srv2", "v1") != nil {
+		t.Fatal("agent-root failure must not appear as update progress")
+	}
+	if got := tr2.AgentRootError("srv2"); !strings.Contains(got, "systemd required") {
+		t.Fatalf("AgentRootError=%q", got)
 	}
 }

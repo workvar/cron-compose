@@ -21,6 +21,7 @@ type Server struct {
 	AgentRootChangedAt *time.Time        `json:"agent_root_changed_at,omitempty"`
 	AgentRootChangedBy *string           `json:"agent_root_changed_by,omitempty"`
 	AgentServiceUser   string            `json:"agent_service_user,omitempty"`
+	AgentRootError     string            `json:"agent_root_error,omitempty"`
 }
 
 // CreateInput is the body the API accepts to create a server.

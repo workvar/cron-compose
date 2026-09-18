@@ -4,17 +4,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { Server } from "@/lib/types";
+import { agentRootView, applyToggleFailure } from "@/lib/agent-root";
 import { setAgentRoot } from "@/lib/webauthn";
 
 function isCancelled(err: unknown): boolean {
   return err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "AbortError");
-}
-
-function statusLabel(enabled: boolean, euidRoot: boolean, busy: boolean): string {
-  if (busy) return "Confirming with passkey…";
-  if (!enabled) return "Off";
-  if (euidRoot) return "On — agent is root";
-  return "On — waiting for elevation";
 }
 
 export function AgentRootToggle({
@@ -52,14 +46,24 @@ export function AgentRootToggle({
       router.refresh();
     } catch (err) {
       if (isCancelled(err) || (err as Error).message === "Passkey verification was cancelled") return;
-      setError((err as Error).message || "Could not change agent root access");
+      const nextState = applyToggleFailure({
+        requestedEnabled: next,
+        previousEnabled: enabled,
+        previousEuidRoot: euidRoot,
+        error: err,
+      });
+      setEnabled(nextState.enabled);
+      setEuidRoot(nextState.euidRoot);
+      setError(nextState.error);
+      if (nextState.error == null) router.refresh();
     } finally {
       setBusy(false);
     }
   }
 
   const locked = !hasPasskeys || busy;
-  const tone = !enabled ? "neutral" : euidRoot ? "ok" : "warn";
+  const displayError = error || (enabled && !euidRoot ? server.agent_root_error : null) || null;
+  const { label, tone } = agentRootView({ enabled, euidRoot, busy, error: displayError });
 
   return (
     <div className="panel" style={{ marginBottom: 18 }}>
@@ -85,9 +89,9 @@ export function AgentRootToggle({
               Enroll a passkey in <Link href="/settings">Settings → Security</Link> before turning this on.
             </p>
           )}
-          {error && <p className="form-error" style={{ marginTop: 8 }}>{error}</p>}
+          {displayError && <p className="form-error" style={{ marginTop: 8 }}>{displayError}</p>}
         </div>
-        <span className={`status ${tone}`}>{statusLabel(enabled, euidRoot, busy)}</span>
+        <span className={`status ${tone}`}>{label}</span>
       </div>
     </div>
   );

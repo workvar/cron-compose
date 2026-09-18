@@ -2,6 +2,7 @@
 // (challenge, user.id, credential id / rawId / attestation fields). Browser APIs want
 // ArrayBuffers; POST /auth/passkey/*/finish wants the JSON form.
 
+import { parseControlPlaneError } from "./agent-root";
 import type { Passkey, Server } from "./types";
 
 export type { Passkey };
@@ -133,12 +134,7 @@ export function credentialToJSON(cred: PublicKeyCredential): Record<string, unkn
 }
 
 async function readError(res: Response, fallback: string): Promise<string> {
-  const text = await res.text().catch(() => "");
-  try {
-    const parsed = JSON.parse(text) as { error?: { message?: string } };
-    if (parsed?.error?.message) return parsed.error.message;
-  } catch { /* keep fallback */ }
-  return text || `${fallback} (HTTP ${res.status})`;
+  return parseControlPlaneError(res.status, await res.text().catch(() => ""), fallback).message;
 }
 
 async function postJSON<T>(path: string, body: unknown): Promise<T> {
@@ -148,7 +144,9 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(await readError(res, "request failed"));
+  if (!res.ok) {
+    throw parseControlPlaneError(res.status, await res.text().catch(() => ""), "request failed");
+  }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
