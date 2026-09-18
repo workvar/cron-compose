@@ -282,6 +282,14 @@ export type GitRepo = {
   private: boolean;
 };
 
+export type GitDirEntry = { name: string; path: string };
+export type GitDirList = {
+  path: string;
+  recursive: boolean;
+  truncated: boolean;
+  items: GitDirEntry[];
+};
+
 export type DeployDetection = {
   language: string;
   install_script: string;
