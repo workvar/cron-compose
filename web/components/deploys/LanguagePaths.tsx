@@ -84,7 +84,7 @@ export function LanguagePaths({ initial }: { initial: DeploySettings }) {
   }
 
   return (
-    <form onSubmit={save} className="panel" style={{ maxWidth: 860 }}>
+    <form onSubmit={save} className="panel">
       <p className="subtle" style={{ marginTop: 0 }}>
         Repos clone into <code>{"{path}/{repo}"}</code> on the selected agent. Override per deploy if needed.
       </p>

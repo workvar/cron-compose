@@ -14,6 +14,7 @@ import (
 	"github.com/croncompose/croncompose/control-plane/internal/agentgw"
 	"github.com/croncompose/croncompose/control-plane/internal/audit"
 	"github.com/croncompose/croncompose/control-plane/internal/auth"
+	"github.com/croncompose/croncompose/control-plane/internal/cryptobox"
 	"github.com/croncompose/croncompose/control-plane/internal/githubapp"
 	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
 )
@@ -26,6 +27,7 @@ type handler struct {
 	gateway *agentgw.Gateway
 	audit   audit.Writer
 	public  string
+	box     *cryptobox.Box
 	// app is the optional GitHub App used to post commit statuses as CronCompose
 	// rather than as the user who imported the repo. nil means none is configured.
 	app *githubapp.App
@@ -132,6 +134,9 @@ func (h *handler) list(c fiber.Ctx) error {
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "list_failed", err)
 	}
+	for i := range items {
+		items[i] = RedactProject(items[i])
+	}
 	return c.JSON(fiber.Map{"items": items})
 }
 
@@ -146,7 +151,7 @@ func (h *handler) get(c fiber.Ctx) error {
 	secret, _ := h.store.WebhookSecret(c.Context(), p.ID)
 	base := strings.TrimRight(h.public, "/")
 	return c.JSON(fiber.Map{
-		"project":        p,
+		"project":        RedactProject(p),
 		"webhook_secret": secret,
 		"webhook_url":    base + "/api/deploys/webhooks/" + p.Provider,
 	})
@@ -167,6 +172,11 @@ func (h *handler) create(c fiber.Ctx) error {
 	if in.CloneURL == "" {
 		in.CloneURL = httpsCloneURL(in.Provider, in.RepoFullName)
 	}
+	apps, err := normalizeCreateApps(h.box, in)
+	if err != nil {
+		return jsonError(c, fiber.StatusBadRequest, "env_invalid", err)
+	}
+	in.Apps = apps
 	p, err := h.store.Insert(c.Context(), in, auth.CurrentUserID(c))
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "insert_failed", err)
@@ -177,7 +187,7 @@ func (h *handler) create(c fiber.Ctx) error {
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "run_failed", err)
 	}
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"project": p, "run": run, "warnings": warnings})
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"project": RedactProject(p), "run": run, "warnings": warnings})
 }
 
 func (h *handler) patch(c fiber.Ctx) error {
@@ -192,12 +202,19 @@ func (h *handler) patch(c fiber.Ctx) error {
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "get_failed", err)
 	}
+	if in.Apps != nil {
+		merged, err := MergeAppsEnv(h.box, before.Apps, *in.Apps)
+		if err != nil {
+			return jsonError(c, fiber.StatusBadRequest, "env_invalid", err)
+		}
+		in.Apps = &merged
+	}
 	p, err := h.store.Update(c.Context(), c.Params("id"), in)
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "update_failed", err)
 	}
 	h.audit.Write(c.Context(), auth.CurrentUserID(c), "deploy.update", "deploy", p.ID, nil)
-	out := fiber.Map{"project": p}
+	out := fiber.Map{"project": RedactProject(p)}
 	pmChanged := in.ProcessManager != nil && p.ProcessManager != before.ProcessManager
 	if pmChanged && p.ProcessManager != "" && p.ProcessManager != "none" {
 		run, err := h.startRun(c.Context(), p, "manual", p.DefaultBranch, "")
@@ -507,9 +524,21 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 		if pm == "" {
 			pm = p.ProcessManager
 		}
+		appEnv, err := ResolveAppEnv(h.box, a)
+		if err != nil {
+			return Run{}, err
+		}
+		// Legacy project-level env fills gaps; per-app wins.
+		merged := map[string]string{}
+		for k, v := range p.Env {
+			merged[k] = v
+		}
+		for k, v := range appEnv {
+			merged[k] = v
+		}
 		cmd.Apps = append(cmd.Apps, &agentv1.DeployApp{
 			Name: a.Name, RootDirectory: a.Root, InstallScript: a.Install,
-			Language: lang, Port: int32(a.Port), ProcessManager: pm,
+			Language: lang, Port: int32(a.Port), ProcessManager: pm, Env: merged,
 		})
 	}
 	if len(cmd.Apps) == 0 {

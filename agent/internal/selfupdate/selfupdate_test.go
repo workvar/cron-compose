@@ -87,6 +87,44 @@ func TestInstallFileAtOverwritesWhenDirNotWritable(t *testing.T) {
 	}
 }
 
+func TestInstallFileAtFallsBackWhenDotNewNotWritable(t *testing.T) {
+	// Reproduces /usr/local/bin installs where the dir probe can succeed (or the
+	// agent is old enough to always rename) but creating <name>.new still fails.
+	dir := t.TempDir()
+	self := filepath.Join(dir, "croncompose-agent")
+	if err := os.WriteFile(self, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blocker := self + ".new"
+	if err := os.WriteFile(blocker, []byte("blocked"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blocker, 0o644) })
+
+	dataDir := t.TempDir()
+	t.Setenv("DATA_DIR", dataDir)
+
+	built := filepath.Join(t.TempDir(), "built")
+	if err := os.WriteFile(built, []byte("new-binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := installFileAt(built, self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != self {
+		t.Fatalf("path=%q", got)
+	}
+	body, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "new-binary" {
+		t.Fatalf("body=%q", body)
+	}
+}
+
 func TestDirWritable(t *testing.T) {
 	dir := t.TempDir()
 	if !dirWritable(dir) {

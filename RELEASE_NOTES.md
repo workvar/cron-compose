@@ -1,20 +1,29 @@
-# CronCompose v0.0.12
+# CronCompose v0.0.13
 
-Agent self-update works on systemd installs where `/usr/local/bin` is root-owned,
-and passkeys can be renamed inline under Settings → Security.
+OAuth setup moves into the Connect flow, deploy apps get Vercel-style env vars
+(with sensitive secrets), the dashboard shows control-plane host metrics and more
+charts, and agent updates that fail for lack of root spell out how to fix it.
 
 ## Highlights
 
-- **Agent install when the directory is not writable** — Source and binary
-  self-updates no longer fail with
-  `open /usr/local/bin/croncompose-agent.new: permission denied`. When the
-  install directory cannot create a sibling `.new` file, the agent backs up
-  beside `DATA_DIR` and overwrites the existing binary in place.
-- **Rename passkeys** — Click a passkey name in Settings → Security to edit it
-  inline (Enter saves, Escape cancels). `PATCH /auth/passkeys/:id` with
-  `{ "name" }`. Empty names become `Passkey`.
-- **Passkey delete control** — Delete uses the same trash icon button as the
-  servers page (`button icon-danger`).
+- **Connect GitHub/GitLab OAuth modal** — If OAuth app credentials are not
+  configured, **Connect** opens an admin-only modal (client ID/secret, callback,
+  GitLab base URL). Save, then click Connect again. The separate Settings → Git
+  OAuth section is removed. Non-admins see an ask-an-admin message.
+- **Per-app environment variables** — Each deploy app has a Vercel-style env
+  editor: paste a full `.env` (comments stripped), add/edit rows, mark
+  **Sensitive** (values are encrypted at rest and never shown again — Replace
+  only). Edits on the deploy page **autosave**; a sticky bar asks you to
+  **Redeploy** so the agent applies them (redeploy stays manual).
+- **Dashboard host metrics & charts** — Control plane card shows CPU, memory,
+  disk, load, and uptime via `GET /system/host`. New chart types: area, heatmap,
+  scatter, bubble, radar, and treemap alongside the existing bar and gauge.
+- **Clone paths full width** — The Settings → Clone paths panel spans the same
+  width as other settings cards.
+- **Agent update permission denied** — Hardened install falls back to in-place
+  overwrite when creating `croncompose-agent.new` fails. The server update UI
+  states that the agent **lacks root permission**, with a link to **Agent root
+  access** (`#agent-root-access`) before Retry.
 
 ## Upgrade notes
 
@@ -25,18 +34,20 @@ From Settings → Updates, click **Update** on this host. Or by hand:
 ```sh
 cd cron-compose
 git fetch --tags
-git checkout --force v0.0.12
+git checkout --force v0.0.13
 ./update.sh --no-pull
 ```
 
-No new migrations in this release.
+No new migrations in this release. Sensitive deploy env vars use the existing
+`SECRETS_MASTER_KEY` / cryptobox.
 
 ### Agent (Linux / macOS)
 
-If a prior source update failed with permission denied on
-`croncompose-agent.new`, this release contains the fix — but that broken
-binary cannot install it itself. Reinstall once from this tag (or latest), then
-future updates should succeed:
+If updates still fail with permission denied on `croncompose-agent.new` (common
+on **v0.0.11** and earlier):
+
+1. On the server page, turn on **Agent root access**, then **Retry**, or
+2. Reinstall once from this tag:
 
 ```sh
 curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh | \
@@ -46,5 +57,4 @@ curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/insta
        bash
 ```
 
-Agents already on a build that includes the in-place install path can update
-from the UI as usual.
+Agents already past the in-place install fix can update from the UI as usual.

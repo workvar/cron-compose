@@ -103,6 +103,7 @@ func New(d Deps) *fiber.App {
 
 	authed := v1.Group("", auth.RequireAuth(d.SessionSecret, userStore, d.Log))
 	auth.RegisterMe(authed, d.Log, userStore, d.SessionSecret, d.OIDC != nil)
+	authed.Get("/system/host", hostMetricsHandler())
 	stepUp := auth.RegisterPasskeys(v1, authed, d.Log, userStore, waStore, d.SessionSecret, d.PublicHTTPURL)
 	servers.Register(authed, d.Log, d.Pool, writer, servers.Endpoints{
 		PublicHTTPURL:    d.PublicHTTPURL,
@@ -122,7 +123,7 @@ func New(d Deps) *fiber.App {
 	publicOrigin := strings.TrimSuffix(d.PublicHTTPURL, "/")
 	publicOrigin = strings.TrimSuffix(publicOrigin, "/api/v1")
 	publicOrigin = strings.TrimSuffix(publicOrigin, "/api")
-	deployH := deploys.Register(authed, d.Log, d.Pool, d.Gateway, writer, conns, publicOrigin, d.GitLabOrigin, d.GitHubApp)
+	deployH := deploys.Register(authed, d.Log, d.Pool, d.Gateway, writer, conns, publicOrigin, d.GitLabOrigin, d.GitHubApp, d.Crypto)
 	deploys.RegisterPublic(v1, deployH, auth.OptionalAuth(d.SessionSecret, userStore, d.Log))
 	// Lets a failed deploy trigger an automatic rollback without agentgw depending on
 	// the deploys package; see agentgw.DeployFinishedHook.

@@ -26,12 +26,13 @@ type Spec struct {
 
 // SpecApp is one package inside a monorepo.
 type SpecApp struct {
-	Name           string `yaml:"name" json:"name"`
-	Root           string `yaml:"root" json:"root"`
-	Language       string `yaml:"language,omitempty" json:"language,omitempty"`
-	Install        string `yaml:"install,omitempty" json:"install,omitempty"`
-	Port           int    `yaml:"port,omitempty" json:"port,omitempty"`
-	ProcessManager string `yaml:"process_manager,omitempty" json:"process_manager,omitempty"`
+	Name           string   `yaml:"name" json:"name"`
+	Root           string   `yaml:"root" json:"root"`
+	Language       string   `yaml:"language,omitempty" json:"language,omitempty"`
+	Install        string   `yaml:"install,omitempty" json:"install,omitempty"`
+	Port           int      `yaml:"port,omitempty" json:"port,omitempty"`
+	ProcessManager string   `yaml:"process_manager,omitempty" json:"process_manager,omitempty"`
+	Env            []EnvVar `yaml:"env,omitempty" json:"env,omitempty"`
 }
 
 // MarshalSpec renders croncompose.yml.
@@ -92,7 +93,7 @@ func specFiles(p Project, publicBase string) []RepoFile {
 		Name: p.Name, Provider: p.Provider, Repo: p.RepoFullName, Branch: p.DefaultBranch,
 		Language: p.Language, Install: p.InstallScript, Root: p.RootDirectory,
 		Port: p.Port, ProcessManager: p.ProcessManager, ClonePath: p.ClonePath,
-		Apps: p.Apps, Env: p.Env,
+		Apps: appsForSpec(p.Apps), Env: p.Env,
 	})
 	files := []RepoFile{{Path: "croncompose.yml", Content: string(raw)}}
 	if p.Provider == "gitlab" {
@@ -101,4 +102,21 @@ func specFiles(p Project, publicBase string) []RepoFile {
 		files = append(files, RepoFile{Path: ".github/workflows/croncompose.yml", Content: GitHubActionsWorkflow(publicBase, p.ID)})
 	}
 	return files
+}
+
+// appsForSpec drops secrets/ciphertext so croncompose.yml never commits them.
+func appsForSpec(apps []SpecApp) []SpecApp {
+	out := make([]SpecApp, len(apps))
+	for i, a := range apps {
+		out[i] = a
+		var env []EnvVar
+		for _, v := range a.Env {
+			if v.Sensitive || v.Key == "" {
+				continue
+			}
+			env = append(env, EnvVar{Key: v.Key, Value: v.Value})
+		}
+		out[i].Env = env
+	}
+	return out
 }

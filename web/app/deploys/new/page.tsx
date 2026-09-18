@@ -4,9 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Stepper, type StepDef } from "@/components/jobwizard/Stepper";
 import { GitConnections } from "@/components/deploys/GitConnections";
+import { AppEnvEditor } from "@/components/deploys/AppEnvEditor";
 import { IconChevronLeft, IconChevronRight, IconCheck } from "@/components/icons";
 import type {
   DeployApp,
+  DeployEnvVar,
   DeployInspect,
   DeployProject,
   DeployRun,
@@ -36,7 +38,7 @@ type Draft = {
   port: string;
   processManager: string;
   selectedApps: string[];
-  envText: string;
+  appEnv: Record<string, DeployEnvVar[]>;
 };
 
 const empty: Draft = {
@@ -52,7 +54,7 @@ const empty: Draft = {
   port: "",
   processManager: "none",
   selectedApps: [],
-  envText: "",
+  appEnv: {},
 };
 
 export default function NewDeployPage() {
@@ -123,24 +125,20 @@ export default function NewDeployPage() {
   }
 
   const apps: DeployApp[] = useMemo(() => {
-    return draft.selectedApps.map((root) => ({
-      name: root.split("/").filter(Boolean).pop() || root,
-      root,
-      language: draft.language,
-      install: draft.install,
-      process_manager: draft.processManager,
-    }));
-  }, [draft.selectedApps, draft.language, draft.install, draft.processManager]);
-
-  const env = useMemo(() => {
-    const out: Record<string, string> = {};
-    for (const line of draft.envText.split("\n")) {
-      const i = line.indexOf("=");
-      if (i <= 0) continue;
-      out[line.slice(0, i).trim()] = line.slice(i + 1).trim();
-    }
-    return out;
-  }, [draft.envText]);
+    const roots = draft.selectedApps.length > 0 ? draft.selectedApps : [draft.root || "."];
+    return roots.map((root) => {
+      const name = root.split("/").filter(Boolean).pop() || root || "app";
+      return {
+        name,
+        root,
+        language: draft.language,
+        install: draft.install,
+        process_manager: draft.processManager,
+        port: draft.port ? Number(draft.port) : undefined,
+        env: draft.appEnv[name] ?? [],
+      };
+    });
+  }, [draft.selectedApps, draft.root, draft.language, draft.install, draft.processManager, draft.port, draft.appEnv]);
 
   async function submit() {
     if (!draft.repo || !draft.serverId) return;
@@ -161,7 +159,6 @@ export default function NewDeployPage() {
         clone_path: draft.clonePath,
         port: draft.port ? Number(draft.port) : 0,
         process_manager: draft.processManager,
-        env,
         apps,
       };
       const res = await fetch("/api/deploys", {
@@ -350,10 +347,14 @@ export default function NewDeployPage() {
                   <p className="subtle">No ecosystem file. The agent will run <code>pm2 start npm -- start</code> for Node apps.</p>
                 )}
               </div>
-              <div className="field">
-                <label htmlFor="env">Env vars (KEY=value, one per line)</label>
-                <textarea id="env" rows={4} value={draft.envText} onChange={(e) => setDraft((d) => ({ ...d, envText: e.target.value }))} />
-              </div>
+              <AppEnvEditor
+                apps={apps}
+                onChange={(next) => {
+                  const appEnv: Record<string, DeployEnvVar[]> = {};
+                  for (const a of next) appEnv[a.name] = a.env ?? [];
+                  setDraft((d) => ({ ...d, appEnv }));
+                }}
+              />
             </>
           )}
 

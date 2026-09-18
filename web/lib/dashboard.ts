@@ -6,6 +6,25 @@ import type { Job, ListResponse, Run, Server, UpdateStatus } from "@/lib/types";
 
 const SAMPLE_JOBS = 12; // cap on jobs we pull runs for
 
+export type HostMetrics = {
+  hostname?: string;
+  os?: string;
+  arch?: string;
+  cpus?: number;
+  uptime_sec?: number;
+  load1?: number;
+  load5?: number;
+  load15?: number;
+  cpu_percent: number;
+  mem_total_bytes: number;
+  mem_used_bytes: number;
+  mem_percent: number;
+  disk_total_bytes: number;
+  disk_used_bytes: number;
+  disk_percent: number;
+  collected_at?: string;
+};
+
 export type DashboardData = {
   servers: Server[];
   jobs: Job[];
@@ -18,6 +37,12 @@ export type DashboardData = {
   todayIndex: number;
   reachable: boolean;
   updates: UpdateStatus | null;
+  host: HostMetrics | null;
+  heatmap: { day: number; hour: number; value: number }[];
+  scatter: { x: number; y: number; label?: string; tone?: "ok" | "danger" | "neutral" }[];
+  bubbles: { x: number; y: number; r: number; label: string; tone?: string }[];
+  radar: { label: string; value: number }[];
+  treemap: { label: string; value: number; color?: string }[];
 };
 
 const WEEKDAY = ["S", "M", "T", "W", "T", "F", "S"];
@@ -29,6 +54,14 @@ async function safeList<T>(path: string): Promise<T[]> {
   } catch {
     return [];
   }
+}
+
+function durationMs(r: Run): number {
+  if (typeof r.duration_ms === "number" && r.duration_ms >= 0) return r.duration_ms;
+  if (r.started_at && r.finished_at) {
+    return Math.max(0, +new Date(r.finished_at) - +new Date(r.started_at));
+  }
+  return 0;
 }
 
 export async function getDashboardData(): Promise<DashboardData> {
@@ -86,11 +119,77 @@ export async function getDashboardData(): Promise<DashboardData> {
   });
   const last24h = recentRuns.filter((r) => +now - +new Date(r.created_at) <= dayMs).length;
 
+  const heatmapMap = new Map<string, number>();
+  for (const r of recentRuns) {
+    const t = new Date(r.created_at);
+    const key = `${t.getDay()}-${t.getHours()}`;
+    heatmapMap.set(key, (heatmapMap.get(key) ?? 0) + 1);
+  }
+  const heatmap = Array.from(heatmapMap.entries()).map(([k, value]) => {
+    const [day, hour] = k.split("-").map(Number);
+    return { day, hour, value };
+  });
+
+  const oldest = recentRuns.length
+    ? Math.min(...recentRuns.map((r) => +new Date(r.created_at)))
+    : +now;
+  const span = Math.max(1, +now - oldest);
+  const scatter = recentRuns.slice(0, 40).map((r) => {
+    const dur = durationMs(r);
+    const tone =
+      r.status === "succeeded" ? "ok" : r.status === "failed" || r.status === "timed_out" ? "danger" : "neutral";
+    return {
+      x: (+new Date(r.created_at) - oldest) / span,
+      y: Math.max(dur, 1),
+      label: `${r.status} · ${Math.round(dur)}ms`,
+      tone: tone as "ok" | "danger" | "neutral",
+    };
+  });
+
+  const runsByServer = new Map<string, number>();
+  for (const r of recentRuns) {
+    runsByServer.set(r.server_id, (runsByServer.get(r.server_id) ?? 0) + 1);
+  }
+  const jobsByServer = new Map<string, number>();
+  for (const j of jobs) {
+    if (j.server_id) jobsByServer.set(j.server_id, (jobsByServer.get(j.server_id) ?? 0) + 1);
+  }
+  const bubbles = servers.slice(0, 8).map((s) => ({
+    x: Math.max(jobsByServer.get(s.id) ?? 0, 0.5),
+    y: Math.max(runsByServer.get(s.id) ?? 0, 0.5),
+    r: s.status === "online" ? 3 : s.status === "pending" ? 2 : 1,
+    label: s.name,
+    tone: s.status === "online" ? "var(--green-mint)" : s.status === "offline" ? "#f5b4b0" : "var(--surface-3)",
+  }));
+
+  const onlinePct = serverCounts.total ? (serverCounts.online / serverCounts.total) * 100 : 0;
+  const enabledPct = jobCounts.total ? (jobCounts.enabled / jobCounts.total) * 100 : 0;
+  const radar = [
+    { label: "Online", value: onlinePct },
+    { label: "Success", value: successRate },
+    { label: "Enabled", value: enabledPct },
+    { label: "Activity", value: Math.min(100, last24h * 10) },
+    { label: "Coverage", value: Math.min(100, jobs.length * 8) },
+  ];
+
+  const treemap = servers.slice(0, 10).map((s, i) => ({
+    label: s.name,
+    value: Math.max(runsByServer.get(s.id) ?? 0, s.status === "online" ? 1 : 0.5),
+    color: i % 2 === 0 ? "var(--green-soft)" : "#dcefe4",
+  }));
+
   let updates: UpdateStatus | null = null;
   try {
     updates = await apiGet<UpdateStatus>("/updates");
   } catch {
     updates = null;
+  }
+
+  let host: HostMetrics | null = null;
+  try {
+    host = await apiGet<HostMetrics>("/system/host");
+  } catch {
+    host = null;
   }
 
   return {
@@ -105,5 +204,11 @@ export async function getDashboardData(): Promise<DashboardData> {
     todayIndex: 6,
     reachable,
     updates,
+    host,
+    heatmap,
+    scatter,
+    bubbles,
+    radar,
+    treemap,
   };
 }

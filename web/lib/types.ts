@@ -261,7 +261,7 @@ export type GitConnection = {
   created_at: string;
 };
 
-// Admin-configured GitHub/GitLab OAuth app credentials (Settings > Git OAuth). The
+// Admin-configured GitHub/GitLab OAuth app credentials (Connect modal). The
 // client secret itself is never sent to the browser, only whether one is set.
 export type OAuthSettings = {
   provider: "github" | "gitlab";
@@ -298,6 +298,13 @@ export type DeployInspect = DeployDetection & {
   process_manager: string;
 };
 
+export type DeployEnvVar = {
+  key: string;
+  value?: string;
+  sensitive: boolean;
+  has_value?: boolean;
+};
+
 export type DeployApp = {
   name: string;
   root: string;
@@ -305,6 +312,7 @@ export type DeployApp = {
   install?: string;
   port?: number;
   process_manager?: string;
+  env?: DeployEnvVar[];
 };
 
 export type DeployHealthState = "unknown" | "healthy" | "degraded" | "rolled_back";

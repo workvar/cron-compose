@@ -42,6 +42,7 @@
     "lib/update-progress.test.ts",
     "lib/webauthn.test.ts",
     "lib/terminal-users.test.ts",
-    "lib/agent-root.test.ts"
+    "lib/agent-root.test.ts",
+    "lib/parse-dotenv.test.ts"
   ]
 }

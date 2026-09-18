@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { apiGet } from "@/lib/api";
-import type { DeploySettings, GitConnection, ListResponse, Me, NotificationTarget, OAuthSettings, Passkey, UpdateStatus } from "@/lib/types";
+import type { DeploySettings, GitConnection, ListResponse, Me, NotificationTarget, Passkey, UpdateStatus } from "@/lib/types";
 import { LogoutButton } from "@/components/LogoutButton";
 import { IconKey, IconShield } from "@/components/icons";
 import { PasskeyManager } from "@/components/PasskeyManager";
@@ -8,7 +8,6 @@ import { TargetManager } from "@/components/notify/TargetManager";
 import { UpdatesPanel } from "@/components/UpdatesPanel";
 import { GitConnections } from "@/components/deploys/GitConnections";
 import { LanguagePaths } from "@/components/deploys/LanguagePaths";
-import { GitOAuthSettings } from "@/components/deploys/GitOAuthSettings";
 
 function initials(me: Me): string {
   const src = me.name?.trim() || me.email;
@@ -23,7 +22,6 @@ export default async function SettingsPage() {
   let updates: UpdateStatus | null = null;
   let git: GitConnection[] = [];
   let deploySettings: DeploySettings | null = null;
-  let oauthSettings: OAuthSettings[] = [];
   let passkeys: Passkey[] = [];
   try {
     me = await apiGet<Me>("/me");
@@ -47,11 +45,6 @@ export default async function SettingsPage() {
   } catch { /* ignore */ }
 
   const isAdmin = me?.role === "admin" || me?.role === "owner";
-  if (isAdmin) {
-    try {
-      oauthSettings = (await apiGet<ListResponse<OAuthSettings>>("/auth/oauth-settings")).items;
-    } catch { /* non-admin or unavailable */ }
-  }
 
   return (
     <>
@@ -91,19 +84,9 @@ export default async function SettingsPage() {
       <h2>Git</h2>
       <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
         Link GitHub or GitLab so Deploy can list and clone your repositories. This grant is separate from sign-in.
+        If Connect asks for OAuth app details, an admin can enter them in the modal.
       </p>
       <GitConnections initial={git} next="/app/settings" />
-
-      {isAdmin && (
-        <>
-          <h2>Git OAuth</h2>
-          <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
-            OAuth app credentials for the Connect buttons above. Configuring these here overrides
-            GITHUB_OAUTH_*/GITLAB_OAUTH_* from .env immediately, with no restart needed.
-          </p>
-          <GitOAuthSettings initial={oauthSettings} />
-        </>
-      )}
 
       {isAdmin && deploySettings && (
         <>

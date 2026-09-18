@@ -116,7 +116,15 @@ func installFileAt(built, self string) (string, error) {
 	}
 
 	if dirWritable(filepath.Dir(self)) {
-		return installByRename(built, self)
+		path, err := installByRename(built, self)
+		if err == nil {
+			return path, nil
+		}
+		// Dir probes can succeed while creating <name>.new still fails (sticky
+		// leftovers, odd ACLs). Fall through to in-place overwrite of the binary.
+		if !isPermissionErr(err) {
+			return "", err
+		}
 	}
 	return installInPlace(built, self)
 }
@@ -184,6 +192,17 @@ func dirWritable(dir string) bool {
 	_ = f.Close()
 	_ = os.Remove(name)
 	return true
+}
+
+func isPermissionErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, os.ErrPermission) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "permission denied") || strings.Contains(msg, "operation not permitted")
 }
 
 func overwriteFile(src, dst string) error {

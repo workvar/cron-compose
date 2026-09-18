@@ -70,7 +70,7 @@ export function AgentRootToggle({
   const { label, tone } = agentRootView({ enabled, euidRoot, busy, error: displayError });
 
   return (
-    <div className="panel" style={{ marginBottom: 18 }}>
+    <div id="agent-root-access" className="panel" style={{ marginBottom: 18 }}>
       <div className="row" style={{ alignItems: "flex-start" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <label className="cluster" style={{ gap: 10, alignItems: "center", marginBottom: 0, color: "var(--text)" }}>

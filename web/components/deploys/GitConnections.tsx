@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { GitConnection } from "@/lib/types";
+import { GitOAuthSetupModal } from "@/components/deploys/GitOAuthSetupModal";
 
 const PROVIDERS: Array<{ id: "github" | "gitlab"; label: string }> = [
   { id: "github", label: "GitHub" },
@@ -12,6 +13,12 @@ type AuthConfig = {
   github_enabled?: boolean;
   gitlab_enabled?: boolean;
 };
+
+type MeLite = { role?: string };
+
+function isAdminRole(role?: string) {
+  return role === "admin" || role === "owner";
+}
 
 export function GitConnections({
   initial,
@@ -24,19 +31,38 @@ export function GitConnections({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cfg, setCfg] = useState<AuthConfig>({});
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [setupProvider, setSetupProvider] = useState<"github" | "gitlab" | null>(null);
 
   useEffect(() => {
     fetch("/api/auth/config")
       .then((r) => r.json() as Promise<AuthConfig>)
       .then(setCfg)
       .catch(() => {});
+    fetch("/api/me", { credentials: "include" })
+      .then((r) => (r.ok ? (r.json() as Promise<MeLite>) : null))
+      .then((me) => setIsAdmin(isAdminRole(me?.role)))
+      .catch(() => setIsAdmin(false));
   }, []);
+
+  function refreshConfig() {
+    fetch("/api/auth/config")
+      .then((r) => r.json() as Promise<AuthConfig>)
+      .then(setCfg)
+      .catch(() => {});
+  }
 
   async function connect(provider: "github" | "gitlab") {
     setError(null);
     const enabled = provider === "github" ? cfg.github_enabled : cfg.gitlab_enabled;
     if (enabled === false) {
-      setError(`${provider === "github" ? "GitHub" : "GitLab"} OAuth is not configured on this control plane.`);
+      if (isAdmin) {
+        setSetupProvider(provider);
+        return;
+      }
+      setError(
+        `${provider === "github" ? "GitHub" : "GitLab"} OAuth is not configured. Ask an admin to set it up.`,
+      );
       return;
     }
     const u = new URL(`/api/v1/auth/${provider}/start`, window.location.origin);
@@ -54,6 +80,14 @@ export function GitConnections({
         const j = (await res.json()) as { error?: { message?: string } };
         if (j.error?.message) msg = j.error.message;
       } catch { /* ignore */ }
+      if (isAdmin && /not configured|oauth/i.test(msg)) {
+        setSetupProvider(provider);
+        return;
+      }
+      if (!isAdmin && /not configured|oauth/i.test(msg)) {
+        setError(`${provider === "github" ? "GitHub" : "GitLab"} OAuth is not configured. Ask an admin to set it up.`);
+        return;
+      }
       setError(msg);
       return;
     }
@@ -95,7 +129,7 @@ export function GitConnections({
                   Disconnect
                 </button>
               ) : (
-                <button type="button" className="button sm" onClick={() => connect(p.id)}>
+                <button type="button" className="button sm" onClick={() => void connect(p.id)}>
                   Connect {p.label}
                 </button>
               )}
@@ -104,6 +138,14 @@ export function GitConnections({
         );
       })}
       {error && <p className="form-error">{error}</p>}
+      {setupProvider && (
+        <GitOAuthSetupModal
+          provider={setupProvider}
+          open
+          onClose={() => setSetupProvider(null)}
+          onSaved={refreshConfig}
+        />
+      )}
     </div>
   );
 }

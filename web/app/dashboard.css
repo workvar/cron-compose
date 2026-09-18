@@ -138,4 +138,105 @@ a.stat:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); }
   100% { box-shadow: 0 0 0 0 rgba(142,215,173,0); }
 }
 
+/* Host meters on the control-plane card */
+.host-meters { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; position: relative; }
+.host-meter-top { display: flex; justify-content: space-between; font-size: 12px; color: #9fc6b1; margin-bottom: 4px; }
+.host-meter-track {
+  height: 8px; border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.12); overflow: hidden;
+}
+.host-meter-track > span {
+  display: block; height: 100%; border-radius: inherit;
+  background: linear-gradient(90deg, var(--green-mint), #34b06f);
+}
+
+/* Extra chart types */
+.chart-wrap { width: 100%; }
+.chart-svg { width: 100%; height: auto; display: block; }
+.chart-xlabels {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--muted); font-weight: 600; margin-top: 4px;
+}
+.area-fill { fill: color-mix(in srgb, var(--green) 22%, transparent); }
+.area-stroke { stroke: var(--green); stroke-width: 2.5; }
+.chart-axis { stroke: var(--border-strong); stroke-width: 1; }
+
+.heatmap { display: flex; flex-direction: column; gap: 3px; }
+.heatmap-hours {
+  display: grid; grid-template-columns: 18px repeat(24, 1fr);
+  font-size: 10px; color: var(--muted); margin-bottom: 2px;
+}
+.heatmap-row { display: grid; grid-template-columns: 18px repeat(24, 1fr); gap: 2px; align-items: center; }
+.heatmap-day { font-size: 10px; color: var(--muted); font-weight: 700; }
+.heatmap-cell {
+  aspect-ratio: 1; border-radius: 3px;
+  background: var(--green);
+  min-height: 8px;
+}
+
+.scatter-dot { fill: var(--muted); }
+.scatter-dot.ok { fill: var(--green); }
+.scatter-dot.danger { fill: var(--danger); }
+.scatter-dot.neutral { fill: var(--warn); }
+
+.bubble { opacity: 0.85; }
+.bubble-label { font-size: 9px; fill: var(--green-deep); font-weight: 700; }
+
+.radar-ring { fill: none; stroke: var(--border); stroke-width: 1; }
+.radar-spoke { stroke: var(--border); stroke-width: 1; }
+.radar-fill { fill: color-mix(in srgb, var(--green) 28%, transparent); stroke: var(--green); stroke-width: 2; }
+.radar-label { font-size: 9px; fill: var(--muted); font-weight: 600; }
+.radar { margin: 0 auto; max-width: 220px; }
+
+.treemap {
+  display: flex; flex-wrap: wrap; gap: 6px; min-height: 120px;
+}
+.treemap-cell {
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  min-height: 64px; flex-basis: 80px;
+  border: 1px solid var(--border);
+}
+.treemap-label { font-size: 12px; font-weight: 700; color: var(--text); }
+.treemap-value { font-size: 11px; color: var(--muted); }
+
 .empty { text-align: center; padding: 28px 16px; color: var(--muted); }
+
+/* Per-app env editor */
+.env-table { display: flex; flex-direction: column; gap: 8px; }
+.env-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(120px, 1.4fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+.env-row input[type="text"],
+.env-row input[type="password"],
+.env-row input:not([type]) {
+  min-height: 40px;
+}
+.env-secret {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  min-height: 40px; padding: 0 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.env-sensitive {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin: 0; font-size: 12px; color: var(--text-2); white-space: nowrap;
+}
+.env-redeploy-bar {
+  position: sticky; bottom: 16px; z-index: 20;
+  margin-top: 16px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 14px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+@media (max-width: 640px) {
+  .env-row { grid-template-columns: 1fr; }
+  .env-redeploy-bar { flex-direction: column; align-items: stretch; }
+}

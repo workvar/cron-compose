@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { beginUpdating } from "@/lib/updating";
 import { useAgentUpdateProgress } from "@/lib/useAgentUpdateProgress";
 import { UpdateProgressMeter } from "@/components/UpdateProgressMeter";
@@ -13,6 +14,15 @@ type Props = {
   updateAvailable: boolean;
   stack?: boolean;
 };
+
+function isInstallPermissionError(msg: string | null | undefined): boolean {
+  if (!msg) return false;
+  const m = msg.toLowerCase();
+  return (
+    m.includes("permission denied") &&
+    (m.includes(".new") || m.includes("croncompose-agent") || m.includes("/usr/local/bin"))
+  );
+}
 
 export function UpdateServerButton({
   serverId,
@@ -65,6 +75,9 @@ export function UpdateServerButton({
     : "This agent will clone the release tag, rebuild itself from source, and restart.";
 
   const active = phase !== "idle" && phase !== "timeout" && phase !== "failed";
+  const failMsg = phase === "failed" ? detail : error;
+  const showPermHint = !stack && isInstallPermissionError(failMsg);
+
   const buttonLabel = busy
     ? "Updating…"
     : stack
@@ -112,20 +125,35 @@ export function UpdateServerButton({
           )}
           {!stack && phase === "timeout" && (
             <p className="form-error" style={{ margin: "8px 0 0", fontSize: 13 }}>
-              This is taking longer than expected. Check the agent's update log on the server, then refresh.
+              This is taking longer than expected. Check the agent&apos;s update log on the server, then refresh.
             </p>
           )}
-          {!stack && phase === "failed" && (
-            <p className="form-error" style={{ margin: "8px 0 0", fontSize: 13 }}>
-              {detail || "The update failed. Check the agent's log on the server, then retry."}
-            </p>
-          )}
-          {error && <p className="form-error" style={{ marginTop: 8 }}>{error}</p>}
         </div>
         <button type="button" className="button sm" disabled={disabled} onClick={() => void update()}>
           {buttonLabel}
         </button>
       </div>
+      {!stack && phase === "failed" && (
+        <p className="form-error" style={{ marginTop: 12, fontSize: 13 }}>
+          {detail || "The update failed. Check the agent's log on the server, then retry."}
+        </p>
+      )}
+      {error && <p className="form-error" style={{ marginTop: 12 }}>{error}</p>}
+      {showPermHint && (
+        <div className="form-error" style={{ marginTop: 12 }}>
+          <strong style={{ display: "block", marginBottom: 4 }}>
+            Agent lacks root permission to install the update
+          </strong>
+          The install path is root-owned (<code>/usr/local/bin</code>), so this agent cannot write{" "}
+          <code>croncompose-agent.new</code> without root.
+          <p style={{ margin: "10px 0 0" }}>
+            <Link href={`/servers/${serverId}#agent-root-access`}>
+              Turn on Agent root access
+            </Link>
+            {" "}for this server, then click Retry. Or re-run the install script on the host as root.
+          </p>
+        </div>
+      )}
       {!canUpdate && !stackStarted && !active && (
         <p className="subtle" style={{ fontSize: 12, marginTop: 10 }}>
           The agent must be online to receive the update.

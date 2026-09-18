@@ -6,6 +6,7 @@ import { IconChevronLeft } from "@/components/icons";
 import { RedeployButton } from "@/components/deploys/RedeployButton";
 import { HostThisApp } from "@/components/deploys/HostThisApp";
 import { ProjectActions } from "@/components/deploys/ProjectActions";
+import { ProjectEnvPanel } from "@/components/deploys/ProjectEnvPanel";
 import { HealthBadge } from "@/components/deploys/HealthBadge";
 
 type Detail = {
@@ -104,6 +105,12 @@ export default async function DeployDetailPage({ params }: { params: Promise<{ i
       )}
 
       <HostThisApp project={p} />
+
+      <h2>Environment</h2>
+      <p className="subtle" style={{ marginTop: -6, marginBottom: 0 }}>
+        Per-app variables. Edits autosave; redeploy for the agent to apply them. Mark secrets as sensitive so values stay hidden.
+      </p>
+      <ProjectEnvPanel project={p} />
 
       {workflow?.workflow_yml && (
         <div className="panel" style={{ marginTop: 18 }}>

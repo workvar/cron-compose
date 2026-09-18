@@ -322,3 +322,25 @@ table.data tr:last-child td { border-bottom: 0; }
 .copy-btn:focus-visible { outline: 2px solid var(--green-strong); outline-offset: 2px; }
 .copy-btn svg { width: 14px; height: 14px; }
 .code-block > pre { padding-right: 96px; }
+
+/* Modal (OAuth setup, etc.) */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(16, 24, 20, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.modal-panel {
+  width: min(560px, 100%);
+  max-height: min(90vh, 720px);
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 22px 24px 20px;
+}
