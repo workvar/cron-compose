@@ -58,8 +58,9 @@ func (r Request) Validate(currentVersion string) error {
 // was replaced. The caller is expected to exit soon after so the supervisor restarts
 // the new binary.
 //
-// The previous binary is kept alongside as <name>.old: if the new one refuses to start,
-// that file is the difference between a two-second fix and a trip to the machine.
+// The previous binary is kept as a .old backup when the install directory is writable;
+// otherwise it is copied beside DATA_DIR (or the process temp dir) before an in-place
+// overwrite of the running path.
 func Apply(ctx context.Context, req Request, currentVersion string) (string, error) {
 	if err := req.Validate(currentVersion); err != nil {
 		return "", err
@@ -74,15 +75,25 @@ func Apply(ctx context.Context, req Request, currentVersion string) (string, err
 		return "", fmt.Errorf("resolve self: %w", err)
 	}
 
-	tmp, err := download(ctx, req, filepath.Dir(self))
+	stageDir := filepath.Dir(self)
+	if !dirWritable(stageDir) {
+		stageDir = os.TempDir()
+	}
+	tmp, err := download(ctx, req, stageDir)
 	if err != nil {
 		return "", err
 	}
-	defer os.Remove(tmp) // no-op once renamed
+	defer os.Remove(tmp) // no-op once renamed / consumed
 	return InstallFile(tmp)
 }
 
-// InstallFile swaps built into the running executable's path, keeping a .old backup.
+// InstallFile swaps built into the running executable's path, keeping a .old backup
+// when possible.
+//
+// System installs put the binary in a root-owned directory like /usr/local/bin while
+// chown'ing the file to the service user. Creating <name>.new there fails with
+// permission denied even though the file itself is writable — so we fall back to
+// backing up beside DATA_DIR and overwriting the existing inode in place.
 func InstallFile(built string) (string, error) {
 	self, err := os.Executable()
 	if err != nil {
@@ -92,11 +103,25 @@ func InstallFile(built string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve self: %w", err)
 	}
+	return installFileAt(built, self)
+}
 
+func installFileAt(built, self string) (string, error) {
 	info, err := os.Stat(self)
 	if err != nil {
 		return "", err
 	}
+	if err := os.Chmod(built, info.Mode().Perm()); err != nil {
+		return "", err
+	}
+
+	if dirWritable(filepath.Dir(self)) {
+		return installByRename(built, self)
+	}
+	return installInPlace(built, self)
+}
+
+func installByRename(built, self string) (string, error) {
 	tmp := built
 	copied := false
 	if filepath.Dir(built) != filepath.Dir(self) {
@@ -106,12 +131,6 @@ func InstallFile(built string) (string, error) {
 		}
 		tmp = dst
 		copied = true
-	}
-	if err := os.Chmod(tmp, info.Mode().Perm()); err != nil {
-		if copied {
-			os.Remove(tmp)
-		}
-		return "", err
 	}
 
 	backup := self + ".old"
@@ -130,6 +149,59 @@ func InstallFile(built string) (string, error) {
 		return "", fmt.Errorf("install new binary: %w", err)
 	}
 	return self, nil
+}
+
+func installInPlace(built, self string) (string, error) {
+	backup := filepath.Join(writableBackupDir(), filepath.Base(self)+".old")
+	_ = os.Remove(backup)
+	if err := copyFile(self, backup); err != nil {
+		return "", fmt.Errorf("backup current binary to %s: %w", backup, err)
+	}
+
+	if err := overwriteFile(built, self); err != nil {
+		// Best-effort restore from the backup we just wrote.
+		_ = overwriteFile(backup, self)
+		return "", fmt.Errorf("overwrite %s (install dir not writable for rename): %w", self, err)
+	}
+	return self, nil
+}
+
+func writableBackupDir() string {
+	if d := strings.TrimSpace(os.Getenv("DATA_DIR")); d != "" {
+		if err := os.MkdirAll(d, 0o700); err == nil && dirWritable(d) {
+			return d
+		}
+	}
+	return os.TempDir()
+}
+
+func dirWritable(dir string) bool {
+	f, err := os.CreateTemp(dir, ".croncompose-writetest-*")
+	if err != nil {
+		return false
+	}
+	name := f.Name()
+	_ = f.Close()
+	_ = os.Remove(name)
+	return true
+}
+
+func overwriteFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_TRUNC, 0)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 func copyFile(src, dst string) error {
