@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { Server } from "@/lib/types";
-import { agentRootView, applyToggleFailure } from "@/lib/agent-root";
+import { agentRootView, applyToggleFailure, visibleStoredRootError } from "@/lib/agent-root";
 import { setAgentRoot } from "@/lib/webauthn";
 
 function isCancelled(err: unknown): boolean {
@@ -62,7 +62,11 @@ export function AgentRootToggle({
   }
 
   const locked = !hasPasskeys || busy;
-  const displayError = error || (enabled && !euidRoot ? server.agent_root_error : null) || null;
+  const displayError = error || visibleStoredRootError({
+    enabled,
+    euidRoot,
+    storedError: server.agent_root_error,
+  });
   const { label, tone } = agentRootView({ enabled, euidRoot, busy, error: displayError });
 
   return (

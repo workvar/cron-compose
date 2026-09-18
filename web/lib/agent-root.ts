@@ -42,6 +42,17 @@ export function agentRootView(input: {
   return { label: "On (waiting)", tone: "warn" };
 }
 
+export function visibleStoredRootError(input: {
+  enabled: boolean;
+  euidRoot: boolean;
+  storedError?: string | null;
+}): string | null {
+  const stored = input.storedError?.trim() ? input.storedError : null;
+  if (!stored) return null;
+  if (input.enabled === input.euidRoot) return null;
+  return stored;
+}
+
 export function applyToggleFailure(input: {
   requestedEnabled: boolean;
   previousEnabled: boolean;

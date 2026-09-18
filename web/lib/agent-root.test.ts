@@ -5,6 +5,7 @@ import {
   agentRootView,
   applyToggleFailure,
   parseControlPlaneError,
+  visibleStoredRootError,
 } from "./agent-root.ts";
 
 {
@@ -29,6 +30,15 @@ import {
     euidRoot: false,
     busy: false,
     error: "sudo: a password is required",
+  }), {
+    label: "Error",
+    tone: "danger",
+  });
+  assert.deepEqual(agentRootView({
+    enabled: false,
+    euidRoot: true,
+    busy: false,
+    error: "demote: systemd required to run agent as root under pm2",
   }), {
     label: "Error",
     tone: "danger",
@@ -96,6 +106,24 @@ import {
   assert.equal(visibleTerminalUsers(users, rootMode(true, false)).length, 1);
   assert.equal(visibleTerminalUsers(users, rootMode(true, true)).map((u) => u.username).join(","), "a,b");
   assert.equal(visibleTerminalUsers(users, rootMode(false, false)).length, 1);
+}
+
+{
+  assert.equal(visibleStoredRootError({
+    enabled: true, euidRoot: false, storedError: "elevate: sudo",
+  }), "elevate: sudo");
+  assert.equal(visibleStoredRootError({
+    enabled: false, euidRoot: true, storedError: "demote: pm2",
+  }), "demote: pm2");
+  assert.equal(visibleStoredRootError({
+    enabled: true, euidRoot: true, storedError: "elevate: sudo",
+  }), null);
+  assert.equal(visibleStoredRootError({
+    enabled: false, euidRoot: false, storedError: "demote: pm2",
+  }), null);
+  assert.equal(visibleStoredRootError({
+    enabled: true, euidRoot: false, storedError: null,
+  }), null);
 }
 
 console.log("ok");

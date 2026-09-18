@@ -2,6 +2,7 @@ package agentgw
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
@@ -50,6 +51,32 @@ func TestSendAgentRootCommand(t *testing.T) {
 				t.Fatal("expected AgentRootCommand on the connection")
 			}
 		})
+	}
+}
+
+func TestSendAgentRootCommandClearsStickyRootError(t *testing.T) {
+	tr := NewUpdateProgressTracker()
+	tr.Record("srv-1", AgentUpdateProgress{Phase: "failed", Detail: "elevate: sudo: a password is required"})
+	g := &Gateway{registry: NewRegistry(), progress: tr}
+	g.registry.Add("srv-1")
+	if err := g.SendAgentRootCommand("srv-1", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := tr.AgentRootError("srv-1"); got != "" {
+		t.Fatalf("retry send must clear sticky error, got %q", got)
+	}
+}
+
+func TestSendAgentRootCommandOfflineKeepsRootError(t *testing.T) {
+	tr := NewUpdateProgressTracker()
+	tr.Record("srv-1", AgentUpdateProgress{Phase: "failed", Detail: "elevate: sudo: a password is required"})
+	g := &Gateway{registry: NewRegistry(), progress: tr}
+	err := g.SendAgentRootCommand("srv-1", true)
+	if !errors.Is(err, ErrAgentOffline) {
+		t.Fatalf("err=%v want offline", err)
+	}
+	if got := tr.AgentRootError("srv-1"); !strings.Contains(got, "elevate") {
+		t.Fatalf("offline send must keep error, got %q", got)
 	}
 }
 

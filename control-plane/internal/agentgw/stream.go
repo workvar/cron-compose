@@ -11,6 +11,8 @@ import (
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/croncompose/croncompose/control-plane/internal/metrics"
 	"github.com/croncompose/croncompose/control-plane/internal/pki"
 	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
@@ -139,7 +141,8 @@ func (s *service) handleAgentMessage(ctx context.Context, serverID string, msg *
 }
 
 func (s *service) onHello(ctx context.Context, serverID string, h *agentv1.Hello) error {
-	_, err := s.pool.Exec(ctx, `
+	var enabled bool
+	err := s.pool.QueryRow(ctx, `
 		update servers set
 			agent_version = $1,
 			os = $2,
@@ -149,8 +152,16 @@ func (s *service) onHello(ctx context.Context, serverID string, h *agentv1.Hello
 			agent_euid_root = $5,
 			agent_service_user = case when $6 <> '' then $6 else agent_service_user end
 		where id = $4
-	`, h.GetAgentVersion(), h.GetOs(), h.GetArch(), serverID, h.GetEuidRoot(), h.GetServiceUser())
-	return err
+		returning agent_root_enabled
+	`, h.GetAgentVersion(), h.GetOs(), h.GetArch(), serverID, h.GetEuidRoot(), h.GetServiceUser()).Scan(&enabled)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	s.progress.ReconcileRootError(serverID, enabled, h.GetEuidRoot())
+	return nil
 }
 
 func (s *service) onHeartbeat(ctx context.Context, serverID string, _ *agentv1.Heartbeat) error {

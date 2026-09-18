@@ -105,6 +105,23 @@ func (t *UpdateProgressTracker) AgentRootError(serverID string) string {
 	return t.rootErr[serverID]
 }
 
+func (t *UpdateProgressTracker) ClearRootError(serverID string) {
+	if t == nil || serverID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.rootErr, serverID)
+}
+
+// ReconcileRootError drops a sticky privctl error once Hello reports euid
+// matching the desired flag (enabled && root, or disabled && not root).
+func (t *UpdateProgressTracker) ReconcileRootError(serverID string, enabled, euidRoot bool) {
+	if enabled == euidRoot {
+		t.ClearRootError(serverID)
+	}
+}
+
 func (t *UpdateProgressTracker) Clear(serverID string) {
 	if t == nil {
 		return

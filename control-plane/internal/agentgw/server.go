@@ -102,11 +102,15 @@ func (g *Gateway) SendAgentUpdate(serverID string, up *agentv1.UpdateAgent) erro
 // SendAgentRootCommand asks a connected agent to elevate (enabled=true) or demote.
 // Returns ErrAgentOffline when no stream is registered, matching SendAgentUpdate.
 func (g *Gateway) SendAgentRootCommand(serverID string, enabled bool) error {
-	return g.registry.Send(serverID, &agentv1.ServerMessage{
+	if err := g.registry.Send(serverID, &agentv1.ServerMessage{
 		Body: &agentv1.ServerMessage_AgentRootCommand{
 			AgentRootCommand: &agentv1.AgentRootCommand{Enabled: enabled},
 		},
-	})
+	}); err != nil {
+		return err
+	}
+	g.progress.ClearRootError(serverID)
+	return nil
 }
 
 // UpdateProgress exposes the in-memory self-update stage tracker for GET /updates.

@@ -90,3 +90,34 @@ func TestUpdateProgressTrackerIgnoresAgentRootFailure(t *testing.T) {
 		t.Fatalf("AgentRootError=%q", got)
 	}
 }
+
+// Production change that would fail this test: leaving rootErr set after a retry
+// send or after Hello reports euid matching the desired flag.
+func TestRootErrorClearedOnRetryAndReconcile(t *testing.T) {
+	tr := NewUpdateProgressTracker()
+	tr.Record("srv-1", AgentUpdateProgress{Phase: "failed", Detail: "elevate: sudo: a password is required"})
+	tr.ReconcileRootError("srv-1", true, false)
+	if got := tr.AgentRootError("srv-1"); !strings.Contains(got, "elevate") {
+		t.Fatalf("keep error while enabled && !euid, got %q", got)
+	}
+	tr.ReconcileRootError("srv-1", true, true)
+	if got := tr.AgentRootError("srv-1"); got != "" {
+		t.Fatalf("clear when enabled && euid, got %q", got)
+	}
+
+	tr.Record("srv-1", AgentUpdateProgress{Phase: "failed", Detail: "demote: systemd required"})
+	tr.ReconcileRootError("srv-1", false, true)
+	if got := tr.AgentRootError("srv-1"); !strings.Contains(got, "demote") {
+		t.Fatalf("keep error while !enabled && euid, got %q", got)
+	}
+	tr.ReconcileRootError("srv-1", false, false)
+	if got := tr.AgentRootError("srv-1"); got != "" {
+		t.Fatalf("clear when disabled && !euid, got %q", got)
+	}
+
+	tr.Record("srv-1", AgentUpdateProgress{Phase: "failed", Detail: "elevate: sticky"})
+	tr.ClearRootError("srv-1")
+	if got := tr.AgentRootError("srv-1"); got != "" {
+		t.Fatalf("ClearRootError left %q", got)
+	}
+}
