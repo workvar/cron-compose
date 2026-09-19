@@ -5,7 +5,17 @@ import Link from "next/link";
 import { Stepper, type StepDef } from "@/components/jobwizard/Stepper";
 import { GitConnections } from "@/components/deploys/GitConnections";
 import { AppEnvEditor } from "@/components/deploys/AppEnvEditor";
+import { ProjectBlockCard } from "@/components/deploys/ProjectBlockCard";
 import { IconChevronLeft, IconChevronRight, IconCheck } from "@/components/icons";
+import {
+  blocksReady,
+  blocksToDeployApps,
+  emptyBlock,
+  ensureUniqueBlockNames,
+  hasDuplicateRoots,
+  seedBlockFromInspect,
+  type ProjectBlock,
+} from "@/lib/project-blocks";
 import type {
   DeployApp,
   DeployEnvVar,
@@ -20,8 +30,8 @@ import type {
 
 const STEPS: StepDef[] = [
   { title: "Repository", desc: "Pick a git repo" },
-  { title: "Build", desc: "Language and install" },
-  { title: "Runtime", desc: "Server, env, process" },
+  { title: "Build", desc: "Projects to deploy" },
+  { title: "Runtime", desc: "Server and env" },
   { title: "Review", desc: "Clone and install" },
 ];
 
@@ -30,14 +40,9 @@ type Draft = {
   repo: GitRepo | null;
   inspect: DeployInspect | null;
   serverId: string;
-  language: string;
-  install: string;
-  root: string;
+  blocks: ProjectBlock[];
   clonePath: string;
   branch: string;
-  port: string;
-  processManager: string;
-  selectedApps: string[];
   appEnv: Record<string, DeployEnvVar[]>;
 };
 
@@ -46,14 +51,9 @@ const empty: Draft = {
   repo: null,
   inspect: null,
   serverId: "",
-  language: "node",
-  install: "",
-  root: ".",
+  blocks: [],
   clonePath: "",
   branch: "main",
-  port: "",
-  processManager: "none",
-  selectedApps: [],
   appEnv: {},
 };
 
@@ -108,13 +108,9 @@ export default function NewDeployPage() {
         ...d,
         repo,
         inspect,
-        language: inspect.language || "unknown",
-        install: inspect.install_script,
-        root: inspect.root_directory || ".",
+        blocks: [seedBlockFromInspect(inspect, repo.full_name)],
         clonePath: inspect.clone_path,
         branch: inspect.default_branch || repo.default_branch,
-        processManager: inspect.process_manager === "pm2" ? "pm2" : "none",
-        selectedApps: inspect.workspaces || [],
       }));
       setStep(1);
     } catch (e) {
@@ -124,21 +120,13 @@ export default function NewDeployPage() {
     }
   }
 
-  const apps: DeployApp[] = useMemo(() => {
-    const roots = draft.selectedApps.length > 0 ? draft.selectedApps : [draft.root || "."];
-    return roots.map((root) => {
-      const name = root.split("/").filter(Boolean).pop() || root || "app";
-      return {
-        name,
-        root,
-        language: draft.language,
-        install: draft.install,
-        process_manager: draft.processManager,
-        port: draft.port ? Number(draft.port) : undefined,
-        env: draft.appEnv[name] ?? [],
-      };
-    });
-  }, [draft.selectedApps, draft.root, draft.language, draft.install, draft.processManager, draft.port, draft.appEnv]);
+  const apps: DeployApp[] = useMemo(
+    () => blocksToDeployApps(ensureUniqueBlockNames(draft.blocks), draft.appEnv),
+    [draft.blocks, draft.appEnv],
+  );
+
+  const duplicateRoots = hasDuplicateRoots(draft.blocks);
+  const buildReady = blocksReady(draft.blocks) && !duplicateRoots;
 
   async function submit() {
     if (!draft.repo || !draft.serverId) return;
@@ -153,12 +141,12 @@ export default function NewDeployPage() {
         clone_url: draft.inspect?.clone_url || draft.repo.clone_url,
         default_branch: draft.branch,
         server_id: draft.serverId,
-        language: draft.language,
-        install_script: draft.install,
-        root_directory: draft.root,
+        language: draft.blocks[0]?.language || "",
+        install_script: draft.blocks[0]?.install || "",
+        root_directory: draft.blocks[0]?.root || ".",
         clone_path: draft.clonePath,
-        port: draft.port ? Number(draft.port) : 0,
-        process_manager: draft.processManager,
+        port: draft.blocks[0]?.port ? Number(draft.blocks[0].port) : 0,
+        process_manager: draft.blocks[0]?.processManager || "none",
         apps,
       };
       const res = await fetch("/api/deploys", {
@@ -211,6 +199,7 @@ export default function NewDeployPage() {
   }
 
   const connected = conns.some((c) => c.provider === draft.provider);
+  const workspaces = draft.inspect?.workspaces || [];
 
   return (
     <>
@@ -268,47 +257,52 @@ export default function NewDeployPage() {
             </>
           )}
 
-          {step === 1 && (
+          {step === 1 && draft.repo && (
             <>
               <h2 className="step-h">Build</h2>
-              <p className="step-lead">Detected from the repo. Override anything that looks wrong.</p>
-              <div className="grid-2">
-                <div className="field">
-                  <label htmlFor="language">Language</label>
-                  <input id="language" value={draft.language} onChange={(e) => setDraft((d) => ({ ...d, language: e.target.value }))} />
-                </div>
-                <div className="field">
-                  <label htmlFor="root">Root directory</label>
-                  <input id="root" value={draft.root} onChange={(e) => setDraft((d) => ({ ...d, root: e.target.value }))} />
-                </div>
+              <p className="step-lead">Configure each app to deploy from this repo.</p>
+              <div className="stack">
+                {draft.blocks.map((block) => (
+                  <ProjectBlockCard
+                    key={block.id}
+                    block={block}
+                    workspaces={workspaces}
+                    provider={draft.provider}
+                    repo={draft.repo!.full_name}
+                    branch={draft.branch}
+                    canRemove={draft.blocks.length > 1}
+                    onChange={(next) =>
+                      setDraft((d) => ({
+                        ...d,
+                        blocks: d.blocks.map((b) => (b.id === next.id ? next : b)),
+                      }))
+                    }
+                    onRemove={() =>
+                      setDraft((d) => ({
+                        ...d,
+                        blocks: d.blocks.filter((b) => b.id !== block.id),
+                      }))
+                    }
+                  />
+                ))}
               </div>
-              <div className="field">
-                <label htmlFor="install">Install script</label>
-                <textarea id="install" rows={3} value={draft.install} onChange={(e) => setDraft((d) => ({ ...d, install: e.target.value }))} />
-              </div>
-              <div className="field">
-                <label htmlFor="clonePath">Clone path on the agent</label>
-                <input id="clonePath" value={draft.clonePath} onChange={(e) => setDraft((d) => ({ ...d, clonePath: e.target.value }))} />
-              </div>
-              {(draft.inspect?.workspaces || []).length > 0 && (
-                <div className="field">
-                  <label>Packages (cloned once)</label>
-                  {(draft.inspect?.workspaces || []).map((w) => (
-                    <label key={w} style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-                      <input
-                        type="checkbox"
-                        checked={draft.selectedApps.includes(w)}
-                        onChange={(e) => setDraft((d) => ({
-                          ...d,
-                          selectedApps: e.target.checked
-                            ? [...d.selectedApps, w]
-                            : d.selectedApps.filter((x) => x !== w),
-                        }))}
-                      />
-                      <code>{w}</code>
-                    </label>
-                  ))}
-                </div>
+              <button
+                type="button"
+                className="button secondary"
+                style={{ marginTop: 12 }}
+                onClick={() => setDraft((d) => ({ ...d, blocks: [...d.blocks, emptyBlock()] }))}
+              >
+                + Add project
+              </button>
+              {duplicateRoots && (
+                <p className="form-error" style={{ marginTop: 12 }}>
+                  Two projects share the same root folder. Pick a different folder for each.
+                </p>
+              )}
+              {!blocksReady(draft.blocks) && draft.blocks.length > 0 && (
+                <p className="form-error" style={{ marginTop: 12 }}>
+                  Every project needs a root folder before continuing.
+                </p>
               )}
             </>
           )}
@@ -332,18 +326,37 @@ export default function NewDeployPage() {
                 </div>
                 <div className="field">
                   <label htmlFor="port">PORT (optional)</label>
-                  <input id="port" inputMode="numeric" value={draft.port} onChange={(e) => setDraft((d) => ({ ...d, port: e.target.value }))} />
+                  <input
+                    id="port"
+                    inputMode="numeric"
+                    value={draft.blocks[0]?.port ?? ""}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        blocks: d.blocks.map((b, i) => (i === 0 ? { ...b, port: e.target.value } : b)),
+                      }))
+                    }
+                  />
                 </div>
               </div>
               <div className="field">
                 <label htmlFor="pm">Process manager</label>
-                <select id="pm" value={draft.processManager} onChange={(e) => setDraft((d) => ({ ...d, processManager: e.target.value }))}>
+                <select
+                  id="pm"
+                  value={draft.blocks[0]?.processManager ?? "none"}
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      blocks: d.blocks.map((b, i) => (i === 0 ? { ...b, processManager: e.target.value } : b)),
+                    }))
+                  }
+                >
                   <option value="none">None — attach later</option>
                   <option value="pm2">PM2</option>
                   <option value="systemd">systemd (user unit)</option>
                   <option value="docker">Docker Compose</option>
                 </select>
-                {draft.processManager === "pm2" && draft.inspect && !draft.inspect.has_pm2_ecosystem && (
+                {draft.blocks[0]?.processManager === "pm2" && draft.inspect && !draft.inspect.has_pm2_ecosystem && (
                   <p className="subtle">No ecosystem file. The agent will run <code>pm2 start npm -- start</code> for Node apps.</p>
                 )}
               </div>
@@ -366,8 +379,9 @@ export default function NewDeployPage() {
                 <div><span className="subtle">Repo</span> {draft.repo?.full_name}</div>
                 <div><span className="subtle">Server</span> {servers.find((s) => s.id === draft.serverId)?.name}</div>
                 <div><span className="subtle">Path</span> <code>{draft.clonePath}</code></div>
-                <div><span className="subtle">Install</span> <code>{draft.install || "(none)"}</code></div>
-                <div><span className="subtle">Process</span> {draft.processManager}</div>
+                <div><span className="subtle">Apps</span> {draft.blocks.length}</div>
+                <div><span className="subtle">Install</span> <code>{draft.blocks[0]?.install || "(none)"}</code></div>
+                <div><span className="subtle">Process</span> {draft.blocks[0]?.processManager}</div>
               </div>
             </>
           )}
@@ -382,7 +396,11 @@ export default function NewDeployPage() {
               <button
                 type="button"
                 className="button"
-                disabled={step === 0 || (step === 2 && !draft.serverId)}
+                disabled={
+                  step === 0
+                  || (step === 1 && !buildReady)
+                  || (step === 2 && !draft.serverId)
+                }
                 onClick={() => setStep((s) => s + 1)}
               >
                 Continue <IconChevronRight />
