@@ -6,6 +6,7 @@ import { Stepper, type StepDef } from "@/components/jobwizard/Stepper";
 import { GitConnections } from "@/components/deploys/GitConnections";
 import { AppEnvEditor } from "@/components/deploys/AppEnvEditor";
 import { ProjectBlockCard } from "@/components/deploys/ProjectBlockCard";
+import { SearchableSelect } from "@/components/SearchableSelect";
 import { IconChevronLeft, IconChevronRight, IconCheck } from "@/components/icons";
 import {
   blocksReady,
@@ -128,11 +129,19 @@ export default function NewDeployPage() {
   const duplicateRoots = hasDuplicateRoots(draft.blocks);
   const buildReady = blocksReady(draft.blocks) && !duplicateRoots;
 
+  const serverOptions = useMemo(
+    () => servers.map((s) => ({ value: s.id, label: `${s.name} (${s.status})` })),
+    [servers],
+  );
+
   async function submit() {
     if (!draft.repo || !draft.serverId) return;
     setBusy(true);
     setError(null);
     try {
+      const named = ensureUniqueBlockNames(draft.blocks);
+      const submitApps = blocksToDeployApps(named, draft.appEnv);
+      const first = submitApps[0];
       const body = {
         name: draft.repo.full_name,
         provider: draft.provider,
@@ -141,13 +150,13 @@ export default function NewDeployPage() {
         clone_url: draft.inspect?.clone_url || draft.repo.clone_url,
         default_branch: draft.branch,
         server_id: draft.serverId,
-        language: draft.blocks[0]?.language || "",
-        install_script: draft.blocks[0]?.install || "",
-        root_directory: draft.blocks[0]?.root || ".",
+        language: first?.language || "",
+        install_script: first?.install || "",
+        root_directory: first?.root || ".",
         clone_path: draft.clonePath,
-        port: draft.blocks[0]?.port ? Number(draft.blocks[0].port) : 0,
-        process_manager: draft.blocks[0]?.processManager || "none",
-        apps,
+        port: first?.port || 0,
+        process_manager: first?.process_manager || "none",
+        apps: submitApps,
       };
       const res = await fetch("/api/deploys", {
         method: "POST",
@@ -310,14 +319,16 @@ export default function NewDeployPage() {
           {step === 2 && (
             <>
               <h2 className="step-h">Runtime</h2>
-              <p className="step-lead">Where it runs after clone, and how it is hosted.</p>
+              <p className="step-lead">Where it runs after clone, and per-app environment.</p>
               <div className="field">
                 <label htmlFor="server">Agent server</label>
-                <select id="server" value={draft.serverId} onChange={(e) => setDraft((d) => ({ ...d, serverId: e.target.value }))}>
-                  {servers.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.status})</option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  id="server"
+                  value={draft.serverId}
+                  onChange={(serverId) => setDraft((d) => ({ ...d, serverId }))}
+                  options={serverOptions}
+                  placeholder="Select a server…"
+                />
               </div>
               <div className="grid-2">
                 <div className="field">
@@ -325,40 +336,9 @@ export default function NewDeployPage() {
                   <input id="branch" value={draft.branch} onChange={(e) => setDraft((d) => ({ ...d, branch: e.target.value }))} />
                 </div>
                 <div className="field">
-                  <label htmlFor="port">PORT (optional)</label>
-                  <input
-                    id="port"
-                    inputMode="numeric"
-                    value={draft.blocks[0]?.port ?? ""}
-                    onChange={(e) =>
-                      setDraft((d) => ({
-                        ...d,
-                        blocks: d.blocks.map((b, i) => (i === 0 ? { ...b, port: e.target.value } : b)),
-                      }))
-                    }
-                  />
+                  <label htmlFor="clonePath">Clone path on the agent</label>
+                  <input id="clonePath" value={draft.clonePath} onChange={(e) => setDraft((d) => ({ ...d, clonePath: e.target.value }))} />
                 </div>
-              </div>
-              <div className="field">
-                <label htmlFor="pm">Process manager</label>
-                <select
-                  id="pm"
-                  value={draft.blocks[0]?.processManager ?? "none"}
-                  onChange={(e) =>
-                    setDraft((d) => ({
-                      ...d,
-                      blocks: d.blocks.map((b, i) => (i === 0 ? { ...b, processManager: e.target.value } : b)),
-                    }))
-                  }
-                >
-                  <option value="none">None — attach later</option>
-                  <option value="pm2">PM2</option>
-                  <option value="systemd">systemd (user unit)</option>
-                  <option value="docker">Docker Compose</option>
-                </select>
-                {draft.blocks[0]?.processManager === "pm2" && draft.inspect && !draft.inspect.has_pm2_ecosystem && (
-                  <p className="subtle">No ecosystem file. The agent will run <code>pm2 start npm -- start</code> for Node apps.</p>
-                )}
               </div>
               <AppEnvEditor
                 apps={apps}
@@ -378,10 +358,20 @@ export default function NewDeployPage() {
               <div className="stack">
                 <div><span className="subtle">Repo</span> {draft.repo?.full_name}</div>
                 <div><span className="subtle">Server</span> {servers.find((s) => s.id === draft.serverId)?.name}</div>
-                <div><span className="subtle">Path</span> <code>{draft.clonePath}</code></div>
-                <div><span className="subtle">Apps</span> {draft.blocks.length}</div>
-                <div><span className="subtle">Install</span> <code>{draft.blocks[0]?.install || "(none)"}</code></div>
-                <div><span className="subtle">Process</span> {draft.blocks[0]?.processManager}</div>
+                <div><span className="subtle">Clone path</span> <code>{draft.clonePath}</code></div>
+                <div><span className="subtle">Branch</span> <code>{draft.branch}</code></div>
+                {ensureUniqueBlockNames(draft.blocks).map((block) => (
+                  <div key={block.id} className="panel" style={{ marginTop: 8 }}>
+                    <div style={{ fontWeight: 700 }}>{block.name}</div>
+                    <div className="subtle" style={{ fontSize: 13, marginTop: 4 }}>
+                      <div><span className="subtle">Root</span> <code>{block.root || "."}</code></div>
+                      <div><span className="subtle">Language</span> {block.language}</div>
+                      <div><span className="subtle">Install</span> <code>{block.install || "(none)"}</code></div>
+                      {block.port && <div><span className="subtle">Port</span> {block.port}</div>}
+                      <div><span className="subtle">Process</span> {block.processManager}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </>
           )}
