@@ -46,6 +46,7 @@
     "lib/parse-dotenv.test.ts",
     "lib/git-oauth.test.ts",
     "lib/project-blocks.test.ts",
-    "lib/git-repos.test.ts"
+    "lib/git-repos.test.ts",
+    "lib/api-error.test.ts"
   ]
 }

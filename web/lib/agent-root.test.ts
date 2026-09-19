@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { visibleTerminalUsers } from "./terminal-users.ts";
 import {
   ControlPlaneError,
+  agentRootPending,
   agentRootView,
   applyToggleFailure,
+  decideAgentRootWatch,
   parseControlPlaneError,
   visibleStoredRootError,
 } from "./agent-root.ts";
@@ -124,6 +126,29 @@ import {
   assert.equal(visibleStoredRootError({
     enabled: true, euidRoot: false, storedError: null,
   }), null);
+}
+
+{
+  assert.equal(agentRootPending(true, false), true);
+  assert.equal(agentRootPending(true, true), false);
+  assert.equal(agentRootPending(false, false), false);
+
+  assert.deepEqual(decideAgentRootWatch({
+    enabled: true, euidRoot: false, elapsedMs: 0,
+  }), { action: "continue" });
+  assert.deepEqual(decideAgentRootWatch({
+    enabled: true, euidRoot: true, elapsedMs: 5_000,
+  }), { action: "done", enabled: true, euidRoot: true });
+  assert.deepEqual(decideAgentRootWatch({
+    enabled: true, euidRoot: false, elapsedMs: 1_000, storedError: "elevate: sudo",
+  }), { action: "timeout", error: "elevate: sudo" });
+  const timed = decideAgentRootWatch({
+    enabled: true, euidRoot: false, elapsedMs: 60_000, timeoutMs: 60_000,
+  });
+  assert.equal(timed.action, "timeout");
+  if (timed.action === "timeout") {
+    assert.match(timed.error, /did not report root/i);
+  }
 }
 
 console.log("ok");

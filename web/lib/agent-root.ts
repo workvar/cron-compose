@@ -53,6 +53,54 @@ export function visibleStoredRootError(input: {
   return stored;
 }
 
+/** True while the DB flag and reported euid disagree — agent is restarting or stuck. */
+export function agentRootPending(enabled: boolean, euidRoot: boolean): boolean {
+  return enabled !== euidRoot;
+}
+
+export const AGENT_ROOT_WATCH_MS = 60_000;
+export const AGENT_ROOT_POLL_MS = 2_000;
+
+export function agentRootTimeoutMessage(enabled: boolean, storedError?: string | null): string {
+  const stored = storedError?.trim();
+  if (stored) return stored;
+  if (enabled) {
+    return "Agent did not report root after 60s. On the host check: systemctl status croncompose-agent; " +
+      "ls /etc/systemd/system/croncompose-agent.service.d/; " +
+      "and that sudo -n /usr/libexec/croncompose/agent-privctl elevate works for the agent user.";
+  }
+  return "Agent is still running as root after demote. Check systemctl status croncompose-agent and remove " +
+    "/etc/systemd/system/croncompose-agent.service.d/root.conf if it remains.";
+}
+
+export type AgentRootWatchDecision =
+  | { action: "continue" }
+  | { action: "done"; enabled: boolean; euidRoot: boolean }
+  | { action: "timeout"; error: string };
+
+/** Pure step for the waiting poll loop (used by AgentRootToggle). */
+export function decideAgentRootWatch(input: {
+  enabled: boolean;
+  euidRoot: boolean;
+  elapsedMs: number;
+  timeoutMs?: number;
+  storedError?: string | null;
+}): AgentRootWatchDecision {
+  if (!agentRootPending(input.enabled, input.euidRoot)) {
+    return { action: "done", enabled: input.enabled, euidRoot: input.euidRoot };
+  }
+  const limit = input.timeoutMs ?? AGENT_ROOT_WATCH_MS;
+  if (input.elapsedMs >= limit) {
+    return { action: "timeout", error: agentRootTimeoutMessage(input.enabled, input.storedError) };
+  }
+  // Surface a privctl failure as soon as the control plane has one — don't wait out the full timeout.
+  const stored = input.storedError?.trim();
+  if (stored) {
+    return { action: "timeout", error: stored };
+  }
+  return { action: "continue" };
+}
+
 export function applyToggleFailure(input: {
   requestedEnabled: boolean;
   previousEnabled: boolean;

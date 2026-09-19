@@ -15,8 +15,13 @@ export function newBlockId(): string {
 }
 
 export function normalizeBlockRoot(root: string): string {
-  const trimmed = root.trim();
-  return trimmed === "" ? "." : trimmed;
+  let trimmed = root.trim().replace(/\\/g, "/");
+  trimmed = trimmed.replace(/^\/+/, "");
+  trimmed = trimmed.replace(/^\.\//, "");
+  while (trimmed.includes("//")) trimmed = trimmed.replaceAll("//", "/");
+  trimmed = trimmed.replace(/\/+$/, "");
+  if (trimmed === "" || trimmed === ".") return ".";
+  return trimmed;
 }
 
 export function nameFromRoot(root: string, repoFullName: string): string {

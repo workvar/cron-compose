@@ -11,8 +11,11 @@ import {
 
 assert.equal(normalizeBlockRoot(""), ".");
 assert.equal(normalizeBlockRoot("apps/web"), "apps/web");
+assert.equal(normalizeBlockRoot("/backend"), "backend");
+assert.equal(normalizeBlockRoot("./apps/web/"), "apps/web");
 assert.equal(nameFromRoot(".", "acme/widgets"), "widgets");
 assert.equal(nameFromRoot("apps/web", "acme/widgets"), "web");
+assert.equal(nameFromRoot("/backend", "acme/widgets"), "backend");
 
 const dup = ensureUniqueBlockNames([
   { id: "1", name: "web", root: "a", language: "", install: "", port: "", processManager: "none" },

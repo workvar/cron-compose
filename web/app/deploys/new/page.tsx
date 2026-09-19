@@ -264,10 +264,18 @@ export default function NewDeployPage() {
                   {!connected && <p className="subtle">Connect this provider in Settings first.</p>}
                   {connected && (
                     <>
-                      {owners.length > 1 && (
+                      {owners.length > 0 && (
                         <div className="field">
                           <label>Account / organization</label>
                           <div className="chips" role="group" aria-label="Filter by owner">
+                            <button
+                              type="button"
+                              className={`chip${ownerFilter.length === 0 ? " selected" : ""}`}
+                              aria-pressed={ownerFilter.length === 0}
+                              onClick={() => setOwnerFilter([])}
+                            >
+                              All
+                            </button>
                             {owners.map((o) => {
                               const on = ownerFilter.includes(o.owner);
                               return (
@@ -283,19 +291,6 @@ export default function NewDeployPage() {
                               );
                             })}
                           </div>
-                          {ownerFilter.length > 0 && (
-                            <p className="field-hint" style={{ marginTop: 8 }}>
-                              Showing {ownerFilter.length === 1 ? "1 account" : `${ownerFilter.length} accounts`}.{" "}
-                              <button
-                                type="button"
-                                className="button ghost sm"
-                                style={{ padding: 0, minHeight: 0, verticalAlign: "baseline" }}
-                                onClick={() => setOwnerFilter([])}
-                              >
-                                Clear
-                              </button>
-                            </p>
-                          )}
                         </div>
                       )}
                       <div className="search" style={{ margin: "0 0 12px" }}>
