@@ -44,6 +44,8 @@
     "lib/terminal-users.test.ts",
     "lib/agent-root.test.ts",
     "lib/parse-dotenv.test.ts",
-    "lib/git-oauth.test.ts"
+    "lib/git-oauth.test.ts",
+    "lib/project-blocks.test.ts",
+    "lib/git-repos.test.ts"
   ]
 }

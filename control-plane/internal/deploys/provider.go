@@ -228,6 +228,124 @@ func (g *GitAPI) fetchGitLab(ctx context.Context, token, fullName, branch string
 	return files, repo, nil
 }
 
+// ListDirs lists directories in a repo at path (shallow or recursive, capped).
+func (g *GitAPI) ListDirs(ctx context.Context, provider, token, fullName, branch, path string, recursive bool) (DirList, error) {
+	path = NormalizeRepoPath(path)
+	if provider == "gitlab" {
+		return g.listDirsGitLab(ctx, token, fullName, branch, path, recursive)
+	}
+	return g.listDirsGitHub(ctx, token, fullName, branch, path, recursive)
+}
+
+func (g *GitAPI) listDirsGitHub(ctx context.Context, token, fullName, branch, path string, recursive bool) (DirList, error) {
+	out := DirList{Path: path, Recursive: recursive}
+	if branch == "" {
+		var meta struct {
+			DefaultBranch string `json:"default_branch"`
+		}
+		if err := g.getJSON(ctx, g.githubAPI()+"/repos/"+fullName, token, &meta); err != nil {
+			return out, err
+		}
+		branch = meta.DefaultBranch
+	}
+	if recursive {
+		var tree struct {
+			Tree []struct {
+				Path string `json:"path"`
+				Type string `json:"type"`
+			} `json:"tree"`
+		}
+		u := fmt.Sprintf("%s/repos/%s/git/trees/%s?recursive=1", g.githubAPI(), fullName, url.PathEscape(branch))
+		if err := g.getJSON(ctx, u, token, &tree); err != nil {
+			return out, err
+		}
+		var paths []string
+		for _, t := range tree.Tree {
+			if t.Type == "tree" {
+				paths = append(paths, t.Path)
+			}
+		}
+		items, truncated := FilterAndCapDirs(paths, path, true, MaxDirEntries)
+		out.Items = items
+		out.Truncated = truncated
+		return out, nil
+	}
+	var entries []struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+		Type string `json:"type"`
+	}
+	u := fmt.Sprintf("%s/repos/%s/contents/%s?ref=%s", g.githubAPI(), fullName, path, url.QueryEscape(branch))
+	if path == "" {
+		u = fmt.Sprintf("%s/repos/%s/contents/?ref=%s", g.githubAPI(), fullName, url.QueryEscape(branch))
+	}
+	if err := g.getJSON(ctx, u, token, &entries); err != nil {
+		return out, err
+	}
+	var paths []string
+	for _, e := range entries {
+		if e.Type == "dir" {
+			paths = append(paths, e.Path)
+		}
+	}
+	items, truncated := FilterAndCapDirs(paths, path, false, MaxDirEntries)
+	out.Items = items
+	out.Truncated = truncated
+	return out, nil
+}
+
+func (g *GitAPI) listDirsGitLab(ctx context.Context, token, fullName, branch, path string, recursive bool) (DirList, error) {
+	out := DirList{Path: path, Recursive: recursive}
+	enc := url.PathEscape(fullName)
+	if branch == "" {
+		var meta struct {
+			DefaultBranch string `json:"default_branch"`
+		}
+		if err := g.getJSON(ctx, g.gitlabAPI()+"/projects/"+enc, token, &meta); err != nil {
+			return out, err
+		}
+		branch = meta.DefaultBranch
+	}
+	base := fmt.Sprintf("%s/projects/%s/repository/tree", g.gitlabAPI(), enc)
+	var allPaths []string
+	for page := 1; ; page++ {
+		q := url.Values{}
+		q.Set("ref", branch)
+		q.Set("per_page", "100")
+		q.Set("page", fmt.Sprintf("%d", page))
+		if path != "" {
+			q.Set("path", path)
+		}
+		if recursive {
+			q.Set("recursive", "true")
+		}
+		var pageItems []struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+			Type string `json:"type"`
+		}
+		u := base + "?" + q.Encode()
+		if err := g.getJSON(ctx, u, token, &pageItems); err != nil {
+			return out, err
+		}
+		for _, e := range pageItems {
+			if e.Type == "tree" {
+				allPaths = append(allPaths, e.Path)
+			}
+		}
+		if len(pageItems) < 100 {
+			break
+		}
+		if recursive && len(allPaths) >= MaxDirEntries {
+			break
+		}
+	}
+	items, truncated := FilterAndCapDirs(allPaths, path, recursive, MaxDirEntries)
+	out.Items = items
+	out.Truncated = truncated
+	return out, nil
+}
+
 func interestingPath(p string) bool {
 	base := p
 	if i := strings.LastIndex(p, "/"); i >= 0 {

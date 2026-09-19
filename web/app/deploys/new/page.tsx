@@ -5,7 +5,19 @@ import Link from "next/link";
 import { Stepper, type StepDef } from "@/components/jobwizard/Stepper";
 import { GitConnections } from "@/components/deploys/GitConnections";
 import { AppEnvEditor } from "@/components/deploys/AppEnvEditor";
-import { IconChevronLeft, IconChevronRight, IconCheck } from "@/components/icons";
+import { ProjectBlockCard } from "@/components/deploys/ProjectBlockCard";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { IconChevronLeft, IconChevronRight, IconCheck, IconSearch } from "@/components/icons";
+import {
+  blocksReady,
+  blocksToDeployApps,
+  emptyBlock,
+  ensureUniqueBlockNames,
+  hasDuplicateRoots,
+  seedBlockFromInspect,
+  type ProjectBlock,
+} from "@/lib/project-blocks";
+import { filterGitRepos, listGitRepoOwners, toggleOwnerFilter } from "@/lib/git-repos";
 import type {
   DeployApp,
   DeployEnvVar,
@@ -20,8 +32,8 @@ import type {
 
 const STEPS: StepDef[] = [
   { title: "Repository", desc: "Pick a git repo" },
-  { title: "Build", desc: "Language and install" },
-  { title: "Runtime", desc: "Server, env, process" },
+  { title: "Build", desc: "Projects to deploy" },
+  { title: "Runtime", desc: "Server and env" },
   { title: "Review", desc: "Clone and install" },
 ];
 
@@ -30,14 +42,9 @@ type Draft = {
   repo: GitRepo | null;
   inspect: DeployInspect | null;
   serverId: string;
-  language: string;
-  install: string;
-  root: string;
+  blocks: ProjectBlock[];
   clonePath: string;
   branch: string;
-  port: string;
-  processManager: string;
-  selectedApps: string[];
   appEnv: Record<string, DeployEnvVar[]>;
 };
 
@@ -46,14 +53,9 @@ const empty: Draft = {
   repo: null,
   inspect: null,
   serverId: "",
-  language: "node",
-  install: "",
-  root: ".",
+  blocks: [],
   clonePath: "",
   branch: "main",
-  port: "",
-  processManager: "none",
-  selectedApps: [],
   appEnv: {},
 };
 
@@ -62,6 +64,8 @@ export default function NewDeployPage() {
   const [draft, setDraft] = useState<Draft>(empty);
   const [conns, setConns] = useState<GitConnection[]>([]);
   const [repos, setRepos] = useState<GitRepo[]>([]);
+  const [repoQuery, setRepoQuery] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState<string[]>([]);
   const [servers, setServers] = useState<Server[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,13 +92,28 @@ export default function NewDeployPage() {
   useEffect(() => {
     if (!conns.some((c) => c.provider === draft.provider)) {
       setRepos([]);
+      setRepoQuery("");
+      setOwnerFilter([]);
       return;
     }
+    setRepoQuery("");
+    setOwnerFilter([]);
     fetch(`/api/git/repos?provider=${encodeURIComponent(draft.provider)}`)
       .then((r) => r.json() as Promise<ListResponse<GitRepo>>)
       .then((d) => setRepos(d.items || []))
       .catch(() => setRepos([]));
   }, [draft.provider, conns]);
+
+  const providerOptions = useMemo(
+    () => conns.map((c) => ({ value: c.provider, label: `${c.provider} (${c.login})` })),
+    [conns],
+  );
+  const personalLogin = conns.find((c) => c.provider === draft.provider)?.login;
+  const owners = useMemo(() => listGitRepoOwners(repos, personalLogin), [repos, personalLogin]);
+  const visibleRepos = useMemo(
+    () => filterGitRepos(repos, { query: repoQuery, owners: ownerFilter }),
+    [repos, repoQuery, ownerFilter],
+  );
 
   async function inspectRepo(repo: GitRepo) {
     setBusy(true);
@@ -108,13 +127,9 @@ export default function NewDeployPage() {
         ...d,
         repo,
         inspect,
-        language: inspect.language || "unknown",
-        install: inspect.install_script,
-        root: inspect.root_directory || ".",
+        blocks: [seedBlockFromInspect(inspect, repo.full_name)],
         clonePath: inspect.clone_path,
         branch: inspect.default_branch || repo.default_branch,
-        processManager: inspect.process_manager === "pm2" ? "pm2" : "none",
-        selectedApps: inspect.workspaces || [],
       }));
       setStep(1);
     } catch (e) {
@@ -124,27 +139,27 @@ export default function NewDeployPage() {
     }
   }
 
-  const apps: DeployApp[] = useMemo(() => {
-    const roots = draft.selectedApps.length > 0 ? draft.selectedApps : [draft.root || "."];
-    return roots.map((root) => {
-      const name = root.split("/").filter(Boolean).pop() || root || "app";
-      return {
-        name,
-        root,
-        language: draft.language,
-        install: draft.install,
-        process_manager: draft.processManager,
-        port: draft.port ? Number(draft.port) : undefined,
-        env: draft.appEnv[name] ?? [],
-      };
-    });
-  }, [draft.selectedApps, draft.root, draft.language, draft.install, draft.processManager, draft.port, draft.appEnv]);
+  const apps: DeployApp[] = useMemo(
+    () => blocksToDeployApps(ensureUniqueBlockNames(draft.blocks), draft.appEnv),
+    [draft.blocks, draft.appEnv],
+  );
+
+  const duplicateRoots = hasDuplicateRoots(draft.blocks);
+  const buildReady = blocksReady(draft.blocks) && !duplicateRoots;
+
+  const serverOptions = useMemo(
+    () => servers.map((s) => ({ value: s.id, label: `${s.name} (${s.status})` })),
+    [servers],
+  );
 
   async function submit() {
     if (!draft.repo || !draft.serverId) return;
     setBusy(true);
     setError(null);
     try {
+      const named = ensureUniqueBlockNames(draft.blocks);
+      const submitApps = blocksToDeployApps(named, draft.appEnv);
+      const first = submitApps[0];
       const body = {
         name: draft.repo.full_name,
         provider: draft.provider,
@@ -153,13 +168,13 @@ export default function NewDeployPage() {
         clone_url: draft.inspect?.clone_url || draft.repo.clone_url,
         default_branch: draft.branch,
         server_id: draft.serverId,
-        language: draft.language,
-        install_script: draft.install,
-        root_directory: draft.root,
+        language: first?.language || "",
+        install_script: first?.install || "",
+        root_directory: first?.root || ".",
         clone_path: draft.clonePath,
-        port: draft.port ? Number(draft.port) : 0,
-        process_manager: draft.processManager,
-        apps,
+        port: first?.port || 0,
+        process_manager: first?.process_manager || "none",
+        apps: submitApps,
       };
       const res = await fetch("/api/deploys", {
         method: "POST",
@@ -211,6 +226,7 @@ export default function NewDeployPage() {
   }
 
   const connected = conns.some((c) => c.provider === draft.provider);
+  const workspaces = draft.inspect?.workspaces || [];
 
   return (
     <>
@@ -236,79 +252,134 @@ export default function NewDeployPage() {
                 <>
                   <div className="field">
                     <label htmlFor="provider">Provider</label>
-                    <select
+                    <SearchableSelect
                       id="provider"
                       value={draft.provider}
-                      onChange={(e) => setDraft((d) => ({ ...d, provider: e.target.value, repo: null }))}
-                    >
-                      {conns.map((c) => (
-                        <option key={c.provider} value={c.provider}>{c.provider} ({c.login})</option>
-                      ))}
-                    </select>
+                      onChange={(provider) => setDraft((d) => ({ ...d, provider, repo: null }))}
+                      options={providerOptions}
+                      placeholder="Select a provider…"
+                      aria-label="Git provider"
+                    />
                   </div>
                   {!connected && <p className="subtle">Connect this provider in Settings first.</p>}
-                  <div className="stack" style={{ maxHeight: 360, overflow: "auto" }}>
-                    {repos.map((r) => (
-                      <button
-                        type="button"
-                        key={r.id}
-                        className="panel"
-                        style={{ textAlign: "left", width: "100%" }}
-                        disabled={busy}
-                        onClick={() => inspectRepo(r)}
-                      >
-                        <div style={{ fontWeight: 700 }}>{r.full_name}</div>
-                        <div className="subtle" style={{ fontSize: 13 }}>{r.description || r.default_branch}</div>
-                      </button>
-                    ))}
-                    {connected && repos.length === 0 && <p className="subtle">No repositories visible to this grant.</p>}
-                  </div>
+                  {connected && (
+                    <>
+                      {owners.length > 1 && (
+                        <div className="field">
+                          <label>Account / organization</label>
+                          <div className="chips" role="group" aria-label="Filter by owner">
+                            {owners.map((o) => {
+                              const on = ownerFilter.includes(o.owner);
+                              return (
+                                <button
+                                  key={o.owner}
+                                  type="button"
+                                  className={`chip${on ? " selected" : ""}`}
+                                  aria-pressed={on}
+                                  onClick={() => setOwnerFilter((prev) => toggleOwnerFilter(prev, o.owner))}
+                                >
+                                  {o.personal ? `Personal · ${o.owner}` : o.owner}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {ownerFilter.length > 0 && (
+                            <p className="field-hint" style={{ marginTop: 8 }}>
+                              Showing {ownerFilter.length === 1 ? "1 account" : `${ownerFilter.length} accounts`}.{" "}
+                              <button
+                                type="button"
+                                className="button ghost sm"
+                                style={{ padding: 0, minHeight: 0, verticalAlign: "baseline" }}
+                                onClick={() => setOwnerFilter([])}
+                              >
+                                Clear
+                              </button>
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      <div className="search" style={{ margin: "0 0 12px" }}>
+                        <IconSearch />
+                        <input
+                          type="search"
+                          value={repoQuery}
+                          onChange={(e) => setRepoQuery(e.target.value)}
+                          placeholder="Search repositories…"
+                          aria-label="Search repositories"
+                        />
+                      </div>
+                      <div className="stack" style={{ maxHeight: 360, overflow: "auto" }}>
+                        {visibleRepos.map((r) => (
+                          <button
+                            type="button"
+                            key={r.id}
+                            className="panel"
+                            style={{ textAlign: "left", width: "100%" }}
+                            disabled={busy}
+                            onClick={() => inspectRepo(r)}
+                          >
+                            <div style={{ fontWeight: 700 }}>{r.full_name}</div>
+                            <div className="subtle" style={{ fontSize: 13 }}>{r.description || r.default_branch}</div>
+                          </button>
+                        ))}
+                        {repos.length === 0 && <p className="subtle">No repositories visible to this grant.</p>}
+                        {repos.length > 0 && visibleRepos.length === 0 && (
+                          <p className="subtle">No repositories match this search.</p>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </>
           )}
 
-          {step === 1 && (
+          {step === 1 && draft.repo && (
             <>
               <h2 className="step-h">Build</h2>
-              <p className="step-lead">Detected from the repo. Override anything that looks wrong.</p>
-              <div className="grid-2">
-                <div className="field">
-                  <label htmlFor="language">Language</label>
-                  <input id="language" value={draft.language} onChange={(e) => setDraft((d) => ({ ...d, language: e.target.value }))} />
-                </div>
-                <div className="field">
-                  <label htmlFor="root">Root directory</label>
-                  <input id="root" value={draft.root} onChange={(e) => setDraft((d) => ({ ...d, root: e.target.value }))} />
-                </div>
+              <p className="step-lead">Configure each app to deploy from this repo.</p>
+              <div className="stack">
+                {draft.blocks.map((block) => (
+                  <ProjectBlockCard
+                    key={block.id}
+                    block={block}
+                    workspaces={workspaces}
+                    provider={draft.provider}
+                    repo={draft.repo!.full_name}
+                    branch={draft.branch}
+                    canRemove={draft.blocks.length > 1}
+                    onChange={(next) =>
+                      setDraft((d) => ({
+                        ...d,
+                        blocks: d.blocks.map((b) => (b.id === next.id ? next : b)),
+                      }))
+                    }
+                    onRemove={() =>
+                      setDraft((d) => ({
+                        ...d,
+                        blocks: d.blocks.filter((b) => b.id !== block.id),
+                      }))
+                    }
+                  />
+                ))}
               </div>
-              <div className="field">
-                <label htmlFor="install">Install script</label>
-                <textarea id="install" rows={3} value={draft.install} onChange={(e) => setDraft((d) => ({ ...d, install: e.target.value }))} />
-              </div>
-              <div className="field">
-                <label htmlFor="clonePath">Clone path on the agent</label>
-                <input id="clonePath" value={draft.clonePath} onChange={(e) => setDraft((d) => ({ ...d, clonePath: e.target.value }))} />
-              </div>
-              {(draft.inspect?.workspaces || []).length > 0 && (
-                <div className="field">
-                  <label>Packages (cloned once)</label>
-                  {(draft.inspect?.workspaces || []).map((w) => (
-                    <label key={w} style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-                      <input
-                        type="checkbox"
-                        checked={draft.selectedApps.includes(w)}
-                        onChange={(e) => setDraft((d) => ({
-                          ...d,
-                          selectedApps: e.target.checked
-                            ? [...d.selectedApps, w]
-                            : d.selectedApps.filter((x) => x !== w),
-                        }))}
-                      />
-                      <code>{w}</code>
-                    </label>
-                  ))}
-                </div>
+              <button
+                type="button"
+                className="button secondary"
+                style={{ marginTop: 12 }}
+                onClick={() => setDraft((d) => ({ ...d, blocks: [...d.blocks, emptyBlock()] }))}
+              >
+                + Add project
+              </button>
+              {duplicateRoots && (
+                <p className="form-error" style={{ marginTop: 12 }}>
+                  Two projects share the same root folder. Pick a different folder for each.
+                </p>
+              )}
+              {!blocksReady(draft.blocks) && draft.blocks.length > 0 && (
+                <p className="form-error" style={{ marginTop: 12 }}>
+                  Every project needs a root folder before continuing.
+                </p>
               )}
             </>
           )}
@@ -316,14 +387,16 @@ export default function NewDeployPage() {
           {step === 2 && (
             <>
               <h2 className="step-h">Runtime</h2>
-              <p className="step-lead">Where it runs after clone, and how it is hosted.</p>
+              <p className="step-lead">Where it runs after clone, and per-app environment.</p>
               <div className="field">
                 <label htmlFor="server">Agent server</label>
-                <select id="server" value={draft.serverId} onChange={(e) => setDraft((d) => ({ ...d, serverId: e.target.value }))}>
-                  {servers.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.status})</option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  id="server"
+                  value={draft.serverId}
+                  onChange={(serverId) => setDraft((d) => ({ ...d, serverId }))}
+                  options={serverOptions}
+                  placeholder="Select a server…"
+                />
               </div>
               <div className="grid-2">
                 <div className="field">
@@ -331,21 +404,9 @@ export default function NewDeployPage() {
                   <input id="branch" value={draft.branch} onChange={(e) => setDraft((d) => ({ ...d, branch: e.target.value }))} />
                 </div>
                 <div className="field">
-                  <label htmlFor="port">PORT (optional)</label>
-                  <input id="port" inputMode="numeric" value={draft.port} onChange={(e) => setDraft((d) => ({ ...d, port: e.target.value }))} />
+                  <label htmlFor="clonePath">Clone path on the agent</label>
+                  <input id="clonePath" value={draft.clonePath} onChange={(e) => setDraft((d) => ({ ...d, clonePath: e.target.value }))} />
                 </div>
-              </div>
-              <div className="field">
-                <label htmlFor="pm">Process manager</label>
-                <select id="pm" value={draft.processManager} onChange={(e) => setDraft((d) => ({ ...d, processManager: e.target.value }))}>
-                  <option value="none">None — attach later</option>
-                  <option value="pm2">PM2</option>
-                  <option value="systemd">systemd (user unit)</option>
-                  <option value="docker">Docker Compose</option>
-                </select>
-                {draft.processManager === "pm2" && draft.inspect && !draft.inspect.has_pm2_ecosystem && (
-                  <p className="subtle">No ecosystem file. The agent will run <code>pm2 start npm -- start</code> for Node apps.</p>
-                )}
               </div>
               <AppEnvEditor
                 apps={apps}
@@ -365,9 +426,20 @@ export default function NewDeployPage() {
               <div className="stack">
                 <div><span className="subtle">Repo</span> {draft.repo?.full_name}</div>
                 <div><span className="subtle">Server</span> {servers.find((s) => s.id === draft.serverId)?.name}</div>
-                <div><span className="subtle">Path</span> <code>{draft.clonePath}</code></div>
-                <div><span className="subtle">Install</span> <code>{draft.install || "(none)"}</code></div>
-                <div><span className="subtle">Process</span> {draft.processManager}</div>
+                <div><span className="subtle">Clone path</span> <code>{draft.clonePath}</code></div>
+                <div><span className="subtle">Branch</span> <code>{draft.branch}</code></div>
+                {ensureUniqueBlockNames(draft.blocks).map((block) => (
+                  <div key={block.id} className="panel" style={{ marginTop: 8 }}>
+                    <div style={{ fontWeight: 700 }}>{block.name}</div>
+                    <div className="subtle" style={{ fontSize: 13, marginTop: 4 }}>
+                      <div><span className="subtle">Root</span> <code>{block.root || "."}</code></div>
+                      <div><span className="subtle">Language</span> {block.language}</div>
+                      <div><span className="subtle">Install</span> <code>{block.install || "(none)"}</code></div>
+                      {block.port && <div><span className="subtle">Port</span> {block.port}</div>}
+                      <div><span className="subtle">Process</span> {block.processManager}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </>
           )}
@@ -382,7 +454,11 @@ export default function NewDeployPage() {
               <button
                 type="button"
                 className="button"
-                disabled={step === 0 || (step === 2 && !draft.serverId)}
+                disabled={
+                  step === 0
+                  || (step === 1 && !buildReady)
+                  || (step === 2 && !draft.serverId)
+                }
                 onClick={() => setStep((s) => s + 1)}
               >
                 Continue <IconChevronRight />

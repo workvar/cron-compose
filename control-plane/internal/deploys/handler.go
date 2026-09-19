@@ -73,6 +73,29 @@ func (h *handler) listRepos(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"items": items})
 }
 
+func (h *handler) listDirs(c fiber.Ctx) error {
+	provider := c.Query("provider", "github")
+	repo := c.Query("repo")
+	branch := c.Query("branch")
+	path := c.Query("path")
+	recursive := c.Query("recursive") == "1" || strings.EqualFold(c.Query("recursive"), "true")
+	if repo == "" {
+		return jsonError(c, fiber.StatusBadRequest, "missing_repo", errors.New("repo is required"))
+	}
+	token, err := h.conns.Token(c.Context(), auth.CurrentUserID(c), provider)
+	if errors.Is(err, auth.ErrNotFound) {
+		return jsonError(c, fiber.StatusConflict, "not_connected", errors.New("connect "+provider+" in Settings first"))
+	}
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "token_failed", err)
+	}
+	out, err := h.git.ListDirs(c.Context(), provider, token, repo, branch, path, recursive)
+	if err != nil {
+		return jsonError(c, fiber.StatusBadGateway, "git_api", err)
+	}
+	return c.JSON(out)
+}
+
 func (h *handler) inspect(c fiber.Ctx) error {
 	provider := c.Query("provider", "github")
 	repo := c.Query("repo")

@@ -27,6 +27,7 @@ GitHub/GitLab import: connect a git grant, pick a repo, clone onto a chosen agen
 | DELETE | `/git/connections/:provider` | viewer | Drop a git grant. |
 | GET | `/git/repos?provider=` | viewer | Repos visible to the git grant. |
 | GET | `/git/inspect?provider=&repo=` | viewer | Language/install/workspace detection. |
+| GET | `/git/dirs?provider=&repo=&branch=&path=&recursive=` | viewer | List directories (shallow or recursive, capped). |
 | GET | `/deploy-settings` | viewer | Per-language clone path defaults. |
 | PUT | `/deploy-settings` | admin | `{language_paths}`. |
 | GET | `/deploys` | viewer | Imported projects. |
