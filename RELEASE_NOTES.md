@@ -1,21 +1,18 @@
-# CronCompose v0.0.14
+# CronCompose v0.0.15
 
-Connect GitHub/GitLab after saving OAuth app credentials actually starts the
-provider OAuth flow (instead of reopening the setup modal), and agent self-update
-stops getting stuck reporting the install-time version.
+Import git can deploy multiple apps from one monorepo: browse folders (lazy or full
+tree), configure each as its own project block, and filter repos by owner/search.
 
 ## Highlights
 
-- **Connect after OAuth app save** — Saving client ID/secret now **Save and
-  connect**, which stores credentials and sends you to GitHub/GitLab. A second
-  **Connect** no longer reopens the setup modal (the old `fetch` + opaque
-  redirect path treated success as “not configured”). Status text distinguishes
-  **OAuth app not configured** from **Not connected**; admins can still edit
-  credentials via **OAuth app**.
-- **Agent version after self-update** — Installers no longer pin
-  `Environment=AGENT_VERSION` in the unit/plist. The agent prefers the version
-  linked into the binary, and elevate/self-update clear a leftover pin so Hello
-  (and the Updates UI) leave “restarting” once the new binary is running.
+- **Project blocks** — On Import → Build, add one or more apps. Each block has its
+  own root folder, language, install script, port, and process manager. Runtime
+  keeps shared server / branch / clone path and per-app env.
+- **Browseable roots (hybrid)** — New `GET /git/dirs` lists directories (shallow by
+  default; optional recursive list capped at 2000). Folder picker supports drill-down,
+  detected workspace chips, **Load full tree** search, and a manual path escape hatch.
+- **Repo picker UX** — Provider uses the searchable select; filter by personal
+  account / org chips and search repositories by name or description.
 
 ## Upgrade notes
 
@@ -26,7 +23,7 @@ From Settings → Updates, click **Update** on this host. Or by hand:
 ```sh
 cd cron-compose
 git fetch --tags
-git checkout --force v0.0.14
+git checkout --force v0.0.15
 ./update.sh --no-pull
 ```
 
@@ -34,15 +31,5 @@ No new migrations in this release.
 
 ### Agent (Linux / macOS)
 
-Agents updating from the UI pick up the version-pin fix. If an older install
-still pins `AGENT_VERSION` in the systemd unit and Updates stays on
-**restarting**, elevate root access once (or reinstall from this tag) so the
-unset drop-in can clear it:
-
-```sh
-curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh | \
-  sudo TOKEN=<token> \
-       CONTROL_PLANE_HTTP=https://<host>/api \
-       CONTROL_PLANE_ADDR=<host>:9090 \
-       bash
-```
+No agent changes required for this release. Update from the UI as usual when a
+newer agent tag is offered.

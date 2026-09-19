@@ -7,7 +7,7 @@ import { GitConnections } from "@/components/deploys/GitConnections";
 import { AppEnvEditor } from "@/components/deploys/AppEnvEditor";
 import { ProjectBlockCard } from "@/components/deploys/ProjectBlockCard";
 import { SearchableSelect } from "@/components/SearchableSelect";
-import { IconChevronLeft, IconChevronRight, IconCheck } from "@/components/icons";
+import { IconChevronLeft, IconChevronRight, IconCheck, IconSearch } from "@/components/icons";
 import {
   blocksReady,
   blocksToDeployApps,
@@ -17,6 +17,7 @@ import {
   seedBlockFromInspect,
   type ProjectBlock,
 } from "@/lib/project-blocks";
+import { filterGitRepos, listGitRepoOwners, toggleOwnerFilter } from "@/lib/git-repos";
 import type {
   DeployApp,
   DeployEnvVar,
@@ -63,6 +64,8 @@ export default function NewDeployPage() {
   const [draft, setDraft] = useState<Draft>(empty);
   const [conns, setConns] = useState<GitConnection[]>([]);
   const [repos, setRepos] = useState<GitRepo[]>([]);
+  const [repoQuery, setRepoQuery] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState<string[]>([]);
   const [servers, setServers] = useState<Server[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,13 +92,28 @@ export default function NewDeployPage() {
   useEffect(() => {
     if (!conns.some((c) => c.provider === draft.provider)) {
       setRepos([]);
+      setRepoQuery("");
+      setOwnerFilter([]);
       return;
     }
+    setRepoQuery("");
+    setOwnerFilter([]);
     fetch(`/api/git/repos?provider=${encodeURIComponent(draft.provider)}`)
       .then((r) => r.json() as Promise<ListResponse<GitRepo>>)
       .then((d) => setRepos(d.items || []))
       .catch(() => setRepos([]));
   }, [draft.provider, conns]);
+
+  const providerOptions = useMemo(
+    () => conns.map((c) => ({ value: c.provider, label: `${c.provider} (${c.login})` })),
+    [conns],
+  );
+  const personalLogin = conns.find((c) => c.provider === draft.provider)?.login;
+  const owners = useMemo(() => listGitRepoOwners(repos, personalLogin), [repos, personalLogin]);
+  const visibleRepos = useMemo(
+    () => filterGitRepos(repos, { query: repoQuery, owners: ownerFilter }),
+    [repos, repoQuery, ownerFilter],
+  );
 
   async function inspectRepo(repo: GitRepo) {
     setBusy(true);
@@ -234,33 +252,83 @@ export default function NewDeployPage() {
                 <>
                   <div className="field">
                     <label htmlFor="provider">Provider</label>
-                    <select
+                    <SearchableSelect
                       id="provider"
                       value={draft.provider}
-                      onChange={(e) => setDraft((d) => ({ ...d, provider: e.target.value, repo: null }))}
-                    >
-                      {conns.map((c) => (
-                        <option key={c.provider} value={c.provider}>{c.provider} ({c.login})</option>
-                      ))}
-                    </select>
+                      onChange={(provider) => setDraft((d) => ({ ...d, provider, repo: null }))}
+                      options={providerOptions}
+                      placeholder="Select a provider…"
+                      aria-label="Git provider"
+                    />
                   </div>
                   {!connected && <p className="subtle">Connect this provider in Settings first.</p>}
-                  <div className="stack" style={{ maxHeight: 360, overflow: "auto" }}>
-                    {repos.map((r) => (
-                      <button
-                        type="button"
-                        key={r.id}
-                        className="panel"
-                        style={{ textAlign: "left", width: "100%" }}
-                        disabled={busy}
-                        onClick={() => inspectRepo(r)}
-                      >
-                        <div style={{ fontWeight: 700 }}>{r.full_name}</div>
-                        <div className="subtle" style={{ fontSize: 13 }}>{r.description || r.default_branch}</div>
-                      </button>
-                    ))}
-                    {connected && repos.length === 0 && <p className="subtle">No repositories visible to this grant.</p>}
-                  </div>
+                  {connected && (
+                    <>
+                      {owners.length > 1 && (
+                        <div className="field">
+                          <label>Account / organization</label>
+                          <div className="chips" role="group" aria-label="Filter by owner">
+                            {owners.map((o) => {
+                              const on = ownerFilter.includes(o.owner);
+                              return (
+                                <button
+                                  key={o.owner}
+                                  type="button"
+                                  className={`chip${on ? " selected" : ""}`}
+                                  aria-pressed={on}
+                                  onClick={() => setOwnerFilter((prev) => toggleOwnerFilter(prev, o.owner))}
+                                >
+                                  {o.personal ? `Personal · ${o.owner}` : o.owner}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {ownerFilter.length > 0 && (
+                            <p className="field-hint" style={{ marginTop: 8 }}>
+                              Showing {ownerFilter.length === 1 ? "1 account" : `${ownerFilter.length} accounts`}.{" "}
+                              <button
+                                type="button"
+                                className="button ghost sm"
+                                style={{ padding: 0, minHeight: 0, verticalAlign: "baseline" }}
+                                onClick={() => setOwnerFilter([])}
+                              >
+                                Clear
+                              </button>
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      <div className="search" style={{ margin: "0 0 12px" }}>
+                        <IconSearch />
+                        <input
+                          type="search"
+                          value={repoQuery}
+                          onChange={(e) => setRepoQuery(e.target.value)}
+                          placeholder="Search repositories…"
+                          aria-label="Search repositories"
+                        />
+                      </div>
+                      <div className="stack" style={{ maxHeight: 360, overflow: "auto" }}>
+                        {visibleRepos.map((r) => (
+                          <button
+                            type="button"
+                            key={r.id}
+                            className="panel"
+                            style={{ textAlign: "left", width: "100%" }}
+                            disabled={busy}
+                            onClick={() => inspectRepo(r)}
+                          >
+                            <div style={{ fontWeight: 700 }}>{r.full_name}</div>
+                            <div className="subtle" style={{ fontSize: 13 }}>{r.description || r.default_branch}</div>
+                          </button>
+                        ))}
+                        {repos.length === 0 && <p className="subtle">No repositories visible to this grant.</p>}
+                        {repos.length > 0 && visibleRepos.length === 0 && (
+                          <p className="subtle">No repositories match this search.</p>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </>
