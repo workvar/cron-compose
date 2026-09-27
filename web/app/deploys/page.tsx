@@ -26,10 +26,11 @@ export default async function DeploysPage() {
       <div className="page-head">
         <div>
           <h1>Deploy</h1>
-          <p className="subtle">Import a GitHub or GitLab repo onto an agent and run its installer.</p>
+          <p className="subtle">Import a repo, pick a server, deploy. Pushes redeploy automatically.</p>
         </div>
         <div className="page-head-actions">
-          <Link href="/deploys/new" className="button"><IconPlus /> Import git</Link>
+          <Link href="/docs" className="button secondary">croncompose.yml docs</Link>
+          <Link href="/deploys/new" className="button"><IconPlus /> New project</Link>
         </div>
       </div>
 
@@ -40,7 +41,8 @@ export default async function DeploysPage() {
       {!error && items.length === 0 && (
         <div className="panel">
           <div className="empty">
-            No deploys yet. <Link href="/deploys/new">Import a repository</Link> to clone it onto a server.
+            No projects yet. <Link href="/deploys/new">Import a repository</Link> or paste a{" "}
+            <Link href="/docs">croncompose.yml</Link> to deploy in one click.
           </div>
         </div>
       )}

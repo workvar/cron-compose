@@ -344,3 +344,6 @@ table.data tr:last-child td { border-bottom: 0; }
   box-shadow: var(--shadow-card);
   padding: 22px 24px 20px;
 }
+/* Copy button on a light surface (docs, forms) rather than a dark code block. */
+.copy-btn.light { color: var(--text-2); background: var(--surface); border-color: var(--border-strong); }
+.copy-btn.light:hover { background: var(--surface-3); color: var(--text); }

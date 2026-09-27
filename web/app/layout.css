@@ -326,6 +326,7 @@
 
 .back-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
 .back-link:hover { color: var(--green); }
+.back-link svg { width: 16px; height: 16px; flex: none; }
 
 /* ---------- Centered auth shell (login) ---------- */
 .auth-shell { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
@@ -571,3 +572,9 @@
 @media (prefers-reduced-motion: reduce) {
   .update-meter-fill { transition: none; }
 }
+
+/* Public (signed-out) frame for /docs. */
+.public-shell { min-height: 100vh; background: var(--surface-2); }
+.public-top { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; padding: 12px 24px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.public-main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 64px; }
+@media (max-width: 640px) { .public-top { padding: 10px 16px; } .public-main { padding: 20px 16px 48px; } }

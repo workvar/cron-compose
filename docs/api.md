@@ -26,12 +26,13 @@ GitHub/GitLab import: connect a git grant, pick a repo, clone onto a chosen agen
 | GET | `/git/connections` | viewer | Linked git grants (no tokens). |
 | DELETE | `/git/connections/:provider` | viewer | Drop a git grant. |
 | GET | `/git/repos?provider=` | viewer | Repos visible to the git grant. |
-| GET | `/git/inspect?provider=&repo=` | viewer | Language/install/workspace detection. |
+| GET | `/git/inspect?provider=&repo=[&public=1]` | viewer | Language/install/workspace detection, plus `spec` (the repo's own `croncompose.yml`, parsed and validated) when present. `public=1` reads a public repo anonymously when the user has no grant. |
 | GET | `/git/dirs?provider=&repo=&branch=&path=&recursive=` | viewer | List directories (shallow or recursive, capped). |
 | GET | `/deploy-settings` | viewer | Per-language clone path defaults. |
 | PUT | `/deploy-settings` | admin | `{language_paths}`. |
+| POST | `/deploys/spec/validate` | viewer | Body `{"yaml": "…"}`. Parses a `croncompose.yml` and returns `{spec, issues[], valid}`. Schema: the public `/docs` page. |
 | GET | `/deploys` | viewer | Imported projects. |
-| POST | `/deploys` | operator | Import + start a run. Returns `deploy_token` once. Creates the provider push webhook and commits `croncompose.yml` plus GHA/GitLab CI when the git grant allows; failures land in `warnings`. |
+| POST | `/deploys` | operator | Import + start a run. Returns `deploy_token` once. Creates the provider push webhook and commits `croncompose.yml` plus GHA/GitLab CI when the git grant allows; failures land in `warnings`. `spec_from_repo: true` leaves an existing `croncompose.yml` untouched. Also accepts `auto_rollback`, `health_path`, `health_port`, `health_timeout_seconds`, `deploy_timeout_seconds`. |
 | GET | `/deploys/:id` | viewer | Project plus webhook URL/secret. |
 | PATCH | `/deploys/:id` | operator | Edit clone/install/process manager. Changing `process_manager` away from `none` starts a run. |
 | DELETE | `/deploys/:id` | operator | Delete the project and its runs. |

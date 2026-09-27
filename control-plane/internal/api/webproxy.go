@@ -44,6 +44,13 @@ func mountWeb(app *fiber.App, upstream string) {
 	app.Get("/", func(c fiber.Ctx) error {
 		return c.Redirect().Status(fiber.StatusFound).To("/app")
 	})
+	// Public docs live in the UI; /docs is the short link people share.
+	app.Get("/docs", func(c fiber.Ctx) error {
+		return c.Redirect().Status(fiber.StatusFound).To("/app/docs")
+	})
+	app.Get("/docs/*", func(c fiber.Ctx) error {
+		return c.Redirect().Status(fiber.StatusFound).To("/app/docs/" + c.Params("*"))
+	})
 	// Forward /app and everything under it to Next, preserving path + query. The UI
 	// uses basePath:/app, so all its assets and routes already live under this prefix.
 	app.Use("/app", func(c fiber.Ctx) error {

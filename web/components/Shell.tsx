@@ -1,9 +1,11 @@
+import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { apiGet, ApiError } from "@/lib/api";
 import { getHealth } from "@/lib/health";
 import type { ListResponse, Me, Server } from "@/lib/types";
 import { AppShell } from "./AppShell";
+import { Brand } from "./Brand";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { SetupBanner } from "./SetupBanner";
@@ -35,6 +37,21 @@ export async function Shell({ children }: { children: React.ReactNode }) {
     !meResult.me && meResult.error instanceof ApiError && meResult.error.unauthorized;
   const hasSessionCookie = cookieJar.has("cc_session");
   const pathname = hdrs.get("x-cc-pathname") || "";
+
+  const isDocs = pathname === "/docs" || pathname.startsWith("/docs/");
+
+  // Public docs: signed-out readers get a plain top bar instead of the login column.
+  if (isDocs && (signedOut || (!meResult.me && !hasSessionCookie))) {
+    return (
+      <div className="public-shell">
+        <header className="public-top">
+          <Brand href="/docs" />
+          <Link href="/login" className="button sm">Sign in</Link>
+        </header>
+        <main className="public-main">{children}</main>
+      </div>
+    );
+  }
 
   if (signedOut && pathname !== "/login") {
     redirect("/login");

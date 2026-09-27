@@ -3,6 +3,15 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const PUBLIC_PATHS = ["/login"];
+// Docs are readable signed out so they can be linked from READMEs and repos.
+const PUBLIC_PREFIXES = ["/docs"];
+
+function isPublic(pathname: string) {
+  return (
+    PUBLIC_PATHS.includes(pathname) ||
+    PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))
+  );
+}
 
 function next(req: NextRequest) {
   const headers = new Headers(req.headers);
@@ -29,7 +38,7 @@ export function proxy(req: NextRequest) {
   }
 
   const hasSession = req.cookies.has("cc_session");
-  if (!hasSession && !PUBLIC_PATHS.includes(pathname)) {
+  if (!hasSession && !isPublic(pathname)) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", pathname);

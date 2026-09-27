@@ -56,12 +56,19 @@ func TestGitLabCI(t *testing.T) {
 }
 
 func TestSpecFiles(t *testing.T) {
-	gh := specFiles(Project{ID: "p1", Provider: "github", RepoFullName: "acme/web"}, "https://cron.example.com")
+	gh := specFiles(Project{ID: "p1", Provider: "github", RepoFullName: "acme/web"}, "https://cron.example.com", false)
 	if len(gh) != 2 || gh[0].Path != "croncompose.yml" || gh[1].Path != ".github/workflows/croncompose.yml" {
 		t.Fatalf("github files = %+v", gh)
 	}
-	gl := specFiles(Project{ID: "p1", Provider: "gitlab", RepoFullName: "acme/web"}, "https://cron.example.com")
+	gl := specFiles(Project{ID: "p1", Provider: "gitlab", RepoFullName: "acme/web"}, "https://cron.example.com", false)
 	if len(gl) != 2 || gl[1].Path != ".gitlab-ci.yml" {
 		t.Fatalf("gitlab files = %+v", gl)
+	}
+}
+
+func TestSpecFilesKeepSpec(t *testing.T) {
+	gh := specFiles(Project{ID: "p1", Provider: "github", RepoFullName: "acme/web"}, "https://cron.example.com", true)
+	if len(gh) != 1 || gh[0].Path != ".github/workflows/croncompose.yml" {
+		t.Fatalf("keepSpec should only write the workflow, got %+v", gh)
 	}
 }

@@ -299,11 +299,52 @@ export type DeployDetection = {
   root_directory: string;
 };
 
+export type DeploySpecApp = {
+  name: string;
+  root: string;
+  language?: string;
+  install?: string;
+  port?: number;
+  process_manager?: string;
+  env?: DeployEnvVar[];
+};
+
+/** A parsed croncompose.yml (see control-plane/internal/deploys/specfile.go). */
+export type DeploySpec = {
+  version?: number;
+  name?: string;
+  provider: string;
+  repo: string;
+  branch?: string;
+  server?: string;
+  language?: string;
+  install?: string;
+  root?: string;
+  port?: number;
+  process_manager?: string;
+  clone_path?: string;
+  apps?: DeploySpecApp[];
+  env?: Record<string, string>;
+  health?: { path: string; port?: number; timeout?: number };
+  deploy_timeout?: number;
+  auto_rollback?: boolean;
+};
+
+export type DeploySpecIssue = { level: "error" | "warning"; field?: string; message: string };
+
+export type DeploySpecResult = {
+  path?: string;
+  spec: DeploySpec;
+  issues: DeploySpecIssue[];
+  valid: boolean;
+};
+
 export type DeployInspect = DeployDetection & {
   clone_url: string;
   default_branch: string;
   clone_path: string;
   process_manager: string;
+  spec?: DeploySpecResult;
 };
 
 export type DeployEnvVar = {
