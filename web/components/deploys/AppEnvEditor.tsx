@@ -158,7 +158,7 @@ export function AppEnvEditor({
           <div className="panel" key={`${app.name}-${app.root}`}>
             <div className="row" style={{ alignItems: "flex-start" }}>
               <div>
-                <div className="card-title">{title}</div>
+                {title && <div className="card-title">{title}</div>}
                 <p className="subtle" style={{ margin: "4px 0 0", fontSize: 13 }}>
                   <strong>{app.name}</strong>
                   <span className="subtle"> · </span>

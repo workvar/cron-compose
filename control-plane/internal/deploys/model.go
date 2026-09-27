@@ -127,6 +127,32 @@ type CreateInput struct {
 	Env            map[string]string `json:"env,omitempty"`
 	Apps           []SpecApp         `json:"apps,omitempty"`
 	WriteSpec      *bool             `json:"write_spec,omitempty"`
+	// SpecFromRepo marks a project imported from the repo's own croncompose.yml, so
+	// provisioning does not overwrite that file.
+	SpecFromRepo bool `json:"spec_from_repo,omitempty"`
+	// Settings that otherwise need a PATCH after create; croncompose.yml sets them.
+	AutoRollback         bool   `json:"auto_rollback,omitempty"`
+	HealthPath           string `json:"health_path,omitempty"`
+	HealthPort           int    `json:"health_port,omitempty"`
+	HealthTimeoutSeconds int    `json:"health_timeout_seconds,omitempty"`
+	DeployTimeoutSeconds int    `json:"deploy_timeout_seconds,omitempty"`
+}
+
+// extras returns the post-insert update for the create-time settings that the
+// insert itself does not cover, and whether there is anything to apply.
+func (in CreateInput) extras() (UpdateInput, bool) {
+	var up UpdateInput
+	ok := false
+	if in.AutoRollback {
+		up.AutoRollback, ok = &in.AutoRollback, true
+	}
+	if in.HealthPath != "" {
+		up.HealthPath, up.HealthPort, up.HealthTimeoutSeconds, ok = &in.HealthPath, &in.HealthPort, &in.HealthTimeoutSeconds, true
+	}
+	if in.DeployTimeoutSeconds > 0 {
+		up.DeployTimeoutSeconds, ok = &in.DeployTimeoutSeconds, true
+	}
+	return up, ok
 }
 
 // Inspect is GET /git/inspect.
@@ -136,4 +162,6 @@ type Inspect struct {
 	DefaultBranch string `json:"default_branch"`
 	ClonePath     string `json:"clone_path"`
 	ProcessHint   string `json:"process_manager"`
+	// Spec is the repo's own croncompose.yml, parsed, when it has one.
+	Spec *SpecResult `json:"spec,omitempty"`
 }

@@ -35,6 +35,7 @@ func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, gw *agentgw.
 	r.Get("/deploy-settings", h.getSettings)
 	r.Put("/deploy-settings", auth.RequireRole("admin"), h.putSettings)
 
+	r.Post("/deploys/spec/validate", h.validateSpec)
 	r.Get("/deploys", h.list)
 	r.Get("/deploys/:id", h.get)
 	r.Get("/deploys/:id/workflow", h.workflow)

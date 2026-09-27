@@ -164,7 +164,21 @@ func (g *GitAPI) fetchGitHub(ctx context.Context, token, fullName, branch string
 	return files, repo, nil
 }
 
+// FetchFile reads one file from the repo at branch.
+func (g *GitAPI) FetchFile(ctx context.Context, provider, token, fullName, branch, path string) (string, error) {
+	if provider == "gitlab" {
+		u := fmt.Sprintf("%s/projects/%s/repository/files/%s/raw?ref=%s", g.gitlabAPI(), url.PathEscape(fullName), url.PathEscape(path), url.QueryEscape(branch))
+		return g.getRaw(ctx, u, token)
+	}
+	return g.githubFile(ctx, token, fullName, path, branch)
+}
+
 func (g *GitAPI) githubFile(ctx context.Context, token, fullName, path, branch string) (string, error) {
+	if token == "" && g.githubBase == "" {
+		// Anonymous reads go to raw.githubusercontent.com: the contents API allows
+		// only 60 unauthenticated calls an hour, and inspect makes dozens.
+		return g.getRaw(ctx, fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s", fullName, url.PathEscape(branch), path), "")
+	}
 	var file struct {
 		Content  string `json:"content"`
 		Encoding string `json:"encoding"`
@@ -368,7 +382,9 @@ func (g *GitAPI) getJSON(ctx context.Context, rawURL, token string, dest any) er
 	if err != nil {
 		return err
 	}
-	req.Header.Set("authorization", "Bearer "+token)
+	if token != "" {
+		req.Header.Set("authorization", "Bearer "+token)
+	}
 	req.Header.Set("accept", "application/json")
 	res, err := g.http.Do(req)
 	if err != nil {
@@ -387,7 +403,9 @@ func (g *GitAPI) getRaw(ctx context.Context, rawURL, token string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("authorization", "Bearer "+token)
+	if token != "" {
+		req.Header.Set("authorization", "Bearer "+token)
+	}
 	res, err := g.http.Do(req)
 	if err != nil {
 		return "", err

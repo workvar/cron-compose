@@ -9,11 +9,17 @@ import (
 
 // Spec is the croncompose.yml checked into an imported repo. CronCompose remains
 // the source of truth; this file keeps GitHub Actions and the UI aligned.
+//
+// It is also an input: the importer reads it from the repo root (or from a pasted
+// file) and pre-fills the deploy with it. See ParseSpecFile and the public /docs page.
 type Spec struct {
+	Version        int               `yaml:"version,omitempty" json:"version,omitempty"`
 	Name           string            `yaml:"name,omitempty" json:"name,omitempty"`
 	Provider       string            `yaml:"provider" json:"provider"`
 	Repo           string            `yaml:"repo" json:"repo"`
 	Branch         string            `yaml:"branch,omitempty" json:"branch,omitempty"`
+	// Server is a server name or id; the importer preselects it when it matches.
+	Server         string            `yaml:"server,omitempty" json:"server,omitempty"`
 	Language       string            `yaml:"language,omitempty" json:"language,omitempty"`
 	Install        string            `yaml:"install,omitempty" json:"install,omitempty"`
 	Root           string            `yaml:"root,omitempty" json:"root,omitempty"`
@@ -22,6 +28,16 @@ type Spec struct {
 	ClonePath      string            `yaml:"clone_path,omitempty" json:"clone_path,omitempty"`
 	Apps           []SpecApp         `yaml:"apps,omitempty" json:"apps,omitempty"`
 	Env            map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+	Health         *SpecHealth       `yaml:"health,omitempty" json:"health,omitempty"`
+	DeployTimeout  int               `yaml:"deploy_timeout,omitempty" json:"deploy_timeout,omitempty"`
+	AutoRollback   bool              `yaml:"auto_rollback,omitempty" json:"auto_rollback,omitempty"`
+}
+
+// SpecHealth is the optional post-deploy HTTP probe.
+type SpecHealth struct {
+	Path    string `yaml:"path" json:"path"`
+	Port    int    `yaml:"port,omitempty" json:"port,omitempty"`
+	Timeout int    `yaml:"timeout,omitempty" json:"timeout,omitempty"`
 }
 
 // SpecApp is one package inside a monorepo.
@@ -88,14 +104,29 @@ func GitLabCI(publicBase, projectID string) string {
 	return fmt.Sprintf("deploy:\n  rules:\n    - if: $CI_COMMIT_BRANCH\n  script:\n    - curl -fsS -X POST %q -H \"Authorization: Bearer $CRONCOMPOSE_TOKEN\" -H \"content-type: application/json\" -d '%s'\n", hook, body)
 }
 
-func specFiles(p Project, publicBase string) []RepoFile {
-	raw, _ := MarshalSpec(Spec{
-		Name: p.Name, Provider: p.Provider, Repo: p.RepoFullName, Branch: p.DefaultBranch,
+// SpecForProject renders a project back into the croncompose.yml shape.
+func SpecForProject(p Project) Spec {
+	s := Spec{
+		Version: SpecVersion, Name: p.Name, Provider: p.Provider, Repo: p.RepoFullName, Branch: p.DefaultBranch,
 		Language: p.Language, Install: p.InstallScript, Root: p.RootDirectory,
 		Port: p.Port, ProcessManager: p.ProcessManager, ClonePath: p.ClonePath,
 		Apps: appsForSpec(p.Apps), Env: p.Env,
-	})
-	files := []RepoFile{{Path: "croncompose.yml", Content: string(raw)}}
+		DeployTimeout: p.DeployTimeoutSeconds, AutoRollback: p.AutoRollback,
+	}
+	if p.HealthPath != "" {
+		s.Health = &SpecHealth{Path: p.HealthPath, Port: p.HealthPort, Timeout: p.HealthTimeoutSeconds}
+	}
+	return s
+}
+
+// specFiles is what provisionRemote commits. keepSpec leaves an existing
+// croncompose.yml alone: the project was imported from it, so it is the user's file.
+func specFiles(p Project, publicBase string, keepSpec bool) []RepoFile {
+	var files []RepoFile
+	if !keepSpec {
+		raw, _ := MarshalSpec(SpecForProject(p))
+		files = append(files, RepoFile{Path: "croncompose.yml", Content: string(raw)})
+	}
 	if p.Provider == "gitlab" {
 		files = append(files, RepoFile{Path: ".gitlab-ci.yml", Content: GitLabCI(publicBase, p.ID)})
 	} else {

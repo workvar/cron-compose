@@ -83,12 +83,10 @@ func (h *handler) listDirs(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusBadRequest, "missing_repo", errors.New("repo is required"))
 	}
 	token, err := h.conns.Token(c.Context(), auth.CurrentUserID(c), provider)
-	if errors.Is(err, auth.ErrNotFound) {
-		return jsonError(c, fiber.StatusConflict, "not_connected", errors.New("connect "+provider+" in Settings first"))
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, auth.ErrNotFound) {
 		return jsonError(c, fiber.StatusInternalServerError, "token_failed", err)
 	}
+	// No grant: list anonymously, which works for public repos (see inspect).
 	out, err := h.git.ListDirs(c.Context(), provider, token, repo, branch, path, recursive)
 	if err != nil {
 		return jsonError(c, fiber.StatusBadGateway, "git_api", err)
@@ -105,9 +103,12 @@ func (h *handler) inspect(c fiber.Ctx) error {
 	}
 	token, err := h.conns.Token(c.Context(), auth.CurrentUserID(c), provider)
 	if errors.Is(err, auth.ErrNotFound) {
-		return jsonError(c, fiber.StatusConflict, "not_connected", errors.New("connect "+provider+" in Settings first"))
-	}
-	if err != nil {
+		// A public repo pasted by URL needs no grant: read it anonymously.
+		if c.Query("public") != "1" {
+			return jsonError(c, fiber.StatusConflict, "not_connected", errors.New("connect "+provider+" in Settings first"))
+		}
+		token = ""
+	} else if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "token_failed", err)
 	}
 	files, meta, err := h.git.FetchFiles(c.Context(), provider, token, repo, branch)
@@ -120,13 +121,49 @@ func (h *handler) inspect(c fiber.Ctx) error {
 	if det.HasPM2Ecosystem {
 		hint = "pm2"
 	}
+	if branch == "" {
+		branch = meta.DefaultBranch
+	}
 	return c.JSON(Inspect{
 		Detection:     det,
 		CloneURL:      meta.CloneURL,
 		DefaultBranch: meta.DefaultBranch,
 		ClonePath:     ClonePath(settings.LanguagePaths, det.Language, repo),
 		ProcessHint:   hint,
+		Spec:          h.repoSpec(c.Context(), provider, token, repo, branch, files),
 	})
+}
+
+// repoSpec finds and parses croncompose.yml at the repo root. nil when there is none.
+func (h *handler) repoSpec(ctx context.Context, provider, token, repo, branch string, files map[string]string) *SpecResult {
+	for _, name := range SpecFileNames {
+		body, ok := files[name]
+		if !ok {
+			var err error
+			body, err = h.git.FetchFile(ctx, provider, token, repo, branch, name)
+			if err != nil {
+				continue
+			}
+		}
+		res := ParseSpecFile([]byte(body))
+		res.Path = name
+		return &res
+	}
+	return nil
+}
+
+// validateSpec is POST /deploys/spec/validate: parse a pasted or uploaded file.
+func (h *handler) validateSpec(c fiber.Ctx) error {
+	var in struct {
+		YAML string `json:"yaml"`
+	}
+	if err := c.Bind().Body(&in); err != nil {
+		return jsonError(c, fiber.StatusBadRequest, "bad_request", err)
+	}
+	if len(in.YAML) > 256<<10 {
+		return jsonError(c, fiber.StatusRequestEntityTooLarge, "too_large", errors.New("croncompose.yml must be under 256 KiB"))
+	}
+	return c.JSON(ParseSpecFile([]byte(in.YAML)))
 }
 
 func (h *handler) getSettings(c fiber.Ctx) error {
@@ -204,8 +241,15 @@ func (h *handler) create(c fiber.Ctx) error {
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "insert_failed", err)
 	}
-	h.audit.Write(c.Context(), auth.CurrentUserID(c), "deploy.create", "deploy", p.ID, map[string]any{"repo": p.RepoFullName})
-	warnings := h.provisionRemote(c.Context(), p)
+	if up, ok := in.extras(); ok {
+		token := p.DeployToken // only Insert returns it; Update re-reads the row
+		if p, err = h.store.Update(c.Context(), p.ID, up); err != nil {
+			return jsonError(c, fiber.StatusInternalServerError, "update_failed", err)
+		}
+		p.DeployToken = token
+	}
+	h.audit.Write(c.Context(), auth.CurrentUserID(c), "deploy.create", "deploy", p.ID, map[string]any{"repo": p.RepoFullName, "from_spec": in.SpecFromRepo})
+	warnings := h.provisionRemote(c.Context(), p, in.SpecFromRepo)
 	run, err := h.startRun(c.Context(), p, "manual", p.DefaultBranch, "")
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "run_failed", err)
@@ -260,14 +304,14 @@ func (h *handler) remove(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-func (h *handler) provisionRemote(ctx context.Context, p Project) []string {
+func (h *handler) provisionRemote(ctx context.Context, p Project, keepSpec bool) []string {
 	var warnings []string
 	token := ""
 	if p.CreatedBy != nil {
 		token, _ = h.conns.Token(ctx, *p.CreatedBy, p.Provider)
 	}
 	if token == "" {
-		return []string{"git grant missing; webhook and repo files were not written"}
+		return []string{"no " + p.Provider + " connection, so auto-deploy on push is off; connect " + p.Provider + " in Settings and redeploy to turn it on"}
 	}
 	secret, _ := h.store.WebhookSecret(ctx, p.ID)
 	hookURL := strings.TrimRight(h.public, "/") + "/api/deploys/webhooks/" + p.Provider
@@ -275,7 +319,7 @@ func (h *handler) provisionRemote(ctx context.Context, p Project) []string {
 		warnings = append(warnings, "webhook: "+err.Error())
 	}
 	if p.WriteSpec {
-		if err := h.git.EnsureRepoFiles(ctx, p.Provider, token, p.RepoFullName, p.RepoID, p.DefaultBranch, specFiles(p, h.public)); err != nil {
+		if err := h.git.EnsureRepoFiles(ctx, p.Provider, token, p.RepoFullName, p.RepoID, p.DefaultBranch, specFiles(p, h.public, keepSpec)); err != nil {
 			warnings = append(warnings, "repo files: "+err.Error())
 		}
 	}
@@ -290,12 +334,7 @@ func (h *handler) workflow(c fiber.Ctx) error {
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "get_failed", err)
 	}
-	spec, _ := MarshalSpec(Spec{
-		Name: p.Name, Provider: p.Provider, Repo: p.RepoFullName, Branch: p.DefaultBranch,
-		Language: p.Language, Install: p.InstallScript, Root: p.RootDirectory,
-		Port: p.Port, ProcessManager: p.ProcessManager, ClonePath: p.ClonePath,
-		Apps: p.Apps, Env: p.Env,
-	})
+	spec, _ := MarshalSpec(SpecForProject(p))
 	wf := GitHubActionsWorkflow(h.public, p.ID)
 	if p.Provider == "gitlab" {
 		wf = GitLabCI(h.public, p.ID)
