@@ -31,6 +31,7 @@ func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, gw *agentgw.
 	r.Get("/git/repos", h.listRepos)
 	r.Get("/git/inspect", h.inspect)
 	r.Get("/git/dirs", h.listDirs)
+	r.Get("/git/branches", h.listBranches)
 
 	r.Get("/deploy-settings", h.getSettings)
 	r.Put("/deploy-settings", auth.RequireRole("admin"), h.putSettings)

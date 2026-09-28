@@ -25,6 +25,21 @@ func healthCheckFor(p Project) *agentv1.HealthCheck {
 	}
 }
 
+// healthCheckForApp returns the app's own probe when it set one, so a monorepo can
+// give each process a different health check path (a Go API's /healthz is not a
+// Next.js frontend's). nil means "use the project's shared check", handled by the
+// agent falling back to DeployCommand.health when an app's health is unset.
+func healthCheckForApp(a SpecApp) *agentv1.HealthCheck {
+	if a.Health == nil || a.Health.Path == "" {
+		return nil
+	}
+	return &agentv1.HealthCheck{
+		Path:           a.Health.Path,
+		Port:           int32(a.Health.Port),
+		TimeoutSeconds: int32(a.Health.Timeout),
+	}
+}
+
 // DeployRunFinished implements agentgw.DeployFinishedHook. It runs for every deploy
 // run that finishes, whatever the outcome, and does two things: record where the
 // project now stands, and start an automatic rollback when one is warranted.
