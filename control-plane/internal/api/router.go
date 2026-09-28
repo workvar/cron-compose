@@ -81,6 +81,13 @@ func New(d Deps) *fiber.App {
 	writer := audit.NewWriter(d.Pool, d.Log)
 	conns := auth.NewConnStore(d.Pool, d.Crypto)
 	oauthSettings := auth.NewOAuthSettingsStore(d.Pool, d.Crypto)
+	conns.SetOAuthResolver(func(ctx context.Context, provider string) (auth.OAuthProvider, error) {
+		envDefault := d.GitHubOAuth
+		if provider == "gitlab" {
+			envDefault = d.GitLabOAuth
+		}
+		return oauthSettings.Resolve(ctx, provider, envDefault)
+	})
 	waStore := auth.NewWebAuthnStore(d.Pool)
 
 	v1 := app.Group("/api/v1")

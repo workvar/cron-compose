@@ -195,7 +195,7 @@ func (h *oauthHandler) callback(c fiber.Ctx, p OAuthProvider) error {
 			"error": fiber.Map{"code": "exchange_failed", "message": err.Error()},
 		})
 	}
-	profile, err := h.profile(ctx, p, tok)
+	profile, err := h.profile(ctx, p, tok.Access)
 	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"error": fiber.Map{"code": "profile_failed", "message": err.Error()},
@@ -254,7 +254,16 @@ type oauthProfile struct {
 	Name  string
 }
 
-func (h *oauthHandler) exchange(ctx context.Context, p OAuthProvider, code string) (string, error) {
+// oauthToken is the access (+ optional refresh) pair returned by an authorization_code
+// or refresh_token grant. ExpiresAt is zero when the provider did not send expires_in
+// (classic non-expiring GitHub user tokens).
+type oauthToken struct {
+	Access    string
+	Refresh   string
+	ExpiresAt time.Time
+}
+
+func (h *oauthHandler) exchange(ctx context.Context, p OAuthProvider, code string) (oauthToken, error) {
 	form := url.Values{
 		"client_id":     {p.ClientID},
 		"client_secret": {p.ClientSecret},
@@ -264,30 +273,50 @@ func (h *oauthHandler) exchange(ctx context.Context, p OAuthProvider, code strin
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.TokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
-		return "", err
+		return oauthToken{}, err
 	}
 	req.Header.Set("content-type", "application/x-www-form-urlencoded")
 	req.Header.Set("accept", "application/json")
 	res, err := h.http.Do(req)
 	if err != nil {
-		return "", err
+		return oauthToken{}, err
 	}
 	defer res.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 	if res.StatusCode >= 300 {
-		return "", fmt.Errorf("token http %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+		return oauthToken{}, fmt.Errorf("token http %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
 	}
+	return parseOAuthTokenResponse(body)
+}
+
+// parseOAuthTokenResponse reads a GitHub/GitLab token endpoint JSON body. Shared by
+// authorization_code exchange and refresh_token renewal so both keep the same shape.
+func parseOAuthTokenResponse(body []byte) (oauthToken, error) {
 	var out struct {
-		AccessToken string `json:"access_token"`
-		Error       string `json:"error"`
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int64  `json:"expires_in"`
+		Error        string `json:"error"`
+		ErrorDesc    string `json:"error_description"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
-		return "", err
+		return oauthToken{}, err
+	}
+	if out.Error != "" {
+		msg := out.Error
+		if out.ErrorDesc != "" {
+			msg = out.Error + ": " + out.ErrorDesc
+		}
+		return oauthToken{}, errors.New(msg)
 	}
 	if out.AccessToken == "" {
-		return "", errors.New("no access_token")
+		return oauthToken{}, errors.New("no access_token")
 	}
-	return out.AccessToken, nil
+	tok := oauthToken{Access: out.AccessToken, Refresh: out.RefreshToken}
+	if out.ExpiresIn > 0 {
+		tok.ExpiresAt = time.Now().Add(time.Duration(out.ExpiresIn) * time.Second)
+	}
+	return tok, nil
 }
 
 func (h *oauthHandler) profile(ctx context.Context, p OAuthProvider, token string) (oauthProfile, error) {
