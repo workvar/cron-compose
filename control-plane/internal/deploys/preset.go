@@ -18,6 +18,27 @@ type Detection struct {
 	SuggestedRoot   string   `json:"root_directory"`
 }
 
+// DetectAt scopes Detect to one subfolder of the repo, so a monorepo block (say,
+// a Go API under backend/) is detected from its own files rather than the whole
+// tree. Without this, a package.json anywhere in the repo (even in a sibling
+// frontend/) made Detect flag every block as Node, because Detect's own anyHas
+// check matches a filename at any depth. root == "" or "." runs unscoped, same as
+// Detect(files).
+func DetectAt(files map[string]string, root string) Detection {
+	root = strings.Trim(strings.TrimSpace(root), "/")
+	if root == "" || root == "." {
+		return Detect(files)
+	}
+	prefix := root + "/"
+	scoped := make(map[string]string, len(files))
+	for p, body := range files {
+		if rel, ok := strings.CutPrefix(p, prefix); ok && rel != "" {
+			scoped[rel] = body
+		}
+	}
+	return Detect(scoped)
+}
+
 // Detect inspects a map of path -> file contents (root-relative).
 func Detect(files map[string]string) Detection {
 	d := Detection{Language: "unknown", SuggestedRoot: ".", InstallScript: ""}
