@@ -1,47 +1,34 @@
-# CronCompose v0.0.17
+# CronCompose v0.0.18
 
-A Vercel-style import flow, deploys driven by a `croncompose.yml` file, and a
-public docs page that explains how to write one.
+Monorepo import polish: each app can own its health check and language detect,
+plus a searchable branch picker and language icons on the repo list.
 
 ## Highlights
 
-- **New project in two screens** — The four-step import wizard is now **New
-  project** → **Configure project** → **Deploy**. Pick a connected repo (search,
-  owner filter, **Import** on each row), paste a public repo URL, or paste /
-  upload a `croncompose.yml`. Configure is one page: name, server, apps, with
-  **Environment variables** and **Advanced** (branch, folder, health check,
-  auto-rollback) folded away. The server is preselected when there is only one,
-  or only one online.
-- **Deploy from `croncompose.yml`** — Importing a repo reads `croncompose.yml`
-  (also `.yaml` and dot-prefixed) from its root and fills every field. Like
-  `vercel.json`, the file only overrides: language and install fall back to
-  detection. New keys: `version`, `server`, `health`, `deploy_timeout`,
-  `auto_rollback`; app `env` accepts a map or a `{key, value}` list. Files
-  CronCompose wrote in earlier releases still read cleanly.
-- **Validation up front** — Every problem is listed at once before anything
-  deploys: bad YAML, unknown keys (with line numbers), invalid process manager or
-  port, roots outside the repo, duplicate apps, and secret-looking values.
-- **Your file is never overwritten** — When the repo already has a
-  `croncompose.yml`, import only adds the CI trigger. Previously the file was
-  replaced with a generated copy.
-- **Export as croncompose.yml** — Configure turns a hand-built setup into a file
-  to copy or download. Sensitive variables are left out.
-- **Public repos without a connection** — Paste a GitHub or GitLab URL to import
-  it anonymously; the folder picker works too. GitHub file reads use
-  raw.githubusercontent.com, so they do not burn the API rate limit.
-- **Public docs** — `/docs` (served at `/app/docs`) is readable signed out: quick
-  start, full key reference, env and secrets, health checks, process managers,
-  six examples, validation errors, and CI triggers. Linked from the sidebar and
-  the Deploy page.
+- **Per-app health checks** — A project block can set its own probe path/port/
+  timeout, overriding the shared Advanced health check. Unset apps still use the
+  project-wide check. `croncompose.yml` accepts `health` under each app; export
+  writes it back. The agent probes each app's own check when set.
+- **Folder-scoped detect** — Changing a block's root re-runs language/install
+  detection for that subfolder only (`DetectAt`), so a Go API under `backend/`
+  is not mislabeled because of a sibling `package.json`. Manual framework picks
+  and blocks loaded from an explicit `croncompose.yml` are left alone.
+- **Searchable branch picker** — Configure uses a searchable select fed by
+  `GET /git/branches` instead of a free-text field. The default branch is
+  labeled; custom names are still allowed.
+- **Language icons** — The import repo list shows GitHub's reported language
+  logo when available. Framework and process-manager fields on each block use
+  searchable selects with icons.
+- **Folder picker polish** — Clearer browse UX for picking an app root.
 
 ## API
 
-- `POST /deploys/spec/validate` — body `{"yaml": "…"}`, returns
-  `{spec, issues, valid}`.
-- `GET /git/inspect` — adds `spec` when the repo has a file; `public=1` reads a
-  public repo without a grant. `GET /git/dirs` falls back to anonymous reads.
-- `POST /deploys` — accepts `spec_from_repo`, `auto_rollback`, `health_path`,
-  `health_port`, `health_timeout_seconds`, `deploy_timeout_seconds`.
+- `GET /git/branches?provider=&repo=` — lists branches (`name`, `default`).
+- `GET /git/inspect` — optional `path=` scopes detection to a monorepo
+  subfolder; `croncompose.yml` is only applied on an unscoped (root) inspect.
+- `GET /git/repos` — GitHub listings include `language` when the API reports it.
+- Deploy apps accept per-app `health` (path / port / timeout); unset falls back
+  to the project-level health check.
 
 ## Upgrade notes
 
@@ -52,7 +39,7 @@ From Settings → Updates, click **Update** on this host. Or by hand:
 ```sh
 cd cron-compose
 git fetch --tags
-git checkout --force v0.0.17
+git checkout --force v0.0.18
 ./update.sh --no-pull
 ```
 
@@ -60,5 +47,6 @@ No new migrations in this release.
 
 ### Agent (Linux / macOS)
 
-No agent changes required for this release. Update from the UI as usual when a
-newer agent tag is offered.
+Update agents so per-app health probes take effect. Older agents ignore
+`DeployApp.health` and keep using the project-level check only. Update from the
+UI as usual when the newer agent tag is offered.

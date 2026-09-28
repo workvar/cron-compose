@@ -25,9 +25,10 @@ GitHub/GitLab import: connect a git grant, pick a repo, clone onto a chosen agen
 |--------|------|------|-------|
 | GET | `/git/connections` | viewer | Linked git grants (no tokens). |
 | DELETE | `/git/connections/:provider` | viewer | Drop a git grant. |
-| GET | `/git/repos?provider=` | viewer | Repos visible to the git grant. |
-| GET | `/git/inspect?provider=&repo=[&public=1]` | viewer | Language/install/workspace detection, plus `spec` (the repo's own `croncompose.yml`, parsed and validated) when present. `public=1` reads a public repo anonymously when the user has no grant. |
+| GET | `/git/repos?provider=` | viewer | Repos visible to the git grant. GitHub listings include `language` when the API reports it. |
+| GET | `/git/inspect?provider=&repo=[&branch=][&path=][&public=1]` | viewer | Language/install/workspace detection, plus `spec` (the repo's own `croncompose.yml`, parsed and validated) when present. Optional `path=` scopes detection to a monorepo subfolder (no `spec` on scoped inspects). `public=1` reads a public repo anonymously when the user has no grant. |
 | GET | `/git/dirs?provider=&repo=&branch=&path=&recursive=` | viewer | List directories (shallow or recursive, capped). |
+| GET | `/git/branches?provider=&repo=` | viewer | List branches (`name`, `default`) for the import wizard's searchable branch picker. |
 | GET | `/deploy-settings` | viewer | Per-language clone path defaults. |
 | PUT | `/deploy-settings` | admin | `{language_paths}`. |
 | POST | `/deploys/spec/validate` | viewer | Body `{"yaml": "…"}`. Parses a `croncompose.yml` and returns `{spec, issues[], valid}`. Schema: the public `/docs` page. |
