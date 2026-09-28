@@ -338,17 +338,27 @@ func (m *Manager) startApps(ctx context.Context, cmd *agentv1.DeployCommand, lay
 	return nil
 }
 
-// checkHealth runs the project's probe, if it has one, against each app's port.
+// checkHealth runs each app's probe against its own port: the app's own health
+// check when it set one, otherwise the project's shared check. This lets a monorepo
+// give each process a different path (a Go API's /healthz is not a Next.js
+// frontend's) while a project that never set per-app checks keeps behaving exactly
+// as before.
 func (m *Manager) checkHealth(ctx context.Context, cmd *agentv1.DeployCommand) error {
 	runID := cmd.GetRunId()
 	token := cmd.GetCloneToken()
 	checked := false
+	anyConfigured := cmd.GetHealth().GetPath() != ""
 	for _, app := range appsOf(cmd, "") {
 		port := app.GetPort()
 		if port == 0 {
 			port = cmd.GetPort()
 		}
-		cfg, ok := resolveHealth(cmd.GetHealth(), port)
+		hc := cmd.GetHealth()
+		if app.GetHealth().GetPath() != "" {
+			hc = app.GetHealth()
+			anyConfigured = true
+		}
+		cfg, ok := resolveHealth(hc, port)
 		if !ok {
 			continue
 		}
@@ -357,7 +367,7 @@ func (m *Manager) checkHealth(ctx context.Context, cmd *agentv1.DeployCommand) e
 			return err
 		}
 	}
-	if !checked && cmd.GetHealth().GetPath() != "" {
+	if !checked && anyConfigured {
 		m.phaseLine(runID, token, phaseHealth, "skipped: no port configured to probe")
 	}
 	return nil

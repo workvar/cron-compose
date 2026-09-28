@@ -327,6 +327,10 @@ message DeployApp {
   int32  port             = 5;
   string process_manager  = 6; // none | pm2 | systemd | docker
   map<string, string> env  = 7;
+  // Per-app health probe. Unset (path empty) falls back to DeployCommand.health,
+  // so a project's shared check still works unchanged for every app that doesn't
+  // set its own.
+  HealthCheck health       = 8;
 }
 
 message DeployCommand {

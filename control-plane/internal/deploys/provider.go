@@ -54,6 +54,7 @@ func (g *GitAPI) listGitHub(ctx context.Context, token string) ([]Repo, error) {
 		DefaultBranch string `json:"default_branch"`
 		CloneURL      string `json:"clone_url"`
 		Private       bool   `json:"private"`
+		Language      string `json:"language"`
 	}
 	u := "https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member"
 	if err := g.getJSON(ctx, u, token, &raw); err != nil {
@@ -64,6 +65,7 @@ func (g *GitAPI) listGitHub(ctx context.Context, token string) ([]Repo, error) {
 		out = append(out, Repo{
 			ID: fmt.Sprintf("%d", r.ID), FullName: r.FullName, Description: r.Description,
 			DefaultBranch: r.DefaultBranch, CloneURL: r.CloneURL, Private: r.Private,
+			Language: r.Language,
 		})
 	}
 	return out, nil
@@ -88,6 +90,55 @@ func (g *GitAPI) listGitLab(ctx context.Context, token string) ([]Repo, error) {
 			ID: fmt.Sprintf("%d", r.ID), FullName: r.PathWithNamespace, Description: r.Description,
 			DefaultBranch: r.DefaultBranch, CloneURL: r.HTTPURLToRepo, Private: r.Visibility != "public",
 		})
+	}
+	return out, nil
+}
+
+// ListBranches lists a repo's branches, most-recently-updated first where the
+// provider's API supports that ordering. Used by the import wizard's searchable
+// branch picker so it is never limited to typing a name from memory.
+func (g *GitAPI) ListBranches(ctx context.Context, provider, token, fullName string) ([]Branch, error) {
+	if provider == "gitlab" {
+		return g.listBranchesGitLab(ctx, token, fullName)
+	}
+	return g.listBranchesGitHub(ctx, token, fullName)
+}
+
+func (g *GitAPI) listBranchesGitHub(ctx context.Context, token, fullName string) ([]Branch, error) {
+	var meta struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	_ = g.getJSON(ctx, g.githubAPI()+"/repos/"+fullName, token, &meta)
+	var raw []struct {
+		Name string `json:"name"`
+	}
+	u := fmt.Sprintf("%s/repos/%s/branches?per_page=100", g.githubAPI(), fullName)
+	if err := g.getJSON(ctx, u, token, &raw); err != nil {
+		return nil, err
+	}
+	out := make([]Branch, 0, len(raw))
+	for _, b := range raw {
+		out = append(out, Branch{Name: b.Name, Default: b.Name == meta.DefaultBranch})
+	}
+	return out, nil
+}
+
+func (g *GitAPI) listBranchesGitLab(ctx context.Context, token, fullName string) ([]Branch, error) {
+	enc := url.PathEscape(fullName)
+	var meta struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	_ = g.getJSON(ctx, g.gitlabAPI()+"/projects/"+enc, token, &meta)
+	var raw []struct {
+		Name string `json:"name"`
+	}
+	u := fmt.Sprintf("%s/projects/%s/repository/branches?per_page=100", g.gitlabAPI(), enc)
+	if err := g.getJSON(ctx, u, token, &raw); err != nil {
+		return nil, err
+	}
+	out := make([]Branch, 0, len(raw))
+	for _, b := range raw {
+		out = append(out, Branch{Name: b.Name, Default: b.Name == meta.DefaultBranch})
 	}
 	return out, nil
 }

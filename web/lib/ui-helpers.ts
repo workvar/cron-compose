@@ -1,4 +1,4 @@
-export type SelectOption = { value: string; label: string };
+export type SelectOption = { value: string; label: string; icon?: string | null };
 
 export type MappedPort = {
   proto: string;

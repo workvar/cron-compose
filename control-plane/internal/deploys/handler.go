@@ -73,6 +73,24 @@ func (h *handler) listRepos(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"items": items})
 }
 
+func (h *handler) listBranches(c fiber.Ctx) error {
+	provider := c.Query("provider", "github")
+	repo := c.Query("repo")
+	if repo == "" {
+		return jsonError(c, fiber.StatusBadRequest, "missing_repo", errors.New("repo is required"))
+	}
+	token, err := h.conns.Token(c.Context(), auth.CurrentUserID(c), provider)
+	if err != nil && !errors.Is(err, auth.ErrNotFound) {
+		return jsonError(c, fiber.StatusInternalServerError, "token_failed", err)
+	}
+	// No grant: list anonymously, which works for public repos (see inspect).
+	items, err := h.git.ListBranches(c.Context(), provider, token, repo)
+	if err != nil {
+		return jsonError(c, fiber.StatusBadGateway, "git_api", err)
+	}
+	return c.JSON(fiber.Map{"items": items})
+}
+
 func (h *handler) listDirs(c fiber.Ctx) error {
 	provider := c.Query("provider", "github")
 	repo := c.Query("repo")
@@ -98,6 +116,10 @@ func (h *handler) inspect(c fiber.Ctx) error {
 	provider := c.Query("provider", "github")
 	repo := c.Query("repo")
 	branch := c.Query("branch")
+	// path scopes detection to one subfolder of the repo (a monorepo block), so its
+	// language/install guess comes from its own files rather than the whole tree.
+	// Empty means the historical repo-wide behavior.
+	subpath := c.Query("path")
 	if repo == "" {
 		return jsonError(c, fiber.StatusBadRequest, "missing_repo", errors.New("repo is required"))
 	}
@@ -115,7 +137,7 @@ func (h *handler) inspect(c fiber.Ctx) error {
 	if err != nil {
 		return jsonError(c, fiber.StatusBadGateway, "git_api", err)
 	}
-	det := Detect(files)
+	det := DetectAt(files, subpath)
 	settings, _ := h.store.GetSettings(c.Context())
 	hint := "none"
 	if det.HasPM2Ecosystem {
@@ -124,14 +146,19 @@ func (h *handler) inspect(c fiber.Ctx) error {
 	if branch == "" {
 		branch = meta.DefaultBranch
 	}
-	return c.JSON(Inspect{
+	resp := Inspect{
 		Detection:     det,
 		CloneURL:      meta.CloneURL,
 		DefaultBranch: meta.DefaultBranch,
 		ClonePath:     ClonePath(settings.LanguagePaths, det.Language, repo),
 		ProcessHint:   hint,
-		Spec:          h.repoSpec(c.Context(), provider, token, repo, branch, files),
-	})
+	}
+	// The repo's croncompose.yml is a whole-project file: only read and apply it on
+	// the unscoped (root) inspect, not on a per-block re-detect.
+	if subpath == "" || subpath == "." {
+		resp.Spec = h.repoSpec(c.Context(), provider, token, repo, branch, files)
+	}
+	return c.JSON(resp)
 }
 
 // repoSpec finds and parses croncompose.yml at the repo root. nil when there is none.
@@ -601,6 +628,7 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 		cmd.Apps = append(cmd.Apps, &agentv1.DeployApp{
 			Name: a.Name, RootDirectory: a.Root, InstallScript: a.Install,
 			Language: lang, Port: int32(a.Port), ProcessManager: pm, Env: merged,
+			Health: healthCheckForApp(a),
 		})
 	}
 	if len(cmd.Apps) == 0 {

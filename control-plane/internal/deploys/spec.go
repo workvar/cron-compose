@@ -13,11 +13,11 @@ import (
 // It is also an input: the importer reads it from the repo root (or from a pasted
 // file) and pre-fills the deploy with it. See ParseSpecFile and the public /docs page.
 type Spec struct {
-	Version        int               `yaml:"version,omitempty" json:"version,omitempty"`
-	Name           string            `yaml:"name,omitempty" json:"name,omitempty"`
-	Provider       string            `yaml:"provider" json:"provider"`
-	Repo           string            `yaml:"repo" json:"repo"`
-	Branch         string            `yaml:"branch,omitempty" json:"branch,omitempty"`
+	Version  int    `yaml:"version,omitempty" json:"version,omitempty"`
+	Name     string `yaml:"name,omitempty" json:"name,omitempty"`
+	Provider string `yaml:"provider" json:"provider"`
+	Repo     string `yaml:"repo" json:"repo"`
+	Branch   string `yaml:"branch,omitempty" json:"branch,omitempty"`
 	// Server is a server name or id; the importer preselects it when it matches.
 	Server         string            `yaml:"server,omitempty" json:"server,omitempty"`
 	Language       string            `yaml:"language,omitempty" json:"language,omitempty"`
@@ -49,6 +49,11 @@ type SpecApp struct {
 	Port           int      `yaml:"port,omitempty" json:"port,omitempty"`
 	ProcessManager string   `yaml:"process_manager,omitempty" json:"process_manager,omitempty"`
 	Env            []EnvVar `yaml:"env,omitempty" json:"env,omitempty"`
+	// Health overrides the project's shared health check for this one app. Unset
+	// (nil, or an empty Path) falls back to the project-level Health below, so an
+	// app that doesn't set its own keeps behaving exactly as it did before this
+	// existed.
+	Health *SpecHealth `yaml:"health,omitempty" json:"health,omitempty"`
 }
 
 // MarshalSpec renders croncompose.yml.

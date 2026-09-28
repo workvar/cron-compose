@@ -37,6 +37,9 @@ import {
   type AdvancedSettings,
 } from "@/lib/deploy-spec";
 import { filterGitRepos, listGitRepoOwners, toggleOwnerFilter } from "@/lib/git-repos";
+import { listBranches } from "@/lib/git-detect";
+import { githubLanguageIconUrl } from "@/lib/language-icons";
+import type { SelectOption } from "@/lib/ui-helpers";
 import type {
   DeployApp,
   DeployEnvVar,
@@ -106,6 +109,7 @@ export default function NewDeployPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [source, setSource] = useState<Source | null>(null);
+  const [branches, setBranches] = useState<SelectOption[]>([]);
   const [inspect, setInspect] = useState<DeployInspect | null>(null);
   const [spec, setSpec] = useState<DeploySpecResult | null>(null);
   const [form, setForm] = useState<Form>(emptyForm);
@@ -144,6 +148,25 @@ export default function NewDeployPage() {
       .then((d) => setRepos(d.items || []))
       .catch(() => setRepos([]));
   }, [provider, connected]);
+
+  // Branch options for the searchable branch picker, loaded once a repo is open.
+  useEffect(() => {
+    if (!source) {
+      setBranches([]);
+      return;
+    }
+    let live = true;
+    listBranches(source.provider, source.fullName)
+      .then((items) => {
+        if (live) setBranches(items.map((b) => ({ value: b.name, label: b.default ? `${b.name} (default)` : b.name })));
+      })
+      .catch(() => {
+        if (live) setBranches([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [source?.provider, source?.fullName]);
 
   const personalLogin = conns?.find((c) => c.provider === provider)?.login;
   const owners = useMemo(() => listGitRepoOwners(repos || [], personalLogin), [repos, personalLogin]);
@@ -524,7 +547,15 @@ export default function NewDeployPage() {
               <div className="grid-2">
                 <div className="field">
                   <label htmlFor="branch">Branch</label>
-                  <input id="branch" value={form.branch} onChange={(e) => setForm((f) => ({ ...f, branch: e.target.value }))} />
+                  <SearchableSelect
+                    id="branch"
+                    value={form.branch}
+                    options={branches}
+                    allowCustom
+                    placeholder="main"
+                    onChange={(branch) => setForm((f) => ({ ...f, branch }))}
+                    aria-label="Branch"
+                  />
                   <p className="field-hint">Pushes to this branch redeploy automatically.</p>
                 </div>
                 <div className="field">
@@ -537,7 +568,13 @@ export default function NewDeployPage() {
                   />
                 </div>
               </div>
+              {form.blocks.length > 1 && (
+                <p className="field-hint">
+                  This is the shared default health check. Give an individual app its own on that app&apos;s card, above.
+                </p>
+              )}
               <HealthCheckFields
+                idPrefix="project-"
                 appPort={Number(form.blocks[0]?.port) || 0}
                 value={{
                   path: form.advanced.healthPath,
@@ -701,9 +738,18 @@ export default function NewDeployPage() {
                 {repos && repos.length > 0 && visibleRepos.length === 0 && (
                   <li className="repo-empty subtle">No repositories match “{repoQuery}”.</li>
                 )}
-                {visibleRepos.map((r) => (
+                {visibleRepos.map((r) => {
+                  const langIcon = githubLanguageIconUrl(r.language);
+                  return (
                   <li key={r.id} className="repo-row">
-                    <span className="mini-icon"><IconGit /></span>
+                    <span className="mini-icon">
+                      {langIcon ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={langIcon} alt="" width={16} height={16} />
+                      ) : (
+                        <IconGit />
+                      )}
+                    </span>
                     <div className="repo-meta">
                       <div className="repo-name">
                         {r.full_name}
@@ -720,7 +766,8 @@ export default function NewDeployPage() {
                       {busy === `repo:${r.id}` ? "Reading…" : "Import"}
                     </button>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             </>
           )}

@@ -8,6 +8,18 @@ export type ProjectBlock = {
   install: string;
   port: string;
   processManager: string;
+  /**
+   * True while language/install still reflect an automatic detection for this
+   * block's root, so a root change (see detectAt in git-detect.ts) is allowed to
+   * refresh them. Picking a framework manually, or the block coming from a
+   * pasted/repo croncompose.yml, turns this off so CronCompose never overwrites
+   * a choice the person made.
+   */
+  autoDetect: boolean;
+  /** Per-block health check, overriding the project's shared one. Empty path = unset. */
+  healthPath: string;
+  healthPort: string;
+  healthTimeout: string;
 };
 
 export function newBlockId(): string {
@@ -44,6 +56,10 @@ export function seedBlockFromInspect(inspect: DeployInspect, repoFullName: strin
     install: inspect.install_script,
     port: "",
     processManager: inspect.process_manager === "pm2" ? "pm2" : "none",
+    autoDetect: true,
+    healthPath: "",
+    healthPort: "",
+    healthTimeout: "",
   };
 }
 
@@ -56,6 +72,10 @@ export function emptyBlock(): ProjectBlock {
     install: "",
     port: "",
     processManager: "none",
+    autoDetect: true,
+    healthPath: "",
+    healthPort: "",
+    healthTimeout: "",
   };
 }
 
@@ -97,5 +117,12 @@ export function blocksToDeployApps(
     process_manager: block.processManager,
     port: block.port ? Number(block.port) : undefined,
     env: appEnv[block.name] ?? [],
+    health: block.healthPath.trim()
+      ? {
+          path: block.healthPath.trim(),
+          port: block.healthPort ? Number(block.healthPort) : undefined,
+          timeout: block.healthTimeout ? Number(block.healthTimeout) : undefined,
+        }
+      : undefined,
   }));
 }

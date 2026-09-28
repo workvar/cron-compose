@@ -216,6 +216,15 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px
   min-height: 44px;
   padding-right: 36px;
 }
+.ss-input.has-icon { padding-left: 36px; }
+.ss-field > .ss-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.ss-icon { border-radius: 3px; flex: none; }
 .ss-chevron {
   position: absolute;
   right: 8px;
@@ -251,7 +260,9 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px
   overflow: auto;
 }
 .ss-opt {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   text-align: left;
   border: 0;

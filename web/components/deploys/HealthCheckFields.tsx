@@ -15,18 +15,24 @@ type Props = {
   onChange: (next: HealthCheckValues) => void;
   /** The app's port, used as the probe's default target. */
   appPort: number;
+  /** Makes every field id unique when this form appears more than once on a page
+   * (the project-wide Advanced section, plus one per app block). */
+  idPrefix?: string;
+  /** Omit the deploy-timeout field: it's a whole-run budget, not per-app. */
+  hideDeployTimeout?: boolean;
 };
 
-export function HealthCheckFields({ value, onChange, appPort }: Props) {
+export function HealthCheckFields({ value, onChange, appPort, idPrefix = "", hideDeployTimeout }: Props) {
   const set = (patch: Partial<HealthCheckValues>) => onChange({ ...value, ...patch });
   const on = value.path.trim() !== "";
+  const id = (name: string) => `${idPrefix}${name}`;
 
   return (
     <>
       <div className="field">
-        <label htmlFor="health-path">Health check path</label>
+        <label htmlFor={id("health-path")}>Health check path</label>
         <input
-          id="health-path"
+          id={id("health-path")}
           placeholder="/healthz"
           value={value.path}
           onChange={(e) => set({ path: e.target.value })}
@@ -40,9 +46,9 @@ export function HealthCheckFields({ value, onChange, appPort }: Props) {
       {on && (
         <div className="grid-2">
           <div className="field">
-            <label htmlFor="health-port">Health check port</label>
+            <label htmlFor={id("health-port")}>Health check port</label>
             <input
-              id="health-port"
+              id={id("health-port")}
               placeholder={appPort > 0 ? String(appPort) : "same as PORT"}
               value={value.port}
               onChange={(e) => set({ port: e.target.value })}
@@ -50,9 +56,9 @@ export function HealthCheckFields({ value, onChange, appPort }: Props) {
             <p className="field-hint">Probed on 127.0.0.1. Defaults to the app&apos;s PORT.</p>
           </div>
           <div className="field">
-            <label htmlFor="health-timeout">Seconds to become healthy</label>
+            <label htmlFor={id("health-timeout")}>Seconds to become healthy</label>
             <input
-              id="health-timeout"
+              id={id("health-timeout")}
               placeholder="60"
               value={value.timeout}
               onChange={(e) => set({ timeout: e.target.value })}
@@ -61,19 +67,21 @@ export function HealthCheckFields({ value, onChange, appPort }: Props) {
           </div>
         </div>
       )}
-      <div className="field">
-        <label htmlFor="deploy-timeout">Deploy timeout (seconds)</label>
-        <input
-          id="deploy-timeout"
-          placeholder="900"
-          value={value.deployTimeout}
-          onChange={(e) => set({ deployTimeout: e.target.value })}
-        />
-        <p className="field-hint">
-          Whole-run budget, so a wedged installer cannot hold the project forever. Empty uses the
-          agent&apos;s default of 15 minutes; the agent caps it at 2 hours.
-        </p>
-      </div>
+      {!hideDeployTimeout && (
+        <div className="field">
+          <label htmlFor={id("deploy-timeout")}>Deploy timeout (seconds)</label>
+          <input
+            id={id("deploy-timeout")}
+            placeholder="900"
+            value={value.deployTimeout}
+            onChange={(e) => set({ deployTimeout: e.target.value })}
+          />
+          <p className="field-hint">
+            Whole-run budget, so a wedged installer cannot hold the project forever. Empty uses the
+            agent&apos;s default of 15 minutes; the agent caps it at 2 hours.
+          </p>
+        </div>
+      )}
     </>
   );
 }

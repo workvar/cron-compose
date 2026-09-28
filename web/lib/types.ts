@@ -280,6 +280,10 @@ export type GitRepo = {
   default_branch: string;
   clone_url: string;
   private: boolean;
+  // GitHub's own best guess at the repo's primary language, for the import list's
+  // icon (see githubLanguageIconUrl). Empty on GitLab and on repos GitHub hasn't
+  // classified yet; the row falls back to a generic git icon in that case.
+  language?: string;
 };
 
 export type GitDirEntry = { name: string; path: string };
@@ -289,6 +293,8 @@ export type GitDirList = {
   truncated: boolean;
   items: GitDirEntry[];
 };
+
+export type GitBranch = { name: string; default: boolean };
 
 export type DeployDetection = {
   language: string;
@@ -307,6 +313,7 @@ export type DeploySpecApp = {
   port?: number;
   process_manager?: string;
   env?: DeployEnvVar[];
+  health?: DeployAppHealth;
 };
 
 /** A parsed croncompose.yml (see control-plane/internal/deploys/specfile.go). */
@@ -354,6 +361,9 @@ export type DeployEnvVar = {
   has_value?: boolean;
 };
 
+/** An app's own health probe, overriding the project's shared one. See SpecHealth. */
+export type DeployAppHealth = { path: string; port?: number; timeout?: number };
+
 export type DeployApp = {
   name: string;
   root: string;
@@ -362,6 +372,8 @@ export type DeployApp = {
   port?: number;
   process_manager?: string;
   env?: DeployEnvVar[];
+  /** Per-app health check path. Unset falls back to the project's shared check. */
+  health?: DeployAppHealth;
 };
 
 export type DeployHealthState = "unknown" | "healthy" | "degraded" | "rolled_back";
