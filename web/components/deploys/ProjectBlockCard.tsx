@@ -6,7 +6,13 @@ import {
   normalizeBlockRoot,
   type ProjectBlock,
 } from "@/lib/project-blocks";
+import { detectAt } from "@/lib/git-detect";
+import { languageSelectOptions } from "@/lib/language-icons";
+import { PROCESS_MANAGER_OPTIONS } from "@/lib/process-managers";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { HealthCheckFields } from "./HealthCheckFields";
 import { RepoFolderPicker } from "./RepoFolderPicker";
+import { IconChevronRight } from "@/components/icons";
 
 type Props = {
   block: ProjectBlock;
@@ -30,22 +36,42 @@ export function ProjectBlockCard({
   onRemove,
 }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [detecting, setDetecting] = useState(false);
 
   function patch(partial: Partial<ProjectBlock>) {
     onChange({ ...block, ...partial });
   }
 
-  function onRootChange(root: string) {
+  async function onRootChange(root: string) {
     const next: ProjectBlock = { ...block, root };
     if (!block.name.trim() || block.name === nameFromRoot(block.root, repo)) {
       next.name = nameFromRoot(root, repo);
     }
     onChange(next);
+    // Re-detect scoped to the new root, so a Go API under backend/ gets its own
+    // language/install guess instead of inheriting the repo root's. Skipped once
+    // the person has picked a framework by hand or this block came from an
+    // explicit croncompose.yml (autoDetect is off in both cases).
+    if (!next.autoDetect) return;
+    setDetecting(true);
+    try {
+      const det = await detectAt(provider, repo, branch, root);
+      onChange({
+        ...next,
+        language: det.language || "unknown",
+        install: det.install_script || next.install,
+      });
+    } catch {
+      // Detection is a convenience; leave the previous values on failure.
+    } finally {
+      setDetecting(false);
+    }
   }
 
   const rootDisplay = block.root.trim()
     ? normalizeBlockRoot(block.root)
     : "(pick a folder)";
+  const languageOptions = languageSelectOptions(block.language);
 
   return (
     <div className="panel">
@@ -91,19 +117,29 @@ export function ProjectBlockCard({
           branch={branch}
           value={block.root || "."}
           workspaces={workspaces}
-          onChange={onRootChange}
+          onChange={(root) => {
+            void onRootChange(root);
+          }}
           onClose={() => setPickerOpen(false)}
         />
       )}
 
       <div className="grid-2" style={{ marginTop: 12 }}>
         <div className="field">
-          <label htmlFor={`block-lang-${block.id}`}>Language</label>
-          <input
+          <label htmlFor={`block-lang-${block.id}`}>Framework / language</label>
+          <SearchableSelect
             id={`block-lang-${block.id}`}
             value={block.language}
-            onChange={(e) => patch({ language: e.target.value })}
+            options={languageOptions}
+            allowCustom
+            placeholder={detecting ? "Detecting…" : "Select a framework…"}
+            disabled={detecting}
+            onChange={(language) => patch({ language, autoDetect: false })}
+            aria-label="Framework or language"
           />
+          <p className="field-hint">
+            {detecting ? "Re-detecting from this folder…" : "Auto-detected from the repo; pick one to override it."}
+          </p>
         </div>
         <div className="field">
           <label htmlFor={`block-port-${block.id}`}>PORT (optional)</label>
@@ -128,17 +164,33 @@ export function ProjectBlockCard({
 
       <div className="field">
         <label htmlFor={`block-pm-${block.id}`}>Process manager</label>
-        <select
+        <SearchableSelect
           id={`block-pm-${block.id}`}
           value={block.processManager}
-          onChange={(e) => patch({ processManager: e.target.value })}
-        >
-          <option value="none">None — attach later</option>
-          <option value="pm2">PM2</option>
-          <option value="systemd">systemd (user unit)</option>
-          <option value="docker">Docker Compose</option>
-        </select>
+          options={PROCESS_MANAGER_OPTIONS}
+          onChange={(processManager) => patch({ processManager })}
+          aria-label="Process manager"
+        />
       </div>
+
+      <details className="advanced" open={!!block.healthPath} style={{ marginTop: 12 }}>
+        <summary>
+          <span className="chev"><IconChevronRight /></span> Health check
+        </summary>
+        <div style={{ marginTop: 14 }}>
+          <p className="field-hint" style={{ marginTop: 0 }}>
+            Overrides the project&apos;s shared health check for this app only. Leave empty to use the
+            project-wide one (Advanced, below), if any.
+          </p>
+          <HealthCheckFields
+            idPrefix={`block-${block.id}-`}
+            hideDeployTimeout
+            appPort={Number(block.port) || 0}
+            value={{ path: block.healthPath, port: block.healthPort, timeout: block.healthTimeout, deployTimeout: "" }}
+            onChange={(v) => patch({ healthPath: v.path, healthPort: v.port, healthTimeout: v.timeout })}
+          />
+        </div>
+      </details>
     </div>
   );
 }
