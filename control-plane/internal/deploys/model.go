@@ -107,6 +107,18 @@ type Repo struct {
 	DefaultBranch string `json:"default_branch"`
 	CloneURL      string `json:"clone_url"`
 	Private       bool   `json:"private"`
+	// Language is the provider's own guess at the repo's primary language (GitHub
+	// reports this on every repo listing; GitLab's equivalent needs a separate,
+	// expensive per-project call, so it's left empty there). It's a hint for the
+	// import list's icon, not the language actually used to configure the deploy;
+	// Detect/DetectAt still do that from the real files once a repo is opened.
+	Language string `json:"language,omitempty"`
+}
+
+// Branch is one entry in a repo's branch list, for the import wizard's branch picker.
+type Branch struct {
+	Name    string `json:"name"`
+	Default bool   `json:"default"`
 }
 
 // CreateInput is POST /deploys.
