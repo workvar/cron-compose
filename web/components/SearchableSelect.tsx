@@ -39,6 +39,7 @@ export function SearchableSelect({
 
   const selected = options.find((o) => o.value === value);
   const display = open && typing ? query : (selected?.label ?? (allowCustom ? value : ""));
+  const showLeadingIcon = !!selected?.icon && !(open && typing);
   const filtered = useMemo(
     () => filterSelectOptions(options, open && typing ? query : ""),
     [options, open, typing, query],
@@ -101,9 +102,13 @@ export function SearchableSelect({
   return (
     <div className={`ss${className ? ` ${className}` : ""}`} ref={wrapRef}>
       <div className="ss-field">
+        {showLeadingIcon && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className="ss-icon" src={selected!.icon!} alt="" aria-hidden width={16} height={16} />
+        )}
         <input
           id={inputId}
-          className="ss-input"
+          className={`ss-input${showLeadingIcon ? " has-icon" : ""}`}
           value={display}
           disabled={disabled}
           placeholder={placeholder}
@@ -155,6 +160,10 @@ export function SearchableSelect({
                 onMouseEnter={() => setActive(i)}
                 onClick={() => commit(o.value)}
               >
+                {o.icon && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img className="ss-icon" src={o.icon} alt="" aria-hidden width={16} height={16} />
+                )}
                 {o.label}
               </button>
             </li>
