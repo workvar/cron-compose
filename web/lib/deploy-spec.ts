@@ -93,6 +93,12 @@ export function specToDraft(
       install: app.install || spec.install || detected?.install || "",
       port: port ? String(port) : "",
       processManager: app.process_manager || spec.process_manager || "none",
+      // Came from an explicit croncompose.yml (or a pasted one): never let a later
+      // root-folder change silently overwrite what the file said.
+      autoDetect: false,
+      healthPath: app.health?.path || "",
+      healthPort: app.health?.port ? String(app.health.port) : "",
+      healthTimeout: app.health?.timeout ? String(app.health.timeout) : "",
     });
     // Top-level env is shared by every app; an app's own value wins.
     const own = (app.env || []).map((v) => ({ key: v.key, value: v.value ?? "", sensitive: false }));
@@ -206,6 +212,12 @@ export function draftToYaml(d: ExportInput): string {
     line("install", b.install, "    ");
     line("port", Number(b.port) || 0, "    ");
     line("process_manager", b.processManager === "none" ? "" : b.processManager, "    ");
+    if (b.healthPath.trim()) {
+      out.push("    health:");
+      line("path", b.healthPath.trim(), "      ");
+      line("port", Number(b.healthPort) || 0, "      ");
+      line("timeout", Number(b.healthTimeout) || 0, "      ");
+    }
     const env = (d.appEnv[b.name] || []).filter((v) => v.key.trim());
     const plain = env.filter((v) => !v.sensitive);
     hidden += env.length - plain.length;
