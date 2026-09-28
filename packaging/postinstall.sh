@@ -17,6 +17,8 @@ fi
 
 install -d -o "$USER" -g "$USER" -m 0700 "$DATA_DIR"
 install -d -m 0755 /etc/croncompose
+# Writable via ReadWritePaths= in the unit; agent-privctl puts root.conf here.
+install -d -m 0755 /etc/systemd/system/croncompose-agent.service.d
 
 if [ -f /usr/share/croncompose/agent_sudoers.sh ]; then
   /usr/share/croncompose/agent_sudoers.sh "$USER" || true

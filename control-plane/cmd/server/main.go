@@ -44,6 +44,14 @@ func run(seedAndExit bool) error {
 	}
 	log := logger.New(cfg.LogLevel)
 	log.Info("starting control plane", "env", cfg.Env)
+	if os.Getenv("PUBLIC_GRPC_ADDR") == "" && cfg.PublicBaseURL != "" {
+		// Derived from PUBLIC_BASE_URL. If that host is behind an HTTP proxy or CDN
+		// (e.g. Cloudflare's orange cloud), agents cannot reach raw gRPC on it.
+		log.Warn("PUBLIC_GRPC_ADDR not set; agents will dial the PUBLIC_BASE_URL host. Set PUBLIC_GRPC_ADDR to a DNS-only host if that one is proxied",
+			"agents_dial", cfg.PublicGRPCAddr)
+	} else {
+		log.Info("agents dial", "public_grpc_addr", cfg.PublicGRPCAddr, "listen", cfg.GRPCAddr)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

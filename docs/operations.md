@@ -133,6 +133,27 @@ Turning the switch off sends `demote` and restores the original service user.
 Agents under pm2 (no systemd) cannot run as root; the helper fails with
 `systemd required to run agent as root under pm2`.
 
+Before writing the drop-in, `agent-privctl elevate` checks that the calling agent
+lives in the `croncompose-agent.service` cgroup, and after `daemon-reload` that the
+unit resolves `User=root`. Either failure is reported to the UI instead of a silent
+60s timeout.
+
+**"Agent did not report root after 60s"** — on the host:
+
+```sh
+systemctl show -p User,MainPID,DropInPaths croncompose-agent   # User=root, MainPID = the agent
+pgrep -af 'agent run|croncompose-agent'                        # no pm2/nohup copy
+ls /etc/systemd/system/croncompose-agent.service.d/            # root.conf present
+sudo -u <agent-user> sudo -n -l | grep agent-privctl           # grant present
+journalctl -u croncompose-agent -n 100
+```
+
+The packaged unit uses `ProtectSystem=full`; it needs
+`ReadWritePaths=-/etc/systemd/system/croncompose-agent.service.d` (shipped in the
+unit; add it with `systemctl edit` on older installs) or the helper cannot write
+the drop-in. Manual enable/disable steps are on the wiki page
+[Agent root access](https://github.com/workvar/cron-compose/wiki/Agent-Root-Access).
+
 WebAuthn relying-party ID is the hostname of `PUBLIC_BASE_URL` (or `PUBLIC_HTTP_URL`).
 Set it to the URL operators open in the browser.
 

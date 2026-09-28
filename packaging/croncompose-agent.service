@@ -15,6 +15,9 @@ RestartSec=5s
 # NoNewPrivileges must stay off: the service user runs
 # `sudo -n /usr/libexec/croncompose/agent-privctl elevate|demote`, which needs setuid.
 ProtectSystem=full
+# ProtectSystem=full makes /etc read-only for the agent and its sudo children, so
+# agent-privctl could not write its root.conf drop-in. postinstall creates the dir.
+ReadWritePaths=-/etc/systemd/system/croncompose-agent.service.d
 ProtectHome=true
 PrivateTmp=true
 

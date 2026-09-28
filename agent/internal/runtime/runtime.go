@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -108,9 +109,10 @@ func (r *Runtime) Run(ctx context.Context) error {
 	r.sched.Start()
 	defer r.sched.Stop()
 
-	addr := r.cfg.ControlPlaneAddr
-	if r.ident.ControlPlaneGRPCAddr != "" {
-		addr = r.ident.ControlPlaneGRPCAddr
+	addr := dialAddr(r.cfg.ControlPlaneAddr, r.ident.ControlPlaneGRPCAddr)
+	if addr != r.ident.ControlPlaneGRPCAddr && r.ident.ControlPlaneGRPCAddr != "" {
+		r.log.Warn("ignoring enrolled control-plane address without a host; using CONTROL_PLANE_ADDR",
+			"enrolled", r.ident.ControlPlaneGRPCAddr, "using", addr)
 	}
 
 	backoff := newBackoff()
@@ -127,6 +129,18 @@ func (r *Runtime) Run(ctx context.Context) error {
 		case <-time.After(backoff.next()):
 		}
 	}
+}
+
+// dialAddr prefers the gRPC address saved at enrollment, but ignores one with no
+// host: older control planes returned their listen address (":9077"), which made
+// a remote agent dial whatever listens on that port locally. Installer-managed
+// local agents set CONTROL_PLANE_ADDR=127.0.0.1:<port>, so the fallback is safe.
+func dialAddr(configured, enrolled string) string {
+	host, _, err := net.SplitHostPort(enrolled)
+	if err != nil || host == "" {
+		return configured
+	}
+	return enrolled
 }
 
 // connectAndServe runs one connection cycle: dial, open stream, send Hello, drain

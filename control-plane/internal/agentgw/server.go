@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"syscall"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
@@ -163,6 +164,10 @@ func (g *Gateway) Start(_ context.Context) error {
 
 	lis, err := net.Listen("tcp", g.addr)
 	if err != nil {
+		if errors.Is(err, syscall.EADDRINUSE) {
+			return fmt.Errorf("listen %s: another process already uses this port (find it with: sudo ss -ltnp | grep %s); "+
+				"stop it or set GRPC_ADDR/PUBLIC_GRPC_ADDR to a free port: %w", g.addr, g.addr, err)
+		}
 		return fmt.Errorf("listen %s: %w", g.addr, err)
 	}
 	g.lis = lis

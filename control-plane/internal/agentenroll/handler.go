@@ -11,6 +11,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"net"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -93,7 +95,7 @@ func (h *handler) enroll(c fiber.Ctx) error {
 		ServerID:             serverID,
 		ClientCertPEM:        string(certPEM),
 		ServerCAPEM:          string(h.bundle.CACertPEM),
-		ControlPlaneGRPCAddr: h.grpcAddr,
+		ControlPlaneGRPCAddr: advertisedGRPCAddr(h.grpcAddr),
 	})
 }
 
@@ -145,4 +147,15 @@ func badRequest(c fiber.Ctx, code string, err error) error {
 func sha256Hex(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
+}
+
+// advertisedGRPCAddr drops an address with no host (a listen address such as
+// ":9077"). The agent then keeps the CONTROL_PLANE_ADDR it was installed with
+// instead of dialing whatever listens on that port on its own machine.
+func advertisedGRPCAddr(addr string) string {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil || host == "" {
+		return ""
+	}
+	return addr
 }

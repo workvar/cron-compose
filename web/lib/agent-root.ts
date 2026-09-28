@@ -65,9 +65,9 @@ export function agentRootTimeoutMessage(enabled: boolean, storedError?: string |
   const stored = storedError?.trim();
   if (stored) return stored;
   if (enabled) {
-    return "Agent did not report root after 60s. On the host check: systemctl status croncompose-agent; " +
-      "ls /etc/systemd/system/croncompose-agent.service.d/; " +
-      "and that sudo -n /usr/libexec/croncompose/agent-privctl elevate works for the agent user.";
+    return "Agent did not report root after 60s. On the host run: systemctl show -p User,MainPID croncompose-agent " +
+      "(want User=root and a non-zero MainPID); journalctl -u croncompose-agent -n 50; and confirm the agent " +
+      "process is that MainPID, not a pm2/nohup copy. See Troubleshooting → Agent root access in the wiki.";
   }
   return "Agent is still running as root after demote. Check systemctl status croncompose-agent and remove " +
     "/etc/systemd/system/croncompose-agent.service.d/root.conf if it remains.";

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -121,6 +122,7 @@ func TestRestartDoesNotBlockOnUnit(t *testing.T) {
 		"  [ \"$a\" = restart ] && restart=1\n" +
 		"  [ \"$a\" = --no-block ] && noblock=1\n" +
 		"done\n" +
+		"[ \"$1\" = show ] && { echo root; exit 0; }\n" +
 		"if [ \"$restart\" = 1 ] && [ \"$noblock\" != 1 ]; then echo 'blocking restart' >&2; exit 99; fi\n" +
 		"exit 0\n"
 	if err := os.WriteFile(env.systemctlBin, []byte(script), 0o755); err != nil {
@@ -146,6 +148,7 @@ func TestNoSystemctlReturnsSystemdRequiredError(t *testing.T) {
 	t.Setenv("CC_PRIVCTL_SYSTEMCTL", filepath.Join(dir, "missing-systemctl"))
 	t.Setenv("CC_PRIVCTL_DROPIN_DIR", filepath.Join(dir, "dropins"))
 	t.Setenv("CC_PRIVCTL_UNIT", "croncompose-agent.service")
+	fakeProc(t, dir, "0::/system.slice/croncompose-agent.service")
 	putMarker(t, dataDir, "agent-supervisor", "systemd")
 
 	err := run([]string{"elevate"})
@@ -175,7 +178,7 @@ func newPrivctlEnv(t *testing.T) privctlEnv {
 	dropDir := filepath.Join(dir, "croncompose-agent.service.d")
 	logPath := filepath.Join(dir, "systemctl.log")
 	fake := filepath.Join(dir, "systemctl")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CC_PRIVCTL_SYSTEMCTL_LOG\"\nexit 0\n"
+	script := fakeSystemctl("root")
 	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -186,6 +189,7 @@ func newPrivctlEnv(t *testing.T) privctlEnv {
 	t.Setenv("CC_PRIVCTL_UNIT", unit)
 	t.Setenv("CC_PRIVCTL_SYSTEMCTL_LOG", logPath)
 	t.Setenv("SUDO_USER", "croncompose")
+	fakeProc(t, dir, "0::/system.slice/"+unit)
 	return privctlEnv{dataDir: dataDir, dropIn: filepath.Join(dropDir, "root.conf"), systemctlLog: logPath, systemctlBin: fake, unit: unit}
 }
 
@@ -228,7 +232,7 @@ func TestElevateUsesRuntimeDirAgent(t *testing.T) {
 	dropDir := filepath.Join(dir, "dropins")
 	logPath := filepath.Join(dir, "systemctl.log")
 	fake := filepath.Join(dir, "systemctl")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CC_PRIVCTL_SYSTEMCTL_LOG\"\nexit 0\n"
+	script := fakeSystemctl("root")
 	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -239,6 +243,7 @@ func TestElevateUsesRuntimeDirAgent(t *testing.T) {
 	t.Setenv("CC_PRIVCTL_UNIT", "croncompose-agent.service")
 	t.Setenv("CC_PRIVCTL_SYSTEMCTL_LOG", logPath)
 	t.Setenv("SUDO_USER", "stackuser")
+	fakeProc(t, dir, "0::/system.slice/croncompose-agent.service")
 	putMarker(t, dataDir, "agent-supervisor", "systemd")
 
 	if err := run([]string{"elevate"}); err != nil {
@@ -260,5 +265,83 @@ func TestHelperRejectsShellInvocation(t *testing.T) {
 	}
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// fakeSystemctl logs argv and answers `show -p User --value` with user.
+func fakeSystemctl(user string) string {
+	return "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CC_PRIVCTL_SYSTEMCTL_LOG\"\n" +
+		"[ \"$1\" = show ] && echo '" + user + "'\nexit 0\n"
+}
+
+// fakeProc builds <dir>/proc with sudo (the test's parent pid) in a session
+// scope and its parent (the "agent", pid 4242) in agentCgroup.
+func fakeProc(t *testing.T, dir, agentCgroup string) {
+	t.Helper()
+	proc := filepath.Join(dir, "proc")
+	write := func(pid int, cgroup string, ppid int) {
+		d := filepath.Join(proc, strconv.Itoa(pid))
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "cgroup"), []byte(cgroup+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		status := "Name:\tx\nPPid:\t" + strconv.Itoa(ppid) + "\n"
+		if err := os.WriteFile(filepath.Join(d, "status"), []byte(status), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(os.Getppid(), "0::/user.slice/user-0.slice/session-9.scope", 4242)
+	write(4242, agentCgroup, 1)
+	t.Setenv("CC_PRIVCTL_PROC", proc)
+}
+
+// Production change that would fail this test: dropping the cgroup preflight,
+// so an agent under pm2/nohup restarts an unrelated unit and the UI times out
+// with no error.
+func TestElevateRejectsAgentOutsideUnit(t *testing.T) {
+	env := newPrivctlEnv(t)
+	putMarker(t, env.dataDir, "agent-supervisor", "systemd")
+	fakeProc(t, t.TempDir(), "0::/user.slice/user-1000.slice/user@1000.service/app.slice/pm2.service")
+	err := run([]string{"elevate"})
+	if err == nil || !strings.Contains(err.Error(), "not running as croncompose-agent.service") {
+		t.Fatalf("err=%v", err)
+	}
+	if _, statErr := os.Stat(env.dropIn); !os.IsNotExist(statErr) {
+		t.Fatal("must not write a drop-in when the agent is outside the unit")
+	}
+}
+
+// Production change that would fail this test: restarting even though another
+// drop-in still sets User=, so the agent silently comes back unprivileged.
+func TestElevateRejectsOverriddenUser(t *testing.T) {
+	env := newPrivctlEnv(t)
+	putMarker(t, env.dataDir, "agent-supervisor", "systemd")
+	if err := os.WriteFile(env.systemctlBin, []byte(fakeSystemctl("croncompose")), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := run([]string{"elevate"})
+	if err == nil || !strings.Contains(err.Error(), `User="croncompose"`) {
+		t.Fatalf("err=%v", err)
+	}
+	if strings.Contains(readFile(t, env.systemctlLog), "restart") {
+		t.Fatal("must not restart when User= is overridden")
+	}
+}
+
+func TestCgroupHasUnit(t *testing.T) {
+	unit := "croncompose-agent.service"
+	cases := map[string]bool{
+		"0::/system.slice/croncompose-agent.service\n":                      true,
+		"12:pids:/system.slice/croncompose-agent.service\n0::/init.scope\n": true,
+		"0::/system.slice/croncompose-agent.service.d\n":                    false,
+		"0::/user.slice/user-1000.slice/session-3.scope\n":                  false,
+		"": false,
+	}
+	for cg, want := range cases {
+		if got := cgroupHasUnit(cg, unit); got != want {
+			t.Errorf("cgroupHasUnit(%q)=%v want %v", cg, got, want)
+		}
 	}
 }

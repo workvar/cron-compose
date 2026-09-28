@@ -102,7 +102,7 @@ func New(d Deps) *fiber.App {
 		defaultRole = "viewer"
 	}
 	auth.RegisterOAuth(v1, userStore, conns, oauthSettings, d.SessionSecret, d.GitHubOAuth, d.GitLabOAuth, postPath, defaultRole)
-	agentenroll.Register(v1, d.Log, d.Pool, d.PKI, d.GRPCAddr)
+	agentenroll.Register(v1, d.Log, d.Pool, d.PKI, d.PublicGRPCAddr)
 	setup.Register(v1, setup.NewHandler(
 		d.Log, d.Env, d.DatabaseURL, d.ProjectRoot, d.MigrationsDir, d.BootstrapMode,
 		d.SeedAdminEmail, d.SeedAdminPassword, d.Pool,

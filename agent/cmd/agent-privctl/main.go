@@ -6,11 +6,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 )
 
 const (
@@ -63,6 +66,12 @@ func run(args []string) error {
 }
 
 func elevate(dataDir, systemctl string) error {
+	// A restart only elevates the agent when the agent *is* this unit. Under pm2,
+	// nohup or a shell, the drop-in would restart some other (or no) process and
+	// the UI would wait out its timeout with no error.
+	if err := checkCallerInUnit(unitName()); err != nil {
+		return err
+	}
 	if err := ensureServiceUser(dataDir); err != nil {
 		return err
 	}
@@ -74,9 +83,111 @@ func elevate(dataDir, systemctl string) error {
 		return fmt.Errorf("create drop-in dir: %w", err)
 	}
 	if err := os.WriteFile(dropIn, []byte("[Service]\nUser=root\nProtectHome=false\nUnsetEnvironment=AGENT_VERSION\nProtectSystem=false\n"), 0o644); err != nil {
+		if errors.Is(err, syscall.EROFS) {
+			return fmt.Errorf("write drop-in: %s is read-only inside the agent's sandbox; add ReadWritePaths=-%s to the [Service] section of %s: %w",
+				filepath.Dir(dropIn), filepath.Dir(dropIn), unitName(), err)
+		}
 		return fmt.Errorf("write drop-in: %w", err)
 	}
-	return reloadAndRestart(systemctl)
+	if err := runAbs(systemctl, "daemon-reload"); err != nil {
+		return err
+	}
+	if err := checkEffectiveUserRoot(systemctl); err != nil {
+		return err
+	}
+	return runAbs(systemctl, "--no-block", "restart", unitName())
+}
+
+// checkEffectiveUserRoot fails when a later drop-in (or an [Service] override)
+// still sets User= after root.conf, so the restart would bring the agent back
+// unprivileged without any error.
+func checkEffectiveUserRoot(systemctl string) error {
+	out, err := exec.Command(systemctl, "show", "-p", "User", "--value", unitName()).Output()
+	if err != nil {
+		return fmt.Errorf("%s show -p User %s: %w", systemctl, unitName(), err)
+	}
+	if user := strings.TrimSpace(string(out)); user != "root" {
+		return fmt.Errorf("%s still resolves User=%q after writing %s; another drop-in overrides it (see: systemctl cat %s)",
+			unitName(), user, dropInFile(), unitName())
+	}
+	return nil
+}
+
+// checkCallerInUnit walks up from sudo to find the agent process and requires
+// one of its ancestors to live in the unit's cgroup. Skipped where /proc is
+// unavailable (non-Linux).
+func checkCallerInUnit(unit string) error {
+	proc := procRoot()
+	pid := os.Getppid()
+	if _, err := os.Stat(filepath.Join(proc, strconv.Itoa(pid))); err != nil {
+		return nil
+	}
+	outer := ""
+	for i := 0; i < 16 && pid > 1; i++ {
+		cg := readProcFile(proc, pid, "cgroup")
+		if cgroupHasUnit(cg, unit) {
+			return nil
+		}
+		if p := cgroupPath(cg); p != "" {
+			outer = p
+		}
+		pid = parentPID(proc, pid)
+	}
+	return fmt.Errorf("agent is not running as %s (its cgroup is %q); it was started by pm2, nohup or a shell. "+
+		"Stop that process, then run: sudo systemctl enable --now %s", unit, outer, unit)
+}
+
+func procRoot() string {
+	if v := strings.TrimSpace(os.Getenv("CC_PRIVCTL_PROC")); v != "" {
+		return v
+	}
+	return "/proc"
+}
+
+func readProcFile(proc string, pid int, name string) string {
+	b, err := os.ReadFile(filepath.Join(proc, strconv.Itoa(pid), name))
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+func parentPID(proc string, pid int) int {
+	for _, line := range strings.Split(readProcFile(proc, pid, "status"), "\n") {
+		if v, ok := strings.CutPrefix(line, "PPid:"); ok {
+			n, err := strconv.Atoi(strings.TrimSpace(v))
+			if err == nil {
+				return n
+			}
+		}
+	}
+	return 0
+}
+
+// cgroupHasUnit reports whether any hierarchy path in /proc/<pid>/cgroup has
+// the unit as a path segment (e.g. 0::/system.slice/croncompose-agent.service).
+func cgroupHasUnit(cgroup, unit string) bool {
+	for _, line := range strings.Split(cgroup, "\n") {
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		for _, seg := range strings.Split(parts[2], "/") {
+			if seg == unit {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func cgroupPath(cgroup string) string {
+	for _, line := range strings.Split(cgroup, "\n") {
+		if parts := strings.SplitN(line, ":", 3); len(parts) == 3 && parts[2] != "" {
+			return parts[2]
+		}
+	}
+	return ""
 }
 
 func demote(dataDir, systemctl string) error {
