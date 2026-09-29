@@ -55,10 +55,25 @@ configure_ports() {
 
   # gRPC is raw TCP, not HTTP, so a proxy that fronts the web app (Cloudflare Tunnel,
   # nginx, etc.) often can't front it on the same hostname and needs it published
-  # separately (e.g. a Cloudflare Access TCP application on its own hostname). Blank
-  # keeps the common case (one host for everything) a single Enter keypress away.
-  GRPC_ADVERTISE_HOST="$(prompt "Agent gRPC public hostname (blank = same as public URL: $ADVERTISE_HOST)" "${CC_GRPC_ADVERTISE_HOST:-}")"
-  [ -z "$GRPC_ADVERTISE_HOST" ] && GRPC_ADVERTISE_HOST="$ADVERTISE_HOST"
+  # separately (e.g. its own Cloudflare Tunnel/Access TCP application). Blank keeps
+  # the common case (one host for everything) a single Enter keypress away.
+  local grpc_host_raw
+  grpc_host_raw="$(prompt "Agent gRPC public hostname (blank = same as public URL: $ADVERTISE_HOST)" "${CC_GRPC_ADVERTISE_HOST:-}")"
+  if [ -z "$grpc_host_raw" ]; then
+    GRPC_ADVERTISE_HOST="$ADVERTISE_HOST"
+  else
+    # People paste a full https://... URL here just as often as a bare host, and this
+    # field ends up in PUBLIC_GRPC_ADDR (a bare host:port gRPC dial target, never a
+    # URL) and in TLS_HOSTS (a bare SAN list), so it goes through the same splitter
+    # as "Public URL" above. Save/restore ADVERTISE_* around it: normalize_advertise_host
+    # mutates those globals, and everything downstream (PUBLIC_BASE_URL, etc.) still
+    # needs the *web* host's values, not gRPC's.
+    local saved_host="$ADVERTISE_HOST" saved_scheme="$ADVERTISE_SCHEME" saved_port="$ADVERTISE_PORT" saved_proxied="$ADVERTISE_PROXIED"
+    normalize_advertise_host "$grpc_host_raw"
+    GRPC_ADVERTISE_HOST="$ADVERTISE_HOST"
+    [ -n "$ADVERTISE_PORT" ] && warn "ignoring port in gRPC hostname ($ADVERTISE_PORT); using the Agent gRPC port above ($GRPC_PORT) instead"
+    ADVERTISE_HOST="$saved_host"; ADVERTISE_SCHEME="$saved_scheme"; ADVERTISE_PORT="$saved_port"; ADVERTISE_PROXIED="$saved_proxied"
+  fi
 
   ok "backend=$API_PORT  frontend=$WEB_PORT  agent=$GRPC_PORT ($GRPC_ADVERTISE_HOST)"
 }

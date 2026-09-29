@@ -18,11 +18,12 @@ its own hostname.
 - **Installer asks for a separate gRPC hostname** — `./install.sh` now has an
   "Agent gRPC public hostname" question (blank = same as the public URL).
   gRPC is raw TCP, not HTTP, so it's often fronted differently than the web
-  app (for example a Cloudflare Access TCP application on its own hostname).
+  app (for example its own Cloudflare Tunnel/Access TCP application).
   Answering it now correctly writes `PUBLIC_GRPC_ADDR` and extends
   `TLS_HOSTS`; previously neither was set from a separate gRPC hostname, so
   agents behind a hostname-split tunnel could never complete their TLS
-  handshake.
+  handshake. The prompt accepts either a bare hostname or a full URL (it
+  strips the scheme either way, same as the "Public URL" question).
 
 ## Upgrade
 
