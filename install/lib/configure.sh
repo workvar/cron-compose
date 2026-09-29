@@ -51,8 +51,16 @@ configure_ports() {
     WEB_PORT="$(find_free_port "${CC_WEB_PORT:-3000}" "$taken")"
     taken="$taken $WEB_PORT"
   fi
-  GRPC_PORT="$(prompt_port "Agent gRPC port" "${CC_GRPC_PORT:-9077}" "$taken")"
-  ok "backend=$API_PORT  frontend=$WEB_PORT  agent=$GRPC_PORT"
+  GRPC_PORT="$(prompt_port "Agent gRPC port" "${CC_GRPC_PORT:-9090}" "$taken")"
+
+  # gRPC is raw TCP, not HTTP, so a proxy that fronts the web app (Cloudflare Tunnel,
+  # nginx, etc.) often can't front it on the same hostname and needs it published
+  # separately (e.g. a Cloudflare Access TCP application on its own hostname). Blank
+  # keeps the common case (one host for everything) a single Enter keypress away.
+  GRPC_ADVERTISE_HOST="$(prompt "Agent gRPC public hostname (blank = same as public URL: $ADVERTISE_HOST)" "${CC_GRPC_ADVERTISE_HOST:-}")"
+  [ -z "$GRPC_ADVERTISE_HOST" ] && GRPC_ADVERTISE_HOST="$ADVERTISE_HOST"
+
+  ok "backend=$API_PORT  frontend=$WEB_PORT  agent=$GRPC_PORT ($GRPC_ADVERTISE_HOST)"
 }
 
 configure_admin() {
@@ -90,13 +98,21 @@ configure_secrets() {
   SECRETS_MASTER_KEY="$(gen_hex 32)"
   reuse_existing_secrets
   LOG_LEVEL="${CC_LOG_LEVEL:-info}"
-  case "$ADVERTISE_HOST" in
-    localhost|127.0.0.1) TLS_HOSTS="${CC_TLS_HOSTS:-localhost,127.0.0.1}" ;;
-    *)                   TLS_HOSTS="${CC_TLS_HOSTS:-localhost,127.0.0.1,$ADVERTISE_HOST}" ;;
+  # The origin TLS cert (used for agent mTLS, independent of any Cloudflare/nginx
+  # edge cert) needs every hostname an agent might dial as a SAN: the main advertise
+  # host, and the gRPC host too when it's published separately. CC_TLS_HOSTS, if
+  # set, wins outright (the explicit-override escape hatch this always had).
+  local default_tls_hosts="localhost,127.0.0.1"
+  case "$ADVERTISE_HOST" in localhost|127.0.0.1) ;; *) default_tls_hosts="$default_tls_hosts,$ADVERTISE_HOST" ;; esac
+  case "$GRPC_ADVERTISE_HOST" in
+    ""|localhost|127.0.0.1|"$ADVERTISE_HOST") ;;
+    *) default_tls_hosts="$default_tls_hosts,$GRPC_ADVERTISE_HOST" ;;
   esac
-  # SNI the local agent verifies the server cert against. localhost when advertising
-  # locally; otherwise the advertise host (which is also added to TLS_HOSTS above).
-  case "$ADVERTISE_HOST" in localhost|127.0.0.1) AGENT_SNI="localhost" ;; *) AGENT_SNI="$ADVERTISE_HOST" ;; esac
+  TLS_HOSTS="${CC_TLS_HOSTS:-$default_tls_hosts}"
+  # SNI the local agent verifies the server cert against: the host gRPC actually
+  # answers on (localhost when that's loopback-only, otherwise GRPC_ADVERTISE_HOST,
+  # which is also in TLS_HOSTS above so the handshake has a matching SAN).
+  case "$GRPC_ADVERTISE_HOST" in localhost|127.0.0.1) AGENT_SNI="localhost" ;; *) AGENT_SNI="$GRPC_ADVERTISE_HOST" ;; esac
   ok "session and encryption keys ready"
 }
 
@@ -135,9 +151,13 @@ write_env_file() {
   ENV_FILE="$REPO_ROOT/.env"
   API_BASE="http://127.0.0.1:$API_PORT/api/v1"
   # Externally-reachable address: the control plane's public HTTP port fronts the UI
-  # (/app) and REST (/api). The control plane derives PUBLIC_HTTP_URL / the OIDC
-  # redirect / TLS SAN from it, and PUBLIC_GRPC_ADDR from this host + the gRPC port.
+  # (/app) and REST (/api). The control plane derives PUBLIC_HTTP_URL and the OIDC
+  # redirect from it. PUBLIC_GRPC_ADDR is written explicitly below (from
+  # GRPC_ADVERTISE_HOST) rather than left for the control plane to guess, since its
+  # own fallback only knows PUBLIC_BASE_URL's host and would get it wrong whenever
+  # gRPC is published on a different hostname.
   PUBLIC_BASE_URL="${CC_PUBLIC_BASE_URL:-$(public_base_url "$API_PORT")}"
+  PUBLIC_GRPC_ADDR="${CC_PUBLIC_GRPC_ADDR:-$(public_grpc_addr "$GRPC_PORT" "$GRPC_ADVERTISE_HOST")}"
 
   umask 077
   {
@@ -157,6 +177,10 @@ write_env_file() {
     echo "# line (e.g. https://cron.example.com) and restart; it derives the public REST"
     echo "# URL, the OIDC redirect, and the TLS SAN."
     env_line PUBLIC_BASE_URL "$PUBLIC_BASE_URL"
+    echo "# host:port agents dial for gRPC. Defaults to the public URL's host above;"
+    echo "# only differs when the gRPC public hostname question was answered separately"
+    echo "# (e.g. gRPC fronted by its own Cloudflare Access TCP application)."
+    env_line PUBLIC_GRPC_ADDR "$PUBLIC_GRPC_ADDR"
     echo "# web UI (internal; the control plane reverse-proxies /app to it)"
     env_line PORT "$WEB_PORT"
     env_line API_BASE "$API_BASE"
@@ -182,6 +206,7 @@ write_env_file() {
     env_line CC_WEB_PORT "$WEB_PORT"
     env_line CC_API_PORT "$API_PORT"
     env_line CC_GRPC_PORT "$GRPC_PORT"
+    env_line CC_GRPC_ADVERTISE_HOST "$GRPC_ADVERTISE_HOST"
     env_line CC_RUNTIME_DIR "$RUNTIME_DIR"
     env_line CC_ADVERTISE_HOST "$ADVERTISE_HOST"
     env_line CC_ADVERTISE_SCHEME "$ADVERTISE_SCHEME"

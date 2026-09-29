@@ -13,6 +13,9 @@
 #   AGENT_VERSION         release tag to build; defaults to this script's baked tag (or latest)
 #   GITHUB_REPO           owner/repo to clone; default workvar/cron-compose
 #   DATA_DIR              agent state directory; defaults per platform (see below)
+#   AGENT_RUN_AS_ROOT     1 to run the agent as root from install, skipping the
+#                         croncompose service user (Linux only). No Agent root
+#                         access toggle needed afterwards, it already runs as root.
 #
 # Run example:
 #   curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh | \
@@ -201,17 +204,30 @@ _source_agent_sudoers_lib() {
 # --- Linux -----------------------------------------------------------------
 
 install_linux() {
-  echo "==> creating service user and data dir"
-  id -u croncompose >/dev/null 2>&1 || \
-    useradd --system --home-dir "$DATA_DIR" --shell /usr/sbin/nologin croncompose
-  install -d -o croncompose -g croncompose -m 0700 "$DATA_DIR"
+  local run_as_root="${AGENT_RUN_AS_ROOT:-0}"
 
-  build_from_source
-  chown root:root "$BIN_PATH"
-  # Let the service user replace the binary on later source updates.
-  chown croncompose:croncompose "$BIN_PATH"
+  if [[ "$run_as_root" == "1" ]]; then
+    echo "==> creating data dir (running as root, no service user)"
+    install -d -m 0700 "$DATA_DIR"
+    build_from_source
+    chown root:root "$BIN_PATH"
+  else
+    echo "==> creating service user and data dir"
+    id -u croncompose >/dev/null 2>&1 || \
+      useradd --system --home-dir "$DATA_DIR" --shell /usr/sbin/nologin croncompose
+    install -d -o croncompose -g croncompose -m 0700 "$DATA_DIR"
+
+    build_from_source
+    chown root:root "$BIN_PATH"
+    # Let the service user replace the binary on later source updates.
+    chown croncompose:croncompose "$BIN_PATH"
+  fi
 
   echo "==> writing systemd unit"
+  local unit_user_lines=""
+  if [[ "$run_as_root" != "1" ]]; then
+    unit_user_lines=$'User=croncompose\nGroup=croncompose\n'
+  fi
   cat >"$UNIT_PATH" <<EOF
 [Unit]
 Description=CronCompose agent
@@ -219,9 +235,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=croncompose
-Group=croncompose
-Environment=CONTROL_PLANE_ADDR=${CONTROL_PLANE_ADDR}
+${unit_user_lines}Environment=CONTROL_PLANE_ADDR=${CONTROL_PLANE_ADDR}
 Environment=CONTROL_PLANE_HTTP=${CONTROL_PLANE_HTTP}
 Environment=CONTROL_PLANE_SNI=${SNI}
 Environment=DATA_DIR=${DATA_DIR}
@@ -238,23 +252,36 @@ EOF
   # the unit: self-update replaces the binary's linked version, and a pinned
   # Environment=AGENT_VERSION would keep Hello reporting the install-time tag
   # forever (UI stuck on "restarting").
-  sudo -u croncompose \
+  if [[ "$run_as_root" == "1" ]]; then
     CONTROL_PLANE_ADDR="$CONTROL_PLANE_ADDR" \
-    CONTROL_PLANE_HTTP="$CONTROL_PLANE_HTTP" \
-    CONTROL_PLANE_SNI="$SNI" \
-    DATA_DIR="$DATA_DIR" \
-    AGENT_VERSION="$AGENT_VERSION" \
-    "$BIN_PATH" enroll --token="$TOKEN"
+      CONTROL_PLANE_HTTP="$CONTROL_PLANE_HTTP" \
+      CONTROL_PLANE_SNI="$SNI" \
+      DATA_DIR="$DATA_DIR" \
+      AGENT_VERSION="$AGENT_VERSION" \
+      "$BIN_PATH" enroll --token="$TOKEN"
+  else
+    sudo -u croncompose \
+      CONTROL_PLANE_ADDR="$CONTROL_PLANE_ADDR" \
+      CONTROL_PLANE_HTTP="$CONTROL_PLANE_HTTP" \
+      CONTROL_PLANE_SNI="$SNI" \
+      DATA_DIR="$DATA_DIR" \
+      AGENT_VERSION="$AGENT_VERSION" \
+      "$BIN_PATH" enroll --token="$TOKEN"
 
-  _source_agent_sudoers_lib
-  install_agent_sudoers croncompose
+    _source_agent_sudoers_lib
+    install_agent_sudoers croncompose
+  fi
 
   echo "==> starting service"
   systemctl daemon-reload
   systemctl enable --now croncompose-agent.service
 
   echo
-  echo "done. follow logs with: journalctl -u croncompose-agent -f"
+  if [[ "$run_as_root" == "1" ]]; then
+    echo "done, running as root. follow logs with: journalctl -u croncompose-agent -f"
+  else
+    echo "done. follow logs with: journalctl -u croncompose-agent -f"
+  fi
 }
 
 # --- macOS -----------------------------------------------------------------

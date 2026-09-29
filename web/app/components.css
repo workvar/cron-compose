@@ -129,6 +129,32 @@ a.panel:hover {
 .status.info    { --status-fg: var(--info);    --status-bg: var(--info-bg); }
 .status.neutral { --status-fg: var(--neutral); --status-bg: var(--neutral-bg); }
 
+/* ---------- Tradeoff list (install command pros/cons) ---------- */
+.tradeoff-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tradeoff-list__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.tradeoff-list__icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 2px;
+}
+.tradeoff-list__item--good .tradeoff-list__icon { color: var(--ok); }
+.tradeoff-list__item--bad .tradeoff-list__icon { color: var(--danger); }
+
 /* ---------- Circular icon button ---------- */
 .icon-btn {
   display: inline-flex;

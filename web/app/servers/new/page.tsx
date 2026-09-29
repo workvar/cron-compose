@@ -6,6 +6,7 @@ import Link from "next/link";
 import type { CreateServerResponse } from "@/lib/types";
 import { IconChevronLeft, IconCheck } from "@/components/icons";
 import CopyButton from "@/components/CopyButton";
+import TradeoffList from "@/components/TradeoffList";
 
 export default function NewServerPage() {
   const router = useRouter();
@@ -45,19 +46,52 @@ export default function NewServerPage() {
         <div className="page-head">
           <div>
             <h1>Server created</h1>
-            <p className="subtle">Run the install command on <strong>{result.server.name}</strong>. The token is shown once.</p>
+            <p className="subtle">Run one install command on <strong>{result.server.name}</strong>. The token is shown once.</p>
           </div>
         </div>
-        <div className="panel" style={{ maxWidth: 640 }}>
-          <label>Install command</label>
+
+        <div className="panel" style={{ maxWidth: 640, marginBottom: 16 }}>
+          <label>Install as a dedicated user (recommended)</label>
           <div className="code-block" style={{ marginTop: 6 }}>
             <pre className="review-script" style={{ marginTop: 0 }}>{result.install_command}</pre>
             <CopyButton value={result.install_command} label="Copy" />
           </div>
-          <button className="button" style={{ marginTop: 16 }} onClick={() => router.push("/servers")}>
-            <IconCheck /> Done
-          </button>
+          <TradeoffList
+            good={[
+              "Runs as the unprivileged croncompose system user; a compromised job can't touch the rest of the box",
+              "Matches least-privilege practice for anything internet-reachable",
+              "Root access can still be turned on later per-server, on demand, with a passkey",
+            ]}
+            bad={[
+              "The web terminal can only open as the croncompose user until you enable Agent root access",
+              "Installing system packages or editing files outside its home needs sudo rules you add yourself",
+            ]}
+          />
         </div>
+
+        <div className="panel" style={{ maxWidth: 640 }}>
+          <label>Install as root</label>
+          <div className="code-block" style={{ marginTop: 6 }}>
+            <pre className="review-script" style={{ marginTop: 0 }}>{result.install_command_root}</pre>
+            <CopyButton value={result.install_command_root} label="Copy" />
+          </div>
+          <TradeoffList
+            good={[
+              "The web terminal can open as any OS user immediately, nothing else to enable",
+              "No separate Agent root access step, no passkey step-up needed for this",
+              "Simplest choice on a box you already treat as fully trusted (your own homelab, a throwaway VM)",
+            ]}
+            bad={[
+              "Every job, connector op and terminal session runs with full root from the start",
+              "A bug or malicious job on this server has the whole machine, not just its own account",
+              "Harder to demote later: you'd need to reinstall as a dedicated user rather than flip a switch",
+            ]}
+          />
+        </div>
+
+        <button className="button" style={{ marginTop: 16 }} onClick={() => router.push("/servers")}>
+          <IconCheck /> Done
+        </button>
       </>
     );
   }

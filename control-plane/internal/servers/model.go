@@ -46,9 +46,25 @@ type EnrollmentTokenResponse struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+// IssueTokenResponse is the wrapper returned by POST /servers/:id/enrollment-token.
+// It carries ready-to-run install commands alongside the raw token, the same as
+// CreateResponse, so an existing server can be (re)installed as root without
+// re-creating it.
+type IssueTokenResponse struct {
+	Enrollment EnrollmentTokenResponse `json:"enrollment"`
+	// InstallCommand re-enrolls the existing server under its current service user.
+	InstallCommand string `json:"install_command"`
+	// InstallCommandRoot re-enrolls the existing server with the agent running as
+	// root (AGENT_RUN_AS_ROOT=1), skipping the "Agent root access" toggle entirely.
+	InstallCommandRoot string `json:"install_command_root"`
+}
+
 // CreateResponse is the wrapper returned by POST /servers.
 type CreateResponse struct {
 	Server         Server                  `json:"server"`
 	Enrollment     EnrollmentTokenResponse `json:"enrollment"`
 	InstallCommand string                  `json:"install_command"`
+	// InstallCommandRoot is the same install, but the agent runs as root from the
+	// start (AGENT_RUN_AS_ROOT=1) instead of the croncompose service user.
+	InstallCommandRoot string `json:"install_command_root"`
 }

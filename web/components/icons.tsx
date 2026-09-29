@@ -68,6 +68,9 @@ export const IconPorts = (p: P) => (
 export const IconCheck = (p: P) => (
   <svg {...base(p)}><path d="M20 6 9 17l-5-5" /></svg>
 );
+export const IconX = (p: P) => (
+  <svg {...base(p)}><path d="M18 6 6 18M6 6l12 12" /></svg>
+);
 export const IconTarget = (p: P) => (
   <svg {...base(p)}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" /></svg>
 );

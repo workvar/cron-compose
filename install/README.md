@@ -182,10 +182,16 @@ writes one `.env` line that drives all of them:
 PUBLIC_BASE_URL=http://raspberrypi.local:8080    # derives REST URL, gRPC addr, OIDC redirect, TLS SAN
 ```
 
-`PUBLIC_GRPC_ADDR` derives from this host plus the gRPC port, so you don't set it
-separately. To move to another address (for example `https://cron.example.com`), change
-the host/port and restart (`./croncompose-ctl.sh restart`); add the new host to
-`TLS_HOSTS`, or delete `<runtime>/tls` to regenerate the server cert so its SAN covers it.
+`PUBLIC_GRPC_ADDR` derives from this host plus the gRPC port by default, so most
+installs don't set it separately. gRPC is raw TCP, though, not HTTP, so a proxy that
+fronts the web app (Cloudflare Tunnel, nginx) often can't front gRPC on that same
+hostname and needs it published on a hostname of its own (for example a Cloudflare
+Access TCP application). The installer asks for this ("Agent gRPC public hostname",
+blank = same as the public URL); answering it writes `PUBLIC_GRPC_ADDR` with that host
+instead, and also adds it to `TLS_HOSTS` so the server's own cert covers it. To change
+either after the fact, edit `PUBLIC_GRPC_ADDR` and `TLS_HOSTS` in `.env` directly and
+restart (`./croncompose-ctl.sh restart`), or delete `<runtime>/tls` to regenerate the
+server cert.
 
 ## Agent
 
@@ -230,6 +236,9 @@ prompting. Values come from `CC_*` environment variables:
 | `CC_WEB_PORT`        | web UI port (internal; reached via the control plane) | first free at/after `3000`    |
 | `CC_API_PORT`        | REST API port                                      | first free at/after `8080`       |
 | `CC_GRPC_PORT`       | agent gRPC port                                    | first free at/after `9090`       |
+| `CC_GRPC_ADVERTISE_HOST` | hostname agents dial for gRPC, if different from `CC_ADVERTISE_HOST` (e.g. a separate Cloudflare Access TCP hostname) | same as `CC_ADVERTISE_HOST` |
+| `CC_PUBLIC_GRPC_ADDR` | full `host:port` written to `.env` as `PUBLIC_GRPC_ADDR` (overrides the host+port-derived default) | `<grpc advertise host>:<grpc port>` |
+| `CC_TLS_HOSTS`       | comma-separated SANs for the origin TLS cert (overrides the auto-built list) | `localhost,127.0.0.1,<advertise host>[,<grpc advertise host>]` |
 | `CC_ADMIN_EMAIL`     | seed admin email                                   | `admin@example.com`              |
 | `CC_ADMIN_PASSWORD`  | seed admin password                                | generated if empty               |
 | `CC_DB_METHOD`       | `psql` \| `native` \| `existing` \| `docker`        | default path: `psql` if local Postgres is accepted, else `existing`; `native`/`docker` only via `--advanced` or this env |

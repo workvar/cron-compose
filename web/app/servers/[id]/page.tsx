@@ -2,6 +2,7 @@ import Link from "next/link";
 import { apiGet } from "@/lib/api";
 import type { Job, ListResponse, Me, Passkey, Server, UpdateStatus } from "@/lib/types";
 import { AgentRootToggle } from "@/components/AgentRootToggle";
+import { ReinstallAsRoot } from "@/components/ReinstallAsRoot";
 import { JobRow } from "@/components/JobRow";
 import { UpdateServerButton } from "@/components/UpdateServerButton";
 import { ServerActions } from "@/components/ServerActions";
@@ -79,6 +80,8 @@ export default async function ServerDetailPage({ params }: Props) {
       {server.description && <p className="subtle" style={{ marginTop: -8, marginBottom: 18 }}>{server.description}</p>}
 
       {canTerminal && <AgentRootToggle server={server} hasPasskeys={hasPasskeys} />}
+
+      {canTerminal && !server.agent_euid_root && <ReinstallAsRoot serverId={server.id} />}
 
       {canTerminal && updateInfo && (
         <UpdateServerButton

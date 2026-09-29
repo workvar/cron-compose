@@ -75,6 +75,15 @@ export type CreateServerResponse = {
   server: Server;
   enrollment: { token: string; expires_at: string };
   install_command: string;
+  install_command_root: string;
+};
+
+// Returned by POST /servers/:id/enrollment-token: a fresh token for re-running the
+// installer against an existing server, e.g. to move it onto AGENT_RUN_AS_ROOT=1.
+export type IssueTokenResponse = {
+  enrollment: { token: string; expires_at: string };
+  install_command: string;
+  install_command_root: string;
 };
 
 export type Job = {

@@ -41,11 +41,14 @@ normalize_advertise_host() {
   if [ -n "$scheme" ]; then ADVERTISE_PROXIED=1; else ADVERTISE_PROXIED=0; fi
 }
 
-# Bracket IPv6 literals so they can sit in a URL authority.
-url_host() {
-  case "${ADVERTISE_HOST}" in
-    *:*) printf '[%s]' "$ADVERTISE_HOST" ;;
-    *)   printf '%s'   "$ADVERTISE_HOST" ;;
+# Bracket IPv6 literals so they can sit in a URL authority. Defaults to
+# ADVERTISE_HOST; pass an explicit host (e.g. GRPC_ADVERTISE_HOST) to bracket a
+# different one instead.
+url_host() { # [host]
+  local h="${1:-$ADVERTISE_HOST}"
+  case "$h" in
+    *:*) printf '[%s]' "$h" ;;
+    *)   printf '%s'   "$h" ;;
   esac
 }
 
@@ -61,6 +64,9 @@ public_base_url() { # <local-http-port>
 }
 
 # host:port agents dial over gRPC. Always carries a port and never a scheme.
-public_grpc_addr() { # <grpc-port>
-  printf '%s:%s' "$(url_host)" "$1"
+# Uses GRPC_ADVERTISE_HOST when set (gRPC is raw TCP, so it's often fronted on a
+# hostname of its own, separate from the main advertise host), else falls back to
+# ADVERTISE_HOST like everything else. Pass a host explicitly to override either.
+public_grpc_addr() { # <grpc-port> [host]
+  printf '%s:%s' "$(url_host "${2:-${GRPC_ADVERTISE_HOST:-$ADVERTISE_HOST}}")" "$1"
 }

@@ -1,20 +1,33 @@
-# CronCompose v0.0.21
+# CronCompose v0.0.22
 
-The installer's suggested agent gRPC port is now 9077 instead of 9090.
+Choose root or non-root at install time (or switch to root later without waiting
+on the live toggle), and the installer now handles a gRPC endpoint published on
+its own hostname.
 
 ## Highlights
 
-- **Installer suggests gRPC port 9077** — `./install.sh`'s "Agent gRPC port"
-  prompt defaulted to `9090`. It now defaults to `9077`, matching the port
-  already used in agent install commands and in Cloudflare Tunnel routing for
-  remote agents. `.env`'s `GRPC_ADDR` is always written out explicitly no
-  matter which port you pick, so this changes only what a fresh install
-  suggests, not how an install behaves.
+- **Two install commands when creating a server** — the "Add server" page now
+  shows both a dedicated-user install command (recommended, default) and a
+  root install command (`AGENT_RUN_AS_ROOT=1`), each with a pros/cons list so
+  you can pick the right one for the box instead of defaulting to root out of
+  convenience.
+- **"Reinstall as root" on existing servers** — the server detail page can now
+  issue a fresh enrollment token and hand you a root install command directly,
+  without going through the "Agent root access" toggle. Useful as a fallback
+  when the toggle can't settle because the agent hasn't reconnected yet.
+- **Installer asks for a separate gRPC hostname** — `./install.sh` now has an
+  "Agent gRPC public hostname" question (blank = same as the public URL).
+  gRPC is raw TCP, not HTTP, so it's often fronted differently than the web
+  app (for example a Cloudflare Access TCP application on its own hostname).
+  Answering it now correctly writes `PUBLIC_GRPC_ADDR` and extends
+  `TLS_HOSTS`; previously neither was set from a separate gRPC hostname, so
+  agents behind a hostname-split tunnel could never complete their TLS
+  handshake.
 
 ## Upgrade
 
-No action needed for an existing install, this only changes the suggested
-default the next time `./install.sh` runs fresh. To move an existing instance
-from `9090` to `9077` by hand, set `GRPC_ADDR=:9077` in `.env`, update
-`PUBLIC_GRPC_ADDR` and any port-forward or tunnel rule that points at the
-gRPC port to match, and restart the control plane.
+No action needed for an existing install unless your gRPC endpoint lives on a
+different hostname than your web app. If it does, add `PUBLIC_GRPC_ADDR` (its
+`host:port`) and that host in `TLS_HOSTS` to your `.env` by hand, then restart
+the control plane; a fresh `./install.sh` run (or `--advanced` re-run) now
+asks for this directly.

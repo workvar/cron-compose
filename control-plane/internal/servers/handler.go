@@ -68,13 +68,27 @@ func (h *handler) create(c fiber.Ctx) error {
 			Token:     token,
 			ExpiresAt: expiresAt,
 		},
-		InstallCommand: fmt.Sprintf(
-			"curl -sSL %s | sudo TOKEN=%s CONTROL_PLANE_HTTP=%s CONTROL_PLANE_ADDR=%s bash",
-			h.endpoints.InstallScriptURL, token, h.endpoints.PublicHTTPURL, h.endpoints.PublicGRPCAddr,
-		),
+		InstallCommand:     h.installCommand(token, false),
+		InstallCommandRoot: h.installCommand(token, true),
 	}
 	h.audit.Write(c.Context(), auth.CurrentUserID(c), "server.create", "server", srv.ID, map[string]any{"name": srv.Name})
 	return c.Status(fiber.StatusCreated).JSON(resp)
+}
+
+// installCommand builds the one-line installer invocation for a freshly issued
+// enrollment token. asRoot sets AGENT_RUN_AS_ROOT=1 so the agent runs as root from
+// the start instead of the croncompose service user.
+func (h *handler) installCommand(token string, asRoot bool) string {
+	if asRoot {
+		return fmt.Sprintf(
+			"curl -sSL %s | sudo TOKEN=%s CONTROL_PLANE_HTTP=%s CONTROL_PLANE_ADDR=%s AGENT_RUN_AS_ROOT=1 bash",
+			h.endpoints.InstallScriptURL, token, h.endpoints.PublicHTTPURL, h.endpoints.PublicGRPCAddr,
+		)
+	}
+	return fmt.Sprintf(
+		"curl -sSL %s | sudo TOKEN=%s CONTROL_PLANE_HTTP=%s CONTROL_PLANE_ADDR=%s bash",
+		h.endpoints.InstallScriptURL, token, h.endpoints.PublicHTTPURL, h.endpoints.PublicGRPCAddr,
+	)
 }
 
 func (h *handler) get(c fiber.Ctx) error {
@@ -141,7 +155,11 @@ func (h *handler) issueToken(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusInternalServerError, "enroll_token_failed", err)
 	}
 	h.audit.Write(c.Context(), auth.CurrentUserID(c), "server.enrollment_token.issue", "server", srv.ID, nil)
-	return c.JSON(EnrollmentTokenResponse{Token: token, ExpiresAt: expiresAt})
+	return c.JSON(IssueTokenResponse{
+		Enrollment:         EnrollmentTokenResponse{Token: token, ExpiresAt: expiresAt},
+		InstallCommand:     h.installCommand(token, false),
+		InstallCommandRoot: h.installCommand(token, true),
+	})
 }
 
 func coalesceLabels(in map[string]string) map[string]string {
