@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "control-plane",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "set -a; . ./.env; set +a; HTTP_ADDR=:8091 GRPC_ADDR=:9491 PUBLIC_HTTP_URL=http://localhost:8091 exec ./control-plane/bin/control-plane"
+      ],
+      "port": 8091
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "set -a; . ./.env; set +a; API_BASE=http://127.0.0.1:8091/api/v1 PORT=3001; cd web && exec npx next dev -p 3001"
+      ],
+      "port": 3001
+    }
+  ]
+}
