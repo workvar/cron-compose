@@ -51,7 +51,7 @@ configure_ports() {
     WEB_PORT="$(find_free_port "${CC_WEB_PORT:-3000}" "$taken")"
     taken="$taken $WEB_PORT"
   fi
-  GRPC_PORT="$(prompt_port "Agent gRPC port" "${CC_GRPC_PORT:-9090}" "$taken")"
+  GRPC_PORT="$(prompt_port "Agent gRPC port" "${CC_GRPC_PORT:-9077}" "$taken")"
   ok "backend=$API_PORT  frontend=$WEB_PORT  agent=$GRPC_PORT"
 }
 
