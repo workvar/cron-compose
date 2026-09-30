@@ -154,6 +154,58 @@ unit; add it with `systemctl edit` on older installs) or the helper cannot write
 the drop-in. Manual enable/disable steps are on the wiki page
 [Agent root access](https://github.com/workvar/cron-compose/wiki/Agent-Root-Access).
 
+### Installing or reinstalling as root
+
+There are two ways to get a root agent. The toggle above needs a connected agent and
+the sudoers grant. The **root install command** (`AGENT_RUN_AS_ROOT=1`, shown when
+adding a server and as **Reinstall as root** on an existing server's page) skips the
+toggle: the agent runs as root from the start.
+
+The Linux installer replaces a running agent instead of leaving it alone. It stops
+`croncompose-agent.service` before re-enrolling, restarts it afterwards, and prints who
+the agent runs as:
+
+```text
+==> agent pid 4242 runs as uid 0
+```
+
+`systemctl enable --now` on its own never restarts a unit that is already active, so
+without the restart the old process kept running under its old user and the server
+page kept offering **Reinstall as root**. The installer now warns when the running
+process does not match what was asked for, and when another agent process that
+systemd does not manage (pm2, nohup) is running.
+
+The enrolling process runs as root exactly when the root install command was used, and
+it tells the control plane (`run_as_root` in the enroll request). The control plane
+stores that as the desired Agent root access flag, so a root install shows **On (root)**
+instead of **Off** followed by a false "still running as root after demote" error.
+Re-enrolling with the dedicated-user command clears the flag. Agents that predate
+`run_as_root` leave the flag unchanged.
+
+**"Reinstall as root" still shows after reinstalling.** The panel shows while the
+control plane last heard the agent report non-root. On the host:
+
+```sh
+systemctl show -p User,MainPID croncompose-agent
+ps -o user,pid,cmd -p "$(systemctl show -p MainPID --value croncompose-agent)"
+pgrep -af 'croncompose-agent run'      # exactly one process, the MainPID
+```
+
+The MainPID process must run as root. If it does not, `sudo systemctl restart
+croncompose-agent` makes it pick up the current unit.
+
+### Toggle changed while the agent was offline
+
+The desired flag is saved before the command is sent. If the agent was offline or
+reconnecting at that moment the command was lost, and the switch sat on **On (waiting)**
+until the 60s timeout. When the agent next connects, the control plane re-sends the
+command if the agent's reported privileges still disagree with the flag.
+
+It re-sends once per desired value. A host that can never elevate (pm2, missing
+sudoers grant) reports its error instead of restarting in a loop; flip the switch
+again to retry. The record is in memory, so a control plane restart allows one more
+re-send.
+
 WebAuthn relying-party ID is the hostname of `PUBLIC_BASE_URL` (or `PUBLIC_HTTP_URL`).
 Set it to the URL operators open in the browser.
 

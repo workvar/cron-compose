@@ -45,6 +45,11 @@ This is the highest-risk boundary: an agent runs whatever scripts the control pl
   grants only those two argv forms (plus existing connector/Ports paths) — never
   `NOPASSWD: ALL`. Disabling the switch must demote; a failed demotion is an ops
   incident. Passkeys use the hostname of `PUBLIC_BASE_URL` as the WebAuthn RP ID.
+- A **root install** (`AGENT_RUN_AS_ROOT=1`) does not use the passkey step-up. What
+  authorizes it is a one-time enrollment token plus root on the host. Enrollment
+  records the choice as the Agent root access flag, so the server page agrees
+  with what is actually running (it is not written to the audit log). Issue enrollment tokens only to people
+  who may run an agent as root.
 
 ## Secrets
 

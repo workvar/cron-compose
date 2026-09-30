@@ -57,6 +57,7 @@ type Gateway struct {
 	onFailed    FailedRunHook
 	onDeployFin DeployFinishedHook
 	progress    *UpdateProgressTracker
+	rootSent    *rootDelivery
 	grpc        *grpc.Server
 	lis         net.Listener
 }
@@ -74,6 +75,7 @@ func New(addr string, log *slog.Logger, pool *pgxpool.Pool, bundle *pki.Bundle, 
 		pending:   NewPendingRequests(),
 		users:     NewPendingUserRequests(),
 		progress:  NewUpdateProgressTracker(),
+		rootSent:  newRootDelivery(),
 		resolver:  resolver,
 	}
 }
@@ -103,13 +105,10 @@ func (g *Gateway) SendAgentUpdate(serverID string, up *agentv1.UpdateAgent) erro
 // SendAgentRootCommand asks a connected agent to elevate (enabled=true) or demote.
 // Returns ErrAgentOffline when no stream is registered, matching SendAgentUpdate.
 func (g *Gateway) SendAgentRootCommand(serverID string, enabled bool) error {
-	if err := g.registry.Send(serverID, &agentv1.ServerMessage{
-		Body: &agentv1.ServerMessage_AgentRootCommand{
-			AgentRootCommand: &agentv1.AgentRootCommand{Enabled: enabled},
-		},
-	}); err != nil {
+	if err := g.registry.Send(serverID, agentRootMessage(enabled)); err != nil {
 		return err
 	}
+	g.rootSent.markSent(serverID, enabled)
 	g.progress.ClearRootError(serverID)
 	return nil
 }
@@ -174,7 +173,9 @@ func (g *Gateway) Start(_ context.Context) error {
 
 	creds := credentials.NewTLS(tlsCfg)
 	g.grpc = grpc.NewServer(grpc.Creds(creds))
-	agentv1.RegisterAgentServiceServer(g.grpc, newService(g.log, g.pool, g.registry, g.broker, g.terminals, g.pending, g.users, g.logMaxBytes, g.update, g.resolver, g.onFailed, g.onDeployFin, g.progress))
+	svc := newService(g.log, g.pool, g.registry, g.broker, g.terminals, g.pending, g.users, g.logMaxBytes, g.update, g.resolver, g.onFailed, g.onDeployFin, g.progress)
+	svc.rootSent = g.rootSent
+	agentv1.RegisterAgentServiceServer(g.grpc, svc)
 
 	go func() {
 		g.log.Info("grpc listening (mTLS)", "addr", g.addr)

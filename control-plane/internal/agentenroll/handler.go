@@ -30,6 +30,9 @@ type Request struct {
 	AgentVersion string `json:"agent_version"`
 	CSRPEM       string `json:"csr_pem"`        // raw PEM or base64-wrapped PEM
 	CSRBase64    string `json:"csr_pem_base64"` // optional, convenience for clients
+	// RunAsRoot is nil for agents that predate the field, so they leave the stored
+	// agent-root flag alone. See root_intent.go.
+	RunAsRoot *bool `json:"run_as_root"`
 }
 
 // Response is the JSON body returned on success.
@@ -87,6 +90,12 @@ func (h *handler) enroll(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": fiber.Map{"code": "bind_failed", "message": err.Error()},
 		})
+	}
+
+	if err := h.recordRootIntent(c.Context(), serverID, req.RunAsRoot); err != nil {
+		// The cert is already issued and the token spent, so do not fail the enrollment.
+		// The flag can still be set from the server page.
+		h.log.Warn("record agent root intent failed", "server_id", serverID, "err", err)
 	}
 
 	h.log.Info("agent enrolled", "server_id", serverID, "hostname", req.Hostname)

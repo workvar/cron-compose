@@ -79,6 +79,7 @@ func cmdEnroll(args []string) int {
 		Arch:         runtime.GOARCH,
 		AgentVersion: cfg.AgentVersion,
 		CSRPEM:       string(csr.CSRPEM),
+		RunAsRoot:    os.Geteuid() == 0,
 	})
 	if err != nil {
 		log.Error("enroll failed", "err", err)

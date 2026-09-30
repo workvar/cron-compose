@@ -161,6 +161,7 @@ func (s *service) onHello(ctx context.Context, serverID string, h *agentv1.Hello
 		return err
 	}
 	s.progress.ReconcileRootError(serverID, enabled, h.GetEuidRoot())
+	s.repushRootCommand(serverID, enabled, h.GetEuidRoot())
 	return nil
 }
 

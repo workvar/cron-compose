@@ -21,6 +21,9 @@ type Request struct {
 	Arch         string `json:"arch"`
 	AgentVersion string `json:"agent_version"`
 	CSRPEM       string `json:"csr_pem"`
+	// RunAsRoot is true when the enrolling process is root, which is how the installer
+	// tells the control plane whether the agent was installed to run as root.
+	RunAsRoot bool `json:"run_as_root"`
 }
 
 // Response is returned by the control plane.

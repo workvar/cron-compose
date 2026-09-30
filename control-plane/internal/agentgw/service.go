@@ -30,6 +30,7 @@ type service struct {
 	onFailed    FailedRunHook
 	onDeployFin DeployFinishedHook
 	progress    *UpdateProgressTracker
+	rootSent    *rootDelivery
 }
 
 func newService(log *slog.Logger, pool *pgxpool.Pool, reg *Registry, broker *LogBroker, terminals *TerminalBus, pending *PendingRequests, users *PendingUserRequests, logMaxBytes int, update UpdatePolicy, resolver SecretResolver, onFailed FailedRunHook, onDeployFin DeployFinishedHook, progress *UpdateProgressTracker) *service {

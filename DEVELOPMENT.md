@@ -120,6 +120,26 @@ Agent:
 | `CONTROL_PLANE_SNI`       | `localhost`                            | server name to verify against in TLS   |
 | `DATA_DIR`                | `/var/lib/croncompose`                 | identity + tls + jobs cache live here  |
 
+## Tests for agent root access
+
+```sh
+# Go unit tests (no database needed)
+(cd control-plane && go test ./internal/agentgw/ ./internal/agentenroll/ ./internal/servers/)
+(cd agent && go test ./internal/enroll/ ./cmd/agent-privctl/ ./internal/runtime/)
+
+# Installer helpers (stubbed systemctl, no root needed)
+bash scripts/install-agent_test.sh
+
+# Database-backed tests: onHello re-send and the enroll root flag. Skipped unless set.
+# Run packages one at a time (-p 1); they migrate the same database.
+INTEGRATION_DB_URL='postgres://user:pass@localhost:5432/cc_test?sslmode=disable' \
+  go test -p 1 ./internal/agentgw/ ./internal/agentenroll/   # from control-plane/
+```
+
+`agent/internal/selfupdate` tests expect a read-only directory to refuse writes, so
+they fail when run as root (for example in a root container). Run the agent suite as a
+normal user.
+
 ## What's deferred to later phases
 
 - Persistent agent-side buffer/replay for very long offline periods (the broker drops

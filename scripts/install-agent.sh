@@ -201,6 +201,56 @@ _source_agent_sudoers_lib() {
   rm -f "$tmp"
 }
 
+# --- systemd service helpers (Linux) -----------------------------------------
+# A reinstall must replace a running agent. `systemctl enable --now` never
+# restarts a unit that is already active, so on a reinstall the old process (often
+# a different user, e.g. croncompose when switching to root) would keep running and
+# keep reporting its old privileges. These helpers stop it before re-enrolling and
+# restart it afterwards, then report who the agent really runs as.
+
+AGENT_UNIT=croncompose-agent.service
+
+stop_existing_agent() {
+  if systemctl is-active --quiet "$AGENT_UNIT" 2>/dev/null; then
+    echo "==> stopping the running agent before re-enrolling"
+    systemctl stop "$AGENT_UNIT"
+  fi
+}
+
+start_agent_service() {
+  systemctl daemon-reload
+  systemctl enable "$AGENT_UNIT"
+  systemctl restart "$AGENT_UNIT"
+}
+
+# report_agent_user <1|0>: 1 when the install asked for a root agent. Prints the
+# user the agent process runs as and warns on a mismatch or on a stray copy that
+# systemd does not manage (pm2, nohup). Never fails the install.
+report_agent_user() {
+  local want_root="${1:-0}" pid="" uid="" stray="" i
+  for i in 1 2 3 4 5; do
+    pid="$(systemctl show -p MainPID --value "$AGENT_UNIT" 2>/dev/null || true)"
+    if [[ -n "$pid" && "$pid" != "0" ]]; then break; fi
+    sleep 1
+  done
+  if [[ -z "$pid" || "$pid" == "0" ]]; then
+    echo "warning: $AGENT_UNIT has no running process yet; check: journalctl -u croncompose-agent -n 50" >&2
+    return 0
+  fi
+  uid="$(awk '/^Uid:/ {print $2; exit}' "${PROC_ROOT:-/proc}/$pid/status" 2>/dev/null || true)"
+  if [[ "$want_root" == "1" && "$uid" != "0" ]]; then
+    echo "warning: asked for a root agent but pid $pid runs as uid ${uid:-unknown}; check: systemctl cat $AGENT_UNIT" >&2
+  elif [[ "$want_root" != "1" && "$uid" == "0" ]]; then
+    echo "warning: asked for a non-root agent but pid $pid runs as root; check: systemctl cat $AGENT_UNIT" >&2
+  else
+    echo "==> agent pid $pid runs as uid ${uid:-unknown}"
+  fi
+  stray="$(pgrep -f "^${BIN_PATH} run" 2>/dev/null | grep -vx "$pid" | tr '\n' ' ' || true)"
+  if [[ -n "${stray// /}" ]]; then
+    echo "warning: another agent process not managed by systemd is running (pid ${stray}); stop it so it cannot shadow the service" >&2
+  fi
+}
+
 # --- Linux -----------------------------------------------------------------
 
 install_linux() {
@@ -247,6 +297,8 @@ RestartSec=5s
 WantedBy=multi-user.target
 EOF
 
+  stop_existing_agent
+
   echo "==> enrolling"
   # AGENT_VERSION is only for this one-shot enroll process. Do not bake it into
   # the unit: self-update replaces the binary's linked version, and a pinned
@@ -273,8 +325,8 @@ EOF
   fi
 
   echo "==> starting service"
-  systemctl daemon-reload
-  systemctl enable --now croncompose-agent.service
+  start_agent_service
+  report_agent_user "$run_as_root"
 
   echo
   if [[ "$run_as_root" == "1" ]]; then
