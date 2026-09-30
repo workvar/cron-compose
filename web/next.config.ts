@@ -5,7 +5,7 @@ import type { NextConfig } from "next";
 // when pm2 starts it with another.
 // API_BASE is the control-plane versioned root (…/api/v1). Rewrites below strip that
 // suffix so both /api/foo and /api/v1/foo proxy correctly. Concatenating path onto
-// API_BASE used to turn CONTROL_PLANE_HTTP=…/api/v1 into /api/v1/v1/… (401 missing session).
+// API_BASE used to turn AGENT_ENROLL_HTTP=…/api/v1 into /api/v1/v1/… (401 missing session).
 const apiBase = process.env.API_BASE ?? "http://localhost:8080/api/v1";
 const apiOrigin = apiBase.replace(/\/api\/v1\/?$/, "");
 
@@ -39,7 +39,7 @@ const config: NextConfig = {
         { source: "/", destination: `${self}/app/index.html`, basePath: false },
       ],
       afterFiles: [
-        // More specific first: agents/docs often use …/api/v1 as CONTROL_PLANE_HTTP.
+        // More specific first: agents/docs often use …/api/v1 as AGENT_ENROLL_HTTP.
         { source: "/api/v1/:path*", destination: `${apiOrigin}/api/v1/:path*`, basePath: false },
         { source: "/api/:path*", destination: `${apiOrigin}/api/v1/:path*`, basePath: false },
       ],

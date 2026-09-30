@@ -81,12 +81,12 @@ func (h *handler) create(c fiber.Ctx) error {
 func (h *handler) installCommand(token string, asRoot bool) string {
 	if asRoot {
 		return fmt.Sprintf(
-			"curl -sSL %s | sudo TOKEN=%s CONTROL_PLANE_HTTP=%s CONTROL_PLANE_ADDR=%s AGENT_RUN_AS_ROOT=1 bash",
+			"curl -sSL %s | sudo TOKEN=%s AGENT_ENROLL_HTTP=%s AGENT_GRPC_ADDR=%s AGENT_RUN_AS_ROOT=1 bash",
 			h.endpoints.InstallScriptURL, token, h.endpoints.PublicHTTPURL, h.endpoints.PublicGRPCAddr,
 		)
 	}
 	return fmt.Sprintf(
-		"curl -sSL %s | sudo TOKEN=%s CONTROL_PLANE_HTTP=%s CONTROL_PLANE_ADDR=%s bash",
+		"curl -sSL %s | sudo TOKEN=%s AGENT_ENROLL_HTTP=%s AGENT_GRPC_ADDR=%s bash",
 		h.endpoints.InstallScriptURL, token, h.endpoints.PublicHTTPURL, h.endpoints.PublicGRPCAddr,
 	)
 }
