@@ -203,6 +203,16 @@ fallback, so installed agents keep running. If both spellings are set to differe
 values the new name wins, and the agent logs a warning naming the ignored one. The
 install command shown in the UI still uses the old names; the installer accepts both.
 
+### GRPC hostname without a port
+
+When the gRPC hostname already maps to the gRPC port at its edge (a tunnel or proxy
+rule), give the agent just the hostname: `AGENT_GRPC_ADDR=grpc.example.com`. A bare host
+means port 443, so nothing pins the listener's own port. Set
+`PUBLIC_GRPC_ADDR=grpc.example.com` on the control plane so the install command and the
+address saved at enrollment carry the bare host too. `host:port` still works and is
+needed when the endpoint is not on 443. Agents older than this change need the explicit
+`:443`.
+
 ### Agent on the same host as the control plane
 
 The install command bakes the public gRPC address into the unit. Behind Cloudflare's

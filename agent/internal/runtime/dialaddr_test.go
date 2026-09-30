@@ -9,7 +9,8 @@ func TestDialAddr(t *testing.T) {
 	cases := map[string]string{
 		"":                        cfg,
 		":9077":                   cfg,
-		"garbage":                 cfg,
+		"not a host":              cfg,
+		"grpc.example.com":        "grpc.example.com",
 		"agents.example.com:5152": "agents.example.com:5152",
 	}
 	for enrolled, want := range cases {

@@ -162,8 +162,11 @@ func sha256Hex(s string) string {
 // ":9077"). The agent then keeps the AGENT_GRPC_ADDR it was installed with
 // instead of dialing whatever listens on that port on its own machine.
 func advertisedGRPCAddr(addr string) string {
-	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))
-	if err != nil || host == "" {
+	addr = strings.TrimSpace(addr)
+	if addr == "" || strings.HasPrefix(addr, ":") || strings.ContainsAny(addr, " \t/") {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(addr); err == nil && host == "" {
 		return ""
 	}
 	return addr

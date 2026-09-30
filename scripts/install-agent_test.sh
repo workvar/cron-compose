@@ -48,7 +48,7 @@ cat >"$WORK/bin/pgrep" <<'SH'
 for p in $FAKE_PGREP; do echo "$p"; done
 SH
 printf '#!/usr/bin/env bash\nexit 0\n' >"$WORK/bin/sleep"
-printf '#!/usr/bin/env bash\n[ "${FAKE_TCP_OK:-1}" = "1" ]\n' >"$WORK/bin/timeout"
+printf '#!/usr/bin/env bash\necho "timeout $*" >>"$CALLS"\n[ "${FAKE_TCP_OK:-1}" = "1" ]\n' >"$WORK/bin/timeout"
 chmod +x "$WORK/bin/"*
 
 # run_fn <function> [args...]: run a helper in a clean subshell; stdout+stderr on stdout.
@@ -125,3 +125,9 @@ out="$(FAKE_ENV='AGENT_GRPC_ADDR=127.0.0.1:9077 CONTROL_PLANE_ADDR=grpc.example.
 contains "$out" "stale CONTROL_PLANE_ADDR=grpc.example.com:9077" || fail "legacy: not reported: $out"
 out="$(FAKE_ENV='AGENT_GRPC_ADDR=127.0.0.1:9077 CONTROL_PLANE_ADDR=127.0.0.1:9077' run_fn check_agent_endpoint)"
 contains "$out" "stale" && fail "legacy: same value must be quiet: $out"
+
+# 12. A bare hostname is probed on 443, an explicit port is probed as given.
+FAKE_ENV='AGENT_GRPC_ADDR=grpc.example.com' run_fn check_agent_endpoint >/dev/null
+contains "$(cat "$CALLS")" "/dev/tcp/grpc.example.com/443" || fail "bare host: not probed on 443: $(cat "$CALLS")"
+CONTROL_PLANE_ADDR=grpc.example.com FAKE_ENV='AGENT_GRPC_ADDR=grpc.example.com:9077' run_fn check_agent_endpoint >/dev/null
+contains "$(cat "$CALLS")" "/dev/tcp/grpc.example.com/9077" || fail "host:port: not probed as given: $(cat "$CALLS")"

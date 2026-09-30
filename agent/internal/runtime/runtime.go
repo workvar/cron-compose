@@ -8,7 +8,6 @@ import (
 	"crypto/tls"
 	"io"
 	"log/slog"
-	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -136,8 +135,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 // a remote agent dial whatever listens on that port locally. Installer-managed
 // local agents set AGENT_GRPC_ADDR=127.0.0.1:<port>, so the fallback is safe.
 func dialAddr(configured, enrolled string) string {
-	host, _, err := net.SplitHostPort(enrolled)
-	if err != nil || host == "" {
+	if !transport.HasHost(enrolled) {
 		return configured
 	}
 	return enrolled

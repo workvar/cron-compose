@@ -23,6 +23,7 @@ type Client struct {
 
 // Dial opens a mTLS connection to the control plane.
 func Dial(ctx context.Context, addr string, tlsCfg *tls.Config) (*Client, error) {
+	addr = NormalizeAddr(addr)
 	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	conn, err := grpc.DialContext(dialCtx, addr,

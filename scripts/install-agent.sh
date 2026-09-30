@@ -8,7 +8,8 @@
 #   TOKEN                 one-time enrollment token from the UI (required)
 #   AGENT_ENROLL_HTTP     public REST base for enroll, e.g. https://cc.example.com/api
 #                         (not …/api/v1 — that doubles under a Next.js front and 401s)
-#   AGENT_GRPC_ADDR       host:port of the mTLS gRPC endpoint, e.g. cc.example.com:9090
+#   AGENT_GRPC_ADDR       mTLS gRPC endpoint: host:port, or a bare host (port 443) when its
+#                         hostname already maps to the gRPC port, e.g. grpc.example.com
 #   AGENT_GRPC_SNI        server name to verify against (defaults to host portion of ADDR)
 #   (the old CONTROL_PLANE_HTTP / _ADDR / _SNI names are still accepted)
 #   AGENT_VERSION         release tag to build; defaults to this script's baked tag (or latest)
@@ -273,7 +274,9 @@ check_agent_endpoint() {
     echo "warning: the service dials $got, not the $want this install asked for; a systemd drop-in overrides it (${drop:-see: systemctl cat $AGENT_UNIT})" >&2
     want="$got"
   fi
-  if ! timeout 5 bash -c "exec 3<>/dev/tcp/${want%:*}/${want##*:}" 2>/dev/null; then
+  local probe_host="${want%:*}" probe_port="${want##*:}"
+  if [[ "$want" != *:* ]]; then probe_host="$want" probe_port=443; fi   # a bare host means 443
+  if ! timeout 5 bash -c "exec 3<>/dev/tcp/${probe_host}/${probe_port}" 2>/dev/null; then
     echo "warning: cannot open a TCP connection to $want, so the agent will retry forever and never report its privileges. Raw gRPC does not pass Cloudflare's proxy; on the control plane host use AGENT_GRPC_ADDR=127.0.0.1:<port> with AGENT_GRPC_SNI set to the certificate hostname" >&2
   fi
 }

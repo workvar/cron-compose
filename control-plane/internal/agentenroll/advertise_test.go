@@ -8,7 +8,9 @@ func TestAdvertisedGRPCAddr(t *testing.T) {
 	cases := map[string]string{
 		":9077":                   "",
 		"":                        "",
-		"garbage":                 "",
+		"not a host":              "",
+		"https://x.example.com/":  "",
+		"grpc.example.com":        "grpc.example.com",
 		"agents.example.com:5152": "agents.example.com:5152",
 		"127.0.0.1:9090":          "127.0.0.1:9090",
 	}
