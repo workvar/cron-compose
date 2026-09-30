@@ -1,34 +1,44 @@
-# CronCompose v0.0.22
+# CronCompose v0.0.23
 
-Choose root or non-root at install time (or switch to root later without waiting
-on the live toggle), and the installer now handles a gRPC endpoint published on
-its own hostname.
+Fixes the "Enable as root" toggle and the "Reinstall as root" panel staying on
+screen after an agent was installed as root. Root installs are now recorded, the
+installer makes sure the new agent is the one running, and a toggle change made
+while the agent was offline is delivered when it reconnects.
 
 ## Highlights
 
-- **Two install commands when creating a server** — the "Add server" page now
-  shows both a dedicated-user install command (recommended, default) and a
-  root install command (`AGENT_RUN_AS_ROOT=1`), each with a pros/cons list so
-  you can pick the right one for the box instead of defaulting to root out of
-  convenience.
-- **"Reinstall as root" on existing servers** — the server detail page can now
-  issue a fresh enrollment token and hand you a root install command directly,
-  without going through the "Agent root access" toggle. Useful as a fallback
-  when the toggle can't settle because the agent hasn't reconnected yet.
-- **Installer asks for a separate gRPC hostname** — `./install.sh` now has an
-  "Agent gRPC public hostname" question (blank = same as the public URL).
-  gRPC is raw TCP, not HTTP, so it's often fronted differently than the web
-  app (for example its own Cloudflare Tunnel/Access TCP application).
-  Answering it now correctly writes `PUBLIC_GRPC_ADDR` and extends
-  `TLS_HOSTS`; previously neither was set from a separate gRPC hostname, so
-  agents behind a hostname-split tunnel could never complete their TLS
-  handshake. The prompt accepts either a bare hostname or a full URL (it
-  strips the scheme either way, same as the "Public URL" question).
+- **Installer replaces the running agent.** Re-running the install command used
+  to leave the old non-root process alive, because `systemctl enable --now`
+  does not restart an active unit. The installer now stops the agent before
+  re-enrolling and restarts it afterwards.
+- **Installer reports who the agent runs as.** After starting, it prints the
+  agent pid and uid, and warns when that does not match the mode you chose or
+  when a stray non-systemd agent process is still running.
+- **Root installs show as On (root).** The agent now tells the control plane at
+  enrollment whether it runs as root, so the flag matches reality from the first
+  connection. This covers macOS root installs too. Agents older than this
+  release do not send the field, and the control plane leaves the flag alone.
+- **Toggle changes are no longer lost while offline.** If the agent was
+  disconnected when you flipped the switch, the control plane sends the command
+  once when the agent next connects. It sends once per desired value, so a host
+  that cannot elevate (pm2, no sudoers grant) reports its error instead of
+  restarting in a loop.
+- **Legacy root agents are never demoted automatically.** A turned-off flag is
+  only re-sent as a demote when an operator switched it off. Agents installed as
+  root before this release keep running as root.
+- **Tests and docs.** New installer shell tests, agent enroll contract test,
+  control-plane unit and database tests, and new sections in `docs/operations.md`,
+  `docs/security.md` and `DEVELOPMENT.md`.
 
 ## Upgrade
 
-No action needed for an existing install unless your gRPC endpoint lives on a
-different hostname than your web app. If it does, add `PUBLIC_GRPC_ADDR` (its
-`host:port`) and that host in `TLS_HOSTS` to your `.env` by hand, then restart
-the control plane; a fresh `./install.sh` run (or `--advanced` re-run) now
-asks for this directly.
+No database migration. Upgrade the control plane, then install the new agent
+build on your hosts.
+
+A host that already reinstalled as root on v0.0.22 and still shows the toggle is
+most likely running the old non-root process. Run this once on that host:
+
+    sudo systemctl restart croncompose-agent
+
+Root installs made with an older agent will not be marked as root until the new
+agent enrolls or reconnects with this release.
