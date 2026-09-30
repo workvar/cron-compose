@@ -109,6 +109,9 @@ func cmdRun(_ []string) int {
 		return 1
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	for _, w := range cfg.Warnings {
+		log.Warn("conflicting endpoint settings", "detail", w)
+	}
 
 	id, err := identity.Load(cfg.DataDir)
 	if err != nil {

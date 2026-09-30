@@ -74,8 +74,8 @@ Install an agent on Linux or macOS (needs `git` and Go 1.25+):
 ```sh
 curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh | \
   sudo TOKEN=<token> \
-       CONTROL_PLANE_HTTP=https://<host>/api/v1 \
-       CONTROL_PLANE_ADDR=<host>:9090 \
+       AGENT_ENROLL_HTTP=https://<host>/api/v1 \
+       AGENT_GRPC_ADDR=<host>:9090 \
        bash
 ```
 
@@ -194,14 +194,23 @@ pgrep -af 'croncompose-agent run'      # exactly one process, the MainPID
 The MainPID process must run as root. If it does not, `sudo systemctl restart
 croncompose-agent` makes it pick up the current unit.
 
+### Agent variable names
+
+The agent reads `AGENT_GRPC_ADDR`, `AGENT_GRPC_SNI` and `AGENT_ENROLL_HTTP`, which cannot
+be mistaken for the control plane's own `GRPC_ADDR` / `PUBLIC_GRPC_ADDR` when both share
+one `.env`. The old `CONTROL_PLANE_ADDR`, `_SNI` and `_HTTP` names still work as a
+fallback, so installed agents keep running. If both spellings are set to different
+values the new name wins, and the agent logs a warning naming the ignored one. The
+install command shown in the UI still uses the old names; the installer accepts both.
+
 ### Agent on the same host as the control plane
 
 The install command bakes the public gRPC address into the unit. Behind Cloudflare's
 proxy that address cannot carry raw gRPC, so an agent on the control plane host
 never connects and the page keeps its old privileges. After starting, the installer
 warns when the address cannot be reached, when a systemd drop-in overrides
-`CONTROL_PLANE_ADDR`, and when another agent process (any path) is running. Fix it
-with `CONTROL_PLANE_ADDR=127.0.0.1:<grpc port>` and `CONTROL_PLANE_SNI=<cert host>`
+`AGENT_GRPC_ADDR`, and when another agent process (any path) is running. Fix it
+with `AGENT_GRPC_ADDR=127.0.0.1:<grpc port>` and `AGENT_GRPC_SNI=<cert host>`
 in the install command, and stop any hand-started agent so only one runs.
 
 ### Toggle changed while the agent was offline

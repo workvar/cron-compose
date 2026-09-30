@@ -111,7 +111,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 
 	addr := dialAddr(r.cfg.ControlPlaneAddr, r.ident.ControlPlaneGRPCAddr)
 	if addr != r.ident.ControlPlaneGRPCAddr && r.ident.ControlPlaneGRPCAddr != "" {
-		r.log.Warn("ignoring enrolled control-plane address without a host; using CONTROL_PLANE_ADDR",
+		r.log.Warn("ignoring enrolled control-plane address without a host; using AGENT_GRPC_ADDR",
 			"enrolled", r.ident.ControlPlaneGRPCAddr, "using", addr)
 	}
 
@@ -134,7 +134,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 // dialAddr prefers the gRPC address saved at enrollment, but ignores one with no
 // host: older control planes returned their listen address (":9077"), which made
 // a remote agent dial whatever listens on that port locally. Installer-managed
-// local agents set CONTROL_PLANE_ADDR=127.0.0.1:<port>, so the fallback is safe.
+// local agents set AGENT_GRPC_ADDR=127.0.0.1:<port>, so the fallback is safe.
 func dialAddr(configured, enrolled string) string {
 	host, _, err := net.SplitHostPort(enrolled)
 	if err != nil || host == "" {

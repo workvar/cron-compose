@@ -4,7 +4,7 @@
 # on Windows. Install it on Linux or macOS instead:
 #
 #   curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh | `
-#     sudo TOKEN=<token> CONTROL_PLANE_HTTP=https://<host>/api/v1 CONTROL_PLANE_ADDR=<host>:9090 bash
+#     sudo TOKEN=<token> AGENT_ENROLL_HTTP=https://<host>/api/v1 AGENT_GRPC_ADDR=<host>:9090 bash
 #
 # Baked release: __VERSION__
 

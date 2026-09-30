@@ -115,9 +115,9 @@ Agent:
 
 | Var                       | Default                                | Notes                                  |
 |---------------------------|----------------------------------------|----------------------------------------|
-| `CONTROL_PLANE_ADDR`      | `localhost:9090`                       | mTLS gRPC                              |
-| `CONTROL_PLANE_HTTP`      | `http://localhost:8080/api/v1`         | for the one-time enroll REST call      |
-| `CONTROL_PLANE_SNI`       | `localhost`                            | server name to verify against in TLS   |
+| `AGENT_GRPC_ADDR`      | `localhost:9090`                       | mTLS gRPC                              |
+| `AGENT_ENROLL_HTTP`      | `http://localhost:8080/api/v1`         | for the one-time enroll REST call      |
+| `AGENT_GRPC_SNI`       | `localhost`                            | server name to verify against in TLS   |
 | `DATA_DIR`                | `/var/lib/croncompose`                 | identity + tls + jobs cache live here  |
 
 ## Tests for agent root access

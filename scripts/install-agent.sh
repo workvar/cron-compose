@@ -6,10 +6,11 @@
 #
 # Required env (or flags):
 #   TOKEN                 one-time enrollment token from the UI (required)
-#   CONTROL_PLANE_HTTP    public REST base for enroll, e.g. https://cc.example.com/api
+#   AGENT_ENROLL_HTTP     public REST base for enroll, e.g. https://cc.example.com/api
 #                         (not …/api/v1 — that doubles under a Next.js front and 401s)
-#   CONTROL_PLANE_ADDR    host:port of the mTLS gRPC endpoint, e.g. cc.example.com:9090
-#   CONTROL_PLANE_SNI     server name to verify against (defaults to host portion of ADDR)
+#   AGENT_GRPC_ADDR       host:port of the mTLS gRPC endpoint, e.g. cc.example.com:9090
+#   AGENT_GRPC_SNI        server name to verify against (defaults to host portion of ADDR)
+#   (the old CONTROL_PLANE_HTTP / _ADDR / _SNI names are still accepted)
 #   AGENT_VERSION         release tag to build; defaults to this script's baked tag (or latest)
 #   GITHUB_REPO           owner/repo to clone; default workvar/cron-compose
 #   DATA_DIR              agent state directory; defaults per platform (see below)
@@ -19,8 +20,8 @@
 #
 # Run example:
 #   curl -sSL https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh | \
-#     sudo TOKEN=abc CONTROL_PLANE_HTTP=https://cc.example.com/api \
-#          CONTROL_PLANE_ADDR=cc.example.com:9090 bash
+#     sudo TOKEN=abc AGENT_ENROLL_HTTP=https://cc.example.com/api \
+#          AGENT_GRPC_ADDR=cc.example.com:9090 bash
 #
 # Needs git and Go 1.25+ on the target. This file stays a single self-contained script
 # on purpose: it is fetched and piped straight into bash.
@@ -28,8 +29,12 @@
 set -euo pipefail
 
 : "${TOKEN:?TOKEN env var is required}"
-: "${CONTROL_PLANE_HTTP:?CONTROL_PLANE_HTTP env var is required}"
-: "${CONTROL_PLANE_ADDR:?CONTROL_PLANE_ADDR env var is required}"
+# The agent's own names win; the old CONTROL_PLANE_* names are still accepted.
+CONTROL_PLANE_HTTP="${AGENT_ENROLL_HTTP:-${CONTROL_PLANE_HTTP:-}}"
+CONTROL_PLANE_ADDR="${AGENT_GRPC_ADDR:-${CONTROL_PLANE_ADDR:-}}"
+CONTROL_PLANE_SNI="${AGENT_GRPC_SNI:-${CONTROL_PLANE_SNI:-}}"
+: "${CONTROL_PLANE_HTTP:?AGENT_ENROLL_HTTP (or CONTROL_PLANE_HTTP) env var is required}"
+: "${CONTROL_PLANE_ADDR:?AGENT_GRPC_ADDR (or CONTROL_PLANE_ADDR) env var is required}"
 
 # CI replaces __VERSION__ / __REPO__ when attaching this file to a GitHub release.
 AGENT_VERSION="${AGENT_VERSION:-__VERSION__}"
@@ -97,7 +102,7 @@ command -v git >/dev/null 2>&1 || { echo "git is required to build the agent fro
 GO_BIN="$(find_go)" || {
   echo "Go 1.25+ is required to build the agent from source." >&2
   echo "sudo does not use your user PATH; install Go system-wide or rerun with:" >&2
-  echo "  curl ... | sudo env PATH=\"\$PATH\" TOKEN=... CONTROL_PLANE_HTTP=... CONTROL_PLANE_ADDR=... bash" >&2
+  echo "  curl ... | sudo env PATH=\"\$PATH\" TOKEN=... AGENT_ENROLL_HTTP=... AGENT_GRPC_ADDR=... bash" >&2
   exit 1
 }
 export PATH="$(dirname "$GO_BIN"):$PATH"
@@ -256,16 +261,20 @@ report_agent_user() {
 # the unit), or when that address cannot be reached. An agent that cannot dial never
 # sends its Hello, so the UI keeps showing its old privileges.
 check_agent_endpoint() {
-  local want="$CONTROL_PLANE_ADDR" env="" got="" drop=""
+  local want="$CONTROL_PLANE_ADDR" env="" got="" legacy="" drop=""
   env="$(systemctl show -p Environment --value "$AGENT_UNIT" 2>/dev/null || true)"
-  got="$(printf '%s\n' $env | sed -n 's/^CONTROL_PLANE_ADDR=//p' | tail -1)"
+  got="$(printf '%s\n' $env | sed -n 's/^AGENT_GRPC_ADDR=//p' | tail -1)"
+  legacy="$(printf '%s\n' $env | sed -n 's/^CONTROL_PLANE_ADDR=//p' | tail -1)"
+  drop="$(systemctl show -p DropInPaths --value "$AGENT_UNIT" 2>/dev/null || true)"
+  if [[ -n "$legacy" && "$legacy" != "${got:-$want}" ]]; then
+    echo "warning: a stale CONTROL_PLANE_ADDR=$legacy is set and ignored in favour of AGENT_GRPC_ADDR (${drop:-see: systemctl cat $AGENT_UNIT}); remove it" >&2
+  fi
   if [[ -n "$got" && "$got" != "$want" ]]; then
-    drop="$(systemctl show -p DropInPaths --value "$AGENT_UNIT" 2>/dev/null || true)"
     echo "warning: the service dials $got, not the $want this install asked for; a systemd drop-in overrides it (${drop:-see: systemctl cat $AGENT_UNIT})" >&2
     want="$got"
   fi
   if ! timeout 5 bash -c "exec 3<>/dev/tcp/${want%:*}/${want##*:}" 2>/dev/null; then
-    echo "warning: cannot open a TCP connection to $want, so the agent will retry forever and never report its privileges. Raw gRPC does not pass Cloudflare's proxy; on the control plane host use CONTROL_PLANE_ADDR=127.0.0.1:<port> with CONTROL_PLANE_SNI set to the certificate hostname" >&2
+    echo "warning: cannot open a TCP connection to $want, so the agent will retry forever and never report its privileges. Raw gRPC does not pass Cloudflare's proxy; on the control plane host use AGENT_GRPC_ADDR=127.0.0.1:<port> with AGENT_GRPC_SNI set to the certificate hostname" >&2
   fi
 }
 
@@ -303,9 +312,9 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-${unit_user_lines}Environment=CONTROL_PLANE_ADDR=${CONTROL_PLANE_ADDR}
-Environment=CONTROL_PLANE_HTTP=${CONTROL_PLANE_HTTP}
-Environment=CONTROL_PLANE_SNI=${SNI}
+${unit_user_lines}Environment=AGENT_GRPC_ADDR=${CONTROL_PLANE_ADDR}
+Environment=AGENT_ENROLL_HTTP=${CONTROL_PLANE_HTTP}
+Environment=AGENT_GRPC_SNI=${SNI}
 Environment=DATA_DIR=${DATA_DIR}
 ExecStart=${BIN_PATH} run
 Restart=always
@@ -323,17 +332,17 @@ EOF
   # Environment=AGENT_VERSION would keep Hello reporting the install-time tag
   # forever (UI stuck on "restarting").
   if [[ "$run_as_root" == "1" ]]; then
-    CONTROL_PLANE_ADDR="$CONTROL_PLANE_ADDR" \
-      CONTROL_PLANE_HTTP="$CONTROL_PLANE_HTTP" \
-      CONTROL_PLANE_SNI="$SNI" \
+    AGENT_GRPC_ADDR="$CONTROL_PLANE_ADDR" \
+      AGENT_ENROLL_HTTP="$CONTROL_PLANE_HTTP" \
+      AGENT_GRPC_SNI="$SNI" \
       DATA_DIR="$DATA_DIR" \
       AGENT_VERSION="$AGENT_VERSION" \
       "$BIN_PATH" enroll --token="$TOKEN"
   else
     sudo -u croncompose \
-      CONTROL_PLANE_ADDR="$CONTROL_PLANE_ADDR" \
-      CONTROL_PLANE_HTTP="$CONTROL_PLANE_HTTP" \
-      CONTROL_PLANE_SNI="$SNI" \
+      AGENT_GRPC_ADDR="$CONTROL_PLANE_ADDR" \
+      AGENT_ENROLL_HTTP="$CONTROL_PLANE_HTTP" \
+      AGENT_GRPC_SNI="$SNI" \
       DATA_DIR="$DATA_DIR" \
       AGENT_VERSION="$AGENT_VERSION" \
       "$BIN_PATH" enroll --token="$TOKEN"
@@ -380,11 +389,11 @@ install_darwin() {
     </array>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>CONTROL_PLANE_ADDR</key>
+        <key>AGENT_GRPC_ADDR</key>
         <string>${CONTROL_PLANE_ADDR}</string>
-        <key>CONTROL_PLANE_HTTP</key>
+        <key>AGENT_ENROLL_HTTP</key>
         <string>${CONTROL_PLANE_HTTP}</string>
-        <key>CONTROL_PLANE_SNI</key>
+        <key>AGENT_GRPC_SNI</key>
         <string>${SNI}</string>
         <key>DATA_DIR</key>
         <string>${DATA_DIR}</string>
@@ -409,9 +418,9 @@ EOF
   plutil -lint "$PLIST_PATH" >/dev/null
 
   echo "==> enrolling"
-  CONTROL_PLANE_ADDR="$CONTROL_PLANE_ADDR" \
-  CONTROL_PLANE_HTTP="$CONTROL_PLANE_HTTP" \
-  CONTROL_PLANE_SNI="$SNI" \
+  AGENT_GRPC_ADDR="$CONTROL_PLANE_ADDR" \
+  AGENT_ENROLL_HTTP="$CONTROL_PLANE_HTTP" \
+  AGENT_GRPC_SNI="$SNI" \
   DATA_DIR="$DATA_DIR" \
   AGENT_VERSION="$AGENT_VERSION" \
     "$BIN_PATH" enroll --token="$TOKEN"

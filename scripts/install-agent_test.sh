@@ -107,15 +107,21 @@ printf 'ok\n'
 
 # 8. Endpoint check: quiet when the service dials what was asked and it is reachable.
 export CONTROL_PLANE_ADDR=127.0.0.1:9077
-out="$(FAKE_ENV='CONTROL_PLANE_ADDR=127.0.0.1:9077 DATA_DIR=/x' run_fn check_agent_endpoint)"
+out="$(FAKE_ENV='AGENT_GRPC_ADDR=127.0.0.1:9077 DATA_DIR=/x' run_fn check_agent_endpoint)"
 contains "$out" "warning" && fail "endpoint ok: unexpected warning: $out"
 
 # 9. A drop-in that overrides the address is named, and the effective address is what gets probed.
-out="$(FAKE_ENV='CONTROL_PLANE_ADDR=grpc.example.com:9077' FAKE_DROPINS=/etc/x/local.conf run_fn check_agent_endpoint)"
+out="$(FAKE_ENV='AGENT_GRPC_ADDR=grpc.example.com:9077' FAKE_DROPINS=/etc/x/local.conf run_fn check_agent_endpoint)"
 contains "$out" "dials grpc.example.com:9077" || fail "override: not reported: $out"
 contains "$out" "/etc/x/local.conf" || fail "override: drop-in not named: $out"
 
 # 10. An unreachable address warns and points at the local-endpoint fix.
-out="$(FAKE_TCP_OK=0 FAKE_ENV='CONTROL_PLANE_ADDR=127.0.0.1:9077' run_fn check_agent_endpoint)"
+out="$(FAKE_TCP_OK=0 FAKE_ENV='AGENT_GRPC_ADDR=127.0.0.1:9077' run_fn check_agent_endpoint)"
 contains "$out" "cannot open a TCP connection to 127.0.0.1:9077" || fail "unreachable: no warning: $out"
-contains "$out" "CONTROL_PLANE_SNI" || fail "unreachable: no remedy: $out"
+contains "$out" "AGENT_GRPC_SNI" || fail "unreachable: no remedy: $out"
+
+# 11. A stale legacy CONTROL_PLANE_ADDR that the agent now ignores is called out.
+out="$(FAKE_ENV='AGENT_GRPC_ADDR=127.0.0.1:9077 CONTROL_PLANE_ADDR=grpc.example.com:9077' run_fn check_agent_endpoint)"
+contains "$out" "stale CONTROL_PLANE_ADDR=grpc.example.com:9077" || fail "legacy: not reported: $out"
+out="$(FAKE_ENV='AGENT_GRPC_ADDR=127.0.0.1:9077 CONTROL_PLANE_ADDR=127.0.0.1:9077' run_fn check_agent_endpoint)"
+contains "$out" "stale" && fail "legacy: same value must be quiet: $out"

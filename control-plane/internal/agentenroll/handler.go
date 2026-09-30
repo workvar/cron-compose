@@ -159,7 +159,7 @@ func sha256Hex(s string) string {
 }
 
 // advertisedGRPCAddr drops an address with no host (a listen address such as
-// ":9077"). The agent then keeps the CONTROL_PLANE_ADDR it was installed with
+// ":9077"). The agent then keeps the AGENT_GRPC_ADDR it was installed with
 // instead of dialing whatever listens on that port on its own machine.
 func advertisedGRPCAddr(addr string) string {
 	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))

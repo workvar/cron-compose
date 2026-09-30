@@ -28,9 +28,9 @@ enroll_local_agent() {
   [ -n "$token" ] || { warn "no enrollment token returned; skipping agent."; return 0; }
 
   DATA_DIR="$RUNTIME_DIR/agent" \
-  CONTROL_PLANE_HTTP="$api" \
-  CONTROL_PLANE_ADDR="127.0.0.1:$GRPC_PORT" \
-  CONTROL_PLANE_SNI="$AGENT_SNI" \
+  AGENT_ENROLL_HTTP="$api" \
+  AGENT_GRPC_ADDR="127.0.0.1:$GRPC_PORT" \
+  AGENT_GRPC_SNI="$AGENT_SNI" \
     "$REPO_ROOT/agent/bin/agent" enroll --token="$token" >/dev/null 2>&1 \
     && ok "agent enrolled" || { warn "agent enrollment failed; the stack is up without a local agent."; return 0; }
 

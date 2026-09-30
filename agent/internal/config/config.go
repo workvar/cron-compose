@@ -12,11 +12,12 @@ var buildVersion = "0.1.0-dev"
 
 // Config is everything the agent needs at runtime.
 type Config struct {
-	ControlPlaneAddr     string // host:port of the gRPC endpoint
-	ControlPlaneHTTPBase string // base URL for REST calls (enrollment)
-	ControlPlaneSNI      string // server name to verify against in TLS
-	DataDir              string // where the local store, cert, and key live
-	AgentVersion         string // injected at build time or hard-coded
+	ControlPlaneAddr     string   // host:port of the gRPC endpoint
+	ControlPlaneHTTPBase string   // base URL for REST calls (enrollment)
+	ControlPlaneSNI      string   // server name to verify against in TLS
+	Warnings             []string // conflicting endpoint settings, logged by the caller
+	DataDir              string   // where the local store, cert, and key live
+	AgentVersion         string   // injected at build time or hard-coded
 	// SelfUpdate lets the control plane replace this agent's binary. On by default:
 	// the install paths all run the agent under a supervisor that restarts it. Set
 	// AGENT_SELF_UPDATE=0 on a hand-managed box where nothing would bring it back.
@@ -25,16 +26,24 @@ type Config struct {
 
 // Load reads env vars with dev-friendly defaults.
 func Load() (Config, error) {
+	addr, w1 := endpointEnv(envGRPCAddr, legacyGRPCAddr, "localhost:9090")
+	httpBase, w2 := endpointEnv(envEnrollHTTP, legacyEnrollHTTP, "http://localhost:8080/api/v1")
+	sni, w3 := endpointEnv(envGRPCSNI, legacyGRPCSNI, "localhost")
 	c := Config{
-		ControlPlaneAddr:     env("CONTROL_PLANE_ADDR", "localhost:9090"),
-		ControlPlaneHTTPBase: env("CONTROL_PLANE_HTTP", "http://localhost:8080/api/v1"),
-		ControlPlaneSNI:      env("CONTROL_PLANE_SNI", "localhost"),
+		ControlPlaneAddr:     addr,
+		ControlPlaneHTTPBase: httpBase,
+		ControlPlaneSNI:      sni,
 		DataDir:              env("DATA_DIR", defaultDataDir),
 		AgentVersion:         resolveAgentVersion(),
 		SelfUpdate:           envBool("AGENT_SELF_UPDATE", true),
 	}
+	for _, w := range []string{w1, w2, w3} {
+		if w != "" {
+			c.Warnings = append(c.Warnings, w)
+		}
+	}
 	if c.ControlPlaneAddr == "" {
-		return c, fmt.Errorf("CONTROL_PLANE_ADDR is required")
+		return c, fmt.Errorf("%s is required", envGRPCAddr)
 	}
 	return c, nil
 }

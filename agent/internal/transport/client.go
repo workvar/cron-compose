@@ -55,7 +55,7 @@ func dialHint(err error) string {
 		strings.Contains(msg, "http2: frame too large"),
 		strings.Contains(msg, "error reading server preface"):
 		return "something other than this CronCompose control plane answered on that port: " +
-			"check the address in identity.json / CONTROL_PLANE_ADDR and whether another service uses the port"
+			"check the address in identity.json / AGENT_GRPC_ADDR and whether another service uses the port"
 	case strings.Contains(msg, "connection refused"):
 		return "nothing is listening there: is the control plane running and is GRPC_ADDR on that port?"
 	case strings.Contains(msg, "no such host"):

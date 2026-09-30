@@ -212,9 +212,9 @@ write_env_file() {
     fi
     if [ "${ENABLE_AGENT:-0}" = "1" ]; then
       echo "# local agent (enroll + run on this machine)"
-      env_line CONTROL_PLANE_HTTP "http://127.0.0.1:$API_PORT/api/v1"
-      env_line CONTROL_PLANE_ADDR "127.0.0.1:$GRPC_PORT"
-      env_line CONTROL_PLANE_SNI "$AGENT_SNI"
+      env_line AGENT_ENROLL_HTTP "http://127.0.0.1:$API_PORT/api/v1"
+      env_line AGENT_GRPC_ADDR "127.0.0.1:$GRPC_PORT"
+      env_line AGENT_GRPC_SNI "$AGENT_SNI"
       env_line DATA_DIR "$RUNTIME_DIR/agent"
     fi
     echo "# installer metadata (read by croncompose-ctl)"

@@ -37,11 +37,11 @@
 
     <key>EnvironmentVariables</key>
     <dict>
-        <key>CONTROL_PLANE_ADDR</key>
+        <key>AGENT_GRPC_ADDR</key>
         <string>__CONTROL_PLANE_ADDR__</string>
-        <key>CONTROL_PLANE_HTTP</key>
+        <key>AGENT_ENROLL_HTTP</key>
         <string>__CONTROL_PLANE_HTTP__</string>
-        <key>CONTROL_PLANE_SNI</key>
+        <key>AGENT_GRPC_SNI</key>
         <string>__CONTROL_PLANE_SNI__</string>
         <key>DATA_DIR</key>
         <string>/usr/local/var/croncompose</string>
