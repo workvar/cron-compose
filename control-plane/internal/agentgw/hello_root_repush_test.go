@@ -98,3 +98,43 @@ func TestOnHelloDoesNotRepushWhenAgentAlreadyMatchesFlag(t *testing.T) {
 		t.Fatal("agent already root and flag on: nothing to send")
 	}
 }
+
+// Legacy root agent: flag false, changed_by null, agent runs as root. No demote.
+// Production change that would fail this test: dropping the operatorSet gate.
+func TestOnHelloLeavesLegacyRootAgentAlone(t *testing.T) {
+	ctx, pool, serverID := seedRootServer(t, false)
+	s := &service{log: slog.Default(), pool: pool, registry: NewRegistry(), progress: NewUpdateProgressTracker(), rootSent: newRootDelivery()}
+	conn := s.registry.Add(serverID)
+
+	if err := s.onHello(ctx, serverID, &agentv1.Hello{EuidRoot: true}); err != nil {
+		t.Fatal(err)
+	}
+	if drain(t, conn) != nil {
+		t.Fatal("legacy root agent must not be demoted")
+	}
+}
+
+// An operator switched root off while the agent was offline: demote once.
+func TestOnHelloRepushesDemoteWhenOperatorDisabledRoot(t *testing.T) {
+	ctx, pool, serverID := seedRootServer(t, false)
+	userID := ids.New()
+	if _, err := pool.Exec(ctx, `insert into users (id, email, name, password_hash) values ($1, $2, 'op', 'x')`, userID, userID+"@example.test"); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `update servers set agent_root_changed_by = null where id = $1`, serverID)
+		_, _ = pool.Exec(context.Background(), `delete from users where id = $1`, userID)
+	})
+	if _, err := pool.Exec(ctx, `update servers set agent_root_changed_by = $2 where id = $1`, serverID, userID); err != nil {
+		t.Fatalf("mark operator: %v", err)
+	}
+	s := &service{log: slog.Default(), pool: pool, registry: NewRegistry(), progress: NewUpdateProgressTracker(), rootSent: newRootDelivery()}
+	conn := s.registry.Add(serverID)
+
+	if err := s.onHello(ctx, serverID, &agentv1.Hello{EuidRoot: true}); err != nil {
+		t.Fatal(err)
+	}
+	if cmd := drain(t, conn); cmd == nil || cmd.GetEnabled() {
+		t.Fatalf("operator disable must send one demote, got %v", cmd)
+	}
+}

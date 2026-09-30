@@ -97,7 +97,7 @@ func TestRepushDeliversCommandDroppedWhileOffline(t *testing.T) {
 
 	s := &service{log: slog.Default(), registry: g.registry, progress: g.progress, rootSent: g.rootSent}
 	conn := s.registry.Add("srv-1") // the agent reconnects
-	s.repushRootCommand("srv-1", true, false)
+	s.repushRootCommand("srv-1", true, false, false)
 
 	cmd := drain(t, conn)
 	if cmd == nil || !cmd.GetEnabled() {
@@ -111,15 +111,15 @@ func TestRepushSendsAtMostOncePerDesiredValue(t *testing.T) {
 	s := newRepushService()
 	conn := s.registry.Add("srv-1")
 
-	s.repushRootCommand("srv-1", true, false)
+	s.repushRootCommand("srv-1", true, false, false)
 	if drain(t, conn) == nil {
 		t.Fatal("first mismatch must re-send")
 	}
-	s.repushRootCommand("srv-1", true, false)
+	s.repushRootCommand("srv-1", true, false, false)
 	if drain(t, conn) != nil {
 		t.Fatal("second identical mismatch must not re-send")
 	}
-	s.repushRootCommand("srv-1", false, true) // operator flips the desired value
+	s.repushRootCommand("srv-1", false, true, true) // operator flips the desired value
 	if cmd := drain(t, conn); cmd == nil || cmd.GetEnabled() {
 		t.Fatalf("a new desired value must be sent once, got %v", cmd)
 	}
@@ -138,7 +138,7 @@ func TestRepushSkipsCommandTheToggleAlreadyDelivered(t *testing.T) {
 	}
 
 	s := &service{log: slog.Default(), registry: g.registry, progress: g.progress, rootSent: g.rootSent}
-	s.repushRootCommand("srv-1", true, false) // agent restarts, still not root yet
+	s.repushRootCommand("srv-1", true, false, false) // agent restarts, still not root yet
 	if drain(t, conn) != nil {
 		t.Fatal("already delivered command must not be duplicated")
 	}
@@ -147,8 +147,8 @@ func TestRepushSkipsCommandTheToggleAlreadyDelivered(t *testing.T) {
 func TestRepushDoesNothingWhenAgentAgrees(t *testing.T) {
 	s := newRepushService()
 	conn := s.registry.Add("srv-1")
-	s.repushRootCommand("srv-1", true, true)
-	s.repushRootCommand("srv-1", false, false)
+	s.repushRootCommand("srv-1", true, true, false)
+	s.repushRootCommand("srv-1", false, false, false)
 	if drain(t, conn) != nil {
 		t.Fatal("agreeing state must not send anything")
 	}
@@ -157,9 +157,9 @@ func TestRepushDoesNothingWhenAgentAgrees(t *testing.T) {
 // A failed send must not count as delivered, or the next reconnect would skip it.
 func TestRepushOfflineSendIsNotMarkedDelivered(t *testing.T) {
 	s := newRepushService()
-	s.repushRootCommand("srv-1", true, false) // no connection registered
+	s.repushRootCommand("srv-1", true, false, false) // no connection registered
 	conn := s.registry.Add("srv-1")
-	s.repushRootCommand("srv-1", true, false)
+	s.repushRootCommand("srv-1", true, false, false)
 	if cmd := drain(t, conn); cmd == nil || !cmd.GetEnabled() {
 		t.Fatalf("expected the command once the agent is reachable, got %v", cmd)
 	}
@@ -171,8 +171,33 @@ func TestRepushClearsStickyRootError(t *testing.T) {
 	s := newRepushService()
 	s.progress.Record("srv-1", AgentUpdateProgress{Phase: "failed", Detail: "elevate: sudo: a password is required"})
 	s.registry.Add("srv-1")
-	s.repushRootCommand("srv-1", true, false)
+	s.repushRootCommand("srv-1", true, false, false)
 	if got := s.progress.AgentRootError("srv-1"); got != "" {
 		t.Fatalf("sticky error must clear on re-send, got %q", got)
+	}
+}
+
+// Legacy root installs and macOS root agents have flag=false with no operator behind
+// it. Production change that would fail this test: re-sending a demote for a flag
+// nobody set, which would strip root from every pre-upgrade root agent.
+func TestRepushSkipsDemoteWhenFlagWasNotSetByAnOperator(t *testing.T) {
+	s := newRepushService()
+	conn := s.registry.Add("srv-1")
+
+	s.repushRootCommand("srv-1", false, true, false)
+	if drain(t, conn) != nil {
+		t.Fatal("a flag no operator set must not become a demote")
+	}
+}
+
+// Production change that would fail this test: gating elevate on operatorSet too,
+// which would break the enrollment-recorded root intent.
+func TestRepushStillElevatesWhenFlagWasSetAtEnrollment(t *testing.T) {
+	s := newRepushService()
+	conn := s.registry.Add("srv-1")
+
+	s.repushRootCommand("srv-1", true, false, false)
+	if cmd := drain(t, conn); cmd == nil || !cmd.GetEnabled() {
+		t.Fatalf("elevate must be sent, got %v", cmd)
 	}
 }

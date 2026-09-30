@@ -206,6 +206,10 @@ sudoers grant) reports its error instead of restarting in a loop; flip the switc
 again to retry. The record is in memory, so a control plane restart allows one more
 re-send.
 
+A turned-off flag is only re-sent as a demote when an operator switched it off.
+Agents installed as root before this behaviour existed (and macOS root agents) have a
+flag nobody set, and are left running as root.
+
 WebAuthn relying-party ID is the hostname of `PUBLIC_BASE_URL` (or `PUBLIC_HTTP_URL`).
 Set it to the URL operators open in the browser.
 

@@ -141,7 +141,7 @@ func (s *service) handleAgentMessage(ctx context.Context, serverID string, msg *
 }
 
 func (s *service) onHello(ctx context.Context, serverID string, h *agentv1.Hello) error {
-	var enabled bool
+	var enabled, operatorSet bool
 	err := s.pool.QueryRow(ctx, `
 		update servers set
 			agent_version = $1,
@@ -152,8 +152,8 @@ func (s *service) onHello(ctx context.Context, serverID string, h *agentv1.Hello
 			agent_euid_root = $5,
 			agent_service_user = case when $6 <> '' then $6 else agent_service_user end
 		where id = $4
-		returning agent_root_enabled
-	`, h.GetAgentVersion(), h.GetOs(), h.GetArch(), serverID, h.GetEuidRoot(), h.GetServiceUser()).Scan(&enabled)
+		returning agent_root_enabled, agent_root_changed_by is not null
+	`, h.GetAgentVersion(), h.GetOs(), h.GetArch(), serverID, h.GetEuidRoot(), h.GetServiceUser()).Scan(&enabled, &operatorSet)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -161,7 +161,7 @@ func (s *service) onHello(ctx context.Context, serverID string, h *agentv1.Hello
 		return err
 	}
 	s.progress.ReconcileRootError(serverID, enabled, h.GetEuidRoot())
-	s.repushRootCommand(serverID, enabled, h.GetEuidRoot())
+	s.repushRootCommand(serverID, enabled, h.GetEuidRoot(), operatorSet)
 	return nil
 }
 

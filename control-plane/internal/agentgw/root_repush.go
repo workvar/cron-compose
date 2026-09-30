@@ -65,10 +65,15 @@ func (d *rootDelivery) resendNeeded(serverID string, enabled, euidRoot bool) boo
 }
 
 // repushRootCommand re-sends the desired agent-root command after a Hello that
-// disagrees with the stored flag. Failures are logged; the operator can still retry
+// disagrees with the stored flag. A false flag that no operator set (legacy root
+// installs, macOS root agents, which predate the flag) is never turned into a
+// demote, since it cannot be told apart from a flag nobody chose. Failures are logged; the operator can still retry
 // from the toggle.
-func (s *service) repushRootCommand(serverID string, enabled, euidRoot bool) {
+func (s *service) repushRootCommand(serverID string, enabled, euidRoot, operatorSet bool) {
 	if !s.rootSent.resendNeeded(serverID, enabled, euidRoot) {
+		return
+	}
+	if !enabled && !operatorSet {
 		return
 	}
 	if err := s.registry.Send(serverID, agentRootMessage(enabled)); err != nil {
