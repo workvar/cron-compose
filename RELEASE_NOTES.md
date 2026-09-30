@@ -1,43 +1,31 @@
-# CronCompose v0.0.24
+# CronCompose v0.0.25
 
-Fixes the case where an agent installed as root still showed "Enable as root" and
-"Reinstall as root" because it could not reach the control plane. The installer now
-tells you when that happens, and the agent has its own variable names so its
-settings can no longer clash with the control plane's.
+Lets an agent connect to a gRPC hostname with no port, for setups where the hostname
+already maps to the gRPC port at its edge (a tunnel or proxy rule). This is the last
+piece for agents on a host like `grpc.example.com` that could never dial an address
+with the listener's own port in it.
 
 ## Highlights
 
-- **Agent-specific variable names.** The agent now reads `AGENT_GRPC_ADDR`,
-  `AGENT_GRPC_SNI` and `AGENT_ENROLL_HTTP`. They cannot be mistaken for the control
-  plane's own `GRPC_ADDR` or `PUBLIC_GRPC_ADDR` when both share one `.env`. The old
-  `CONTROL_PLANE_ADDR`, `CONTROL_PLANE_SNI` and `CONTROL_PLANE_HTTP` names still work
-  as a fallback. If both spellings are set to different values, the new name wins and
-  the agent logs a warning naming the one it ignored.
-- **Install commands use the new names.** The commands shown on "Add server" and
-  "Reinstall as root" now pass `AGENT_ENROLL_HTTP` and `AGENT_GRPC_ADDR`. The
-  installer accepts both spellings, and the unit files, macOS plist, packaging and
-  local-agent installer now write the new names.
-- **Installer warns about an unreachable gRPC address.** After starting the service
-  it tests the address the agent will really dial. An agent that cannot dial never
-  reports its privileges, which left the toggle stuck. The warning explains that raw
-  gRPC does not pass Cloudflare's proxy and suggests `127.0.0.1:<port>` with
-  `AGENT_GRPC_SNI` for an agent on the control plane host.
-- **Installer warns about overridden settings and stray agents.** It names a systemd
-  drop-in that changes the address, calls out a stale `CONTROL_PLANE_ADDR` that is now
-  ignored, and finds another agent process at any path, not only the installed binary.
-- **Legacy root agents are never demoted automatically.** A turned-off flag is only
-  re-sent as a demote when an operator switched it off, so agents installed as root
-  before v0.0.23 keep running as root after an upgrade.
-- **Tests and docs.** New installer, agent config, install command and database tests,
-  and updated `docs/operations.md`, `DEVELOPMENT.md` and `DEPLOYMENT.md`.
+- **Bare gRPC hostname.** `AGENT_GRPC_ADDR=grpc.example.com` now works and means port
+  443. Before, the agent failed with `missing port in address`, so the address always
+  had to carry a port that the edge might not expose. `host:port` still works and is
+  needed when the endpoint is not on 443.
+- **Enrollment keeps a bare host.** The control plane and the agent now accept a bare
+  host as the address saved at enrollment, instead of discarding it as having no port.
+  A listen address such as `:9077`, or text that is not a host, is still rejected.
+- **Installer probes a bare host on 443.** The post-install reachability check no longer
+  assumes a port, so it tests the same address the agent will dial.
+- **Tests and docs.** New tests for address normalizing, dialing a bare host, the
+  enrolled address and the installer probe. `docs/operations.md` has a new section,
+  "GRPC hostname without a port".
 
 ## Upgrade
 
-No database migration. Publish this release before upgrading the control plane: the
-install command now uses the new variable names and fetches the installer from the
-latest release, and v0.0.23's installer does not know them.
+No database migration. To use a bare hostname, set `PUBLIC_GRPC_ADDR=grpc.example.com` on
+the control plane and restart it, so the install command and the enrolled address carry
+the bare host. Then update the agent to this release: agents older than v0.0.25 cannot
+dial a bare host, and need the explicit `:443` instead.
 
-Existing agents keep working with their old variable names. New installs and reinstalls
-write the new names. If you added a systemd drop-in with `CONTROL_PLANE_ADDR`, a
-reinstalled unit's `AGENT_GRPC_ADDR` takes precedence, so switch the drop-in to
-`AGENT_GRPC_ADDR` too. The installer and agent both warn when they see the conflict.
+Publish this release before upgrading the control plane, because the install command
+fetches the installer from the latest release.
