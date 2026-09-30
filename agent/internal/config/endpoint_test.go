@@ -53,3 +53,20 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatalf("got %+v", c)
 	}
 }
+
+func TestGRPCAddrSetOnlyWhenOperatorSetIt(t *testing.T) {
+	if c, _ := Load(); c.GRPCAddrSet {
+		t.Fatal("defaults must not count as explicit")
+	}
+	t.Setenv("AGENT_GRPC_ADDR", "127.0.0.1:9077")
+	if c, _ := Load(); !c.GRPCAddrSet {
+		t.Fatal("AGENT_GRPC_ADDR must count as explicit")
+	}
+}
+
+func TestGRPCAddrSetByLegacyName(t *testing.T) {
+	t.Setenv("CONTROL_PLANE_ADDR", "cc.example.com:9090")
+	if c, _ := Load(); !c.GRPCAddrSet {
+		t.Fatal("legacy name must count as explicit")
+	}
+}

@@ -12,12 +12,15 @@ var buildVersion = "0.1.0-dev"
 
 // Config is everything the agent needs at runtime.
 type Config struct {
-	ControlPlaneAddr     string   // host:port of the gRPC endpoint
-	ControlPlaneHTTPBase string   // base URL for REST calls (enrollment)
-	ControlPlaneSNI      string   // server name to verify against in TLS
-	Warnings             []string // conflicting endpoint settings, logged by the caller
-	DataDir              string   // where the local store, cert, and key live
-	AgentVersion         string   // injected at build time or hard-coded
+	ControlPlaneAddr     string // host:port of the gRPC endpoint
+	ControlPlaneHTTPBase string // base URL for REST calls (enrollment)
+	ControlPlaneSNI      string // server name to verify against in TLS
+	// GRPCAddrSet is true when the operator set AGENT_GRPC_ADDR (or the legacy name).
+	// An explicit address beats the one the control plane advertised at enrollment.
+	GRPCAddrSet  bool
+	Warnings     []string // conflicting endpoint settings, logged by the caller
+	DataDir      string   // where the local store, cert, and key live
+	AgentVersion string   // injected at build time or hard-coded
 	// SelfUpdate lets the control plane replace this agent's binary. On by default:
 	// the install paths all run the agent under a supervisor that restarts it. Set
 	// AGENT_SELF_UPDATE=0 on a hand-managed box where nothing would bring it back.
@@ -31,6 +34,7 @@ func Load() (Config, error) {
 	sni, w3 := endpointEnv(envGRPCSNI, legacyGRPCSNI, "localhost")
 	c := Config{
 		ControlPlaneAddr:     addr,
+		GRPCAddrSet:          os.Getenv(envGRPCAddr) != "" || os.Getenv(legacyGRPCAddr) != "",
 		ControlPlaneHTTPBase: httpBase,
 		ControlPlaneSNI:      sni,
 		DataDir:              env("DATA_DIR", defaultDataDir),

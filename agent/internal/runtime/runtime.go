@@ -108,10 +108,10 @@ func (r *Runtime) Run(ctx context.Context) error {
 	r.sched.Start()
 	defer r.sched.Stop()
 
-	addr := dialAddr(r.cfg.ControlPlaneAddr, r.ident.ControlPlaneGRPCAddr)
-	if addr != r.ident.ControlPlaneGRPCAddr && r.ident.ControlPlaneGRPCAddr != "" {
-		r.log.Warn("ignoring enrolled control-plane address without a host; using AGENT_GRPC_ADDR",
-			"enrolled", r.ident.ControlPlaneGRPCAddr, "using", addr)
+	addr := dialAddr(r.cfg.ControlPlaneAddr, r.cfg.GRPCAddrSet, r.ident.ControlPlaneGRPCAddr)
+	if enrolled := r.ident.ControlPlaneGRPCAddr; enrolled != "" && addr != enrolled {
+		r.log.Info("dialing the configured control-plane address instead of the one saved at enrollment",
+			"enrolled", enrolled, "using", addr, "explicit", r.cfg.GRPCAddrSet)
 	}
 
 	backoff := newBackoff()
@@ -130,12 +130,14 @@ func (r *Runtime) Run(ctx context.Context) error {
 	}
 }
 
-// dialAddr prefers the gRPC address saved at enrollment, but ignores one with no
-// host: older control planes returned their listen address (":9077"), which made
-// a remote agent dial whatever listens on that port locally. Installer-managed
-// local agents set AGENT_GRPC_ADDR=127.0.0.1:<port>, so the fallback is safe.
-func dialAddr(configured, enrolled string) string {
-	if !transport.HasHost(enrolled) {
+// dialAddr picks the gRPC address. An address the operator set explicitly wins, so a
+// host that reaches the control plane differently from the public address (an agent
+// on the control plane host, or one behind a tunnel forwarder) can say so. Otherwise
+// the address saved at enrollment is used, unless it has no host: older control planes
+// returned their listen address (":9077"), which made a remote agent dial whatever
+// listens on that port locally.
+func dialAddr(configured string, explicit bool, enrolled string) string {
+	if explicit || !transport.HasHost(enrolled) {
 		return configured
 	}
 	return enrolled

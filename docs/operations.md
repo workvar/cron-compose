@@ -205,13 +205,25 @@ install command shown in the UI still uses the old names; the installer accepts 
 
 ### GRPC hostname without a port
 
-When the gRPC hostname already maps to the gRPC port at its edge (a tunnel or proxy
-rule), give the agent just the hostname: `AGENT_GRPC_ADDR=grpc.example.com`. A bare host
-means port 443, so nothing pins the listener's own port. Set
-`PUBLIC_GRPC_ADDR=grpc.example.com` on the control plane so the install command and the
-address saved at enrollment carry the bare host too. `host:port` still works and is
-needed when the endpoint is not on 443. Agents older than this change need the explicit
-`:443`.
+If the gRPC hostname reaches the gRPC port on 443 through a plain TCP forward (a load
+balancer or Cloudflare Spectrum, say), give the agent just the hostname:
+`AGENT_GRPC_ADDR=grpc.example.com`. A bare host means port 443. `host:port` still works
+and is needed when the endpoint is not on 443. Agents older than v0.0.25 need the
+explicit `:443`.
+
+A Cloudflare Tunnel application route (`tcp://localhost:9077` on the tunnel) is not that
+case. It is not plain TCP on 443: remote agents must run
+`cloudflared access tcp --hostname grpc.example.com --url 127.0.0.1:<local port>` and use
+`AGENT_GRPC_ADDR=127.0.0.1:<local port>` with `AGENT_GRPC_SNI=grpc.example.com`.
+
+### Explicit address beats the enrolled address
+
+At enrollment the control plane hands the agent its public gRPC address, and the agent
+saves it in `identity.json`. An `AGENT_GRPC_ADDR` (or old `CONTROL_PLANE_ADDR`) that you
+set explicitly now takes precedence over it, so a host that reaches the control plane
+differently, such as loopback on the control plane host, can say so. Before v0.0.26 the
+saved address always won and the variable was ignored. On those versions, edit
+`control_plane_grpc_addr` in `identity.json` and restart the agent.
 
 ### Agent on the same host as the control plane
 
