@@ -1,31 +1,32 @@
-# CronCompose v0.0.25
+# CronCompose v0.0.26
 
-Lets an agent connect to a gRPC hostname with no port, for setups where the hostname
-already maps to the gRPC port at its edge (a tunnel or proxy rule). This is the last
-piece for agents on a host like `grpc.example.com` that could never dial an address
-with the listener's own port in it.
+Fixes an agent ignoring `AGENT_GRPC_ADDR`. The agent always dialed the public address the
+control plane gave it at enrollment, so a host that reaches the control plane another way,
+such as loopback on the control plane host, could not be pointed there. That left an agent
+running as root but unable to connect, so the page kept showing "Enable as root".
 
 ## Highlights
 
-- **Bare gRPC hostname.** `AGENT_GRPC_ADDR=grpc.example.com` now works and means port
-  443. Before, the agent failed with `missing port in address`, so the address always
-  had to carry a port that the edge might not expose. `host:port` still works and is
-  needed when the endpoint is not on 443.
-- **Enrollment keeps a bare host.** The control plane and the agent now accept a bare
-  host as the address saved at enrollment, instead of discarding it as having no port.
-  A listen address such as `:9077`, or text that is not a host, is still rejected.
-- **Installer probes a bare host on 443.** The post-install reachability check no longer
-  assumes a port, so it tests the same address the agent will dial.
-- **Tests and docs.** New tests for address normalizing, dialing a bare host, the
-  enrolled address and the installer probe. `docs/operations.md` has a new section,
-  "GRPC hostname without a port".
+- **An explicit address wins.** When `AGENT_GRPC_ADDR` (or the old `CONTROL_PLANE_ADDR`)
+  is set, the agent dials it instead of the address saved in `identity.json` at
+  enrollment. With nothing set, behaviour is unchanged. The agent logs a line at startup
+  when it uses the configured address over the enrolled one.
+- **Clearer connection warning.** When the installer cannot reach the gRPC address it now
+  says that a Cloudflare proxy or Tunnel TCP route does not carry raw gRPC on 443, and
+  gives both fixes: loopback plus `AGENT_GRPC_SNI` on the control plane host, or
+  `cloudflared access tcp` on other hosts.
+- **Corrected docs for tunnels.** A Cloudflare Tunnel application route such as
+  `tcp://localhost:9077` is not plain TCP on 443. The docs now say so, and show the
+  `cloudflared access tcp` setup for remote agents. The bare-hostname support added in
+  v0.0.25 is for plain TCP forwards only.
+- **Tests and docs.** New tests for address precedence and the explicit-address flag, and
+  a new "Explicit address beats the enrolled address" section in `docs/operations.md`.
 
 ## Upgrade
 
-No database migration. To use a bare hostname, set `PUBLIC_GRPC_ADDR=grpc.example.com` on
-the control plane and restart it, so the install command and the enrolled address carry
-the bare host. Then update the agent to this release: agents older than v0.0.25 cannot
-dial a bare host, and need the explicit `:443` instead.
+No database migration. Update the agent to this release on any host where you set
+`AGENT_GRPC_ADDR` to something other than the public address.
 
-Publish this release before upgrading the control plane, because the install command
-fetches the installer from the latest release.
+Until then, on older agents, edit `control_plane_grpc_addr` in
+`/var/lib/croncompose/identity.json` to the address you want, then run
+`sudo systemctl restart croncompose-agent`.
