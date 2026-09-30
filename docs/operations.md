@@ -194,6 +194,16 @@ pgrep -af 'croncompose-agent run'      # exactly one process, the MainPID
 The MainPID process must run as root. If it does not, `sudo systemctl restart
 croncompose-agent` makes it pick up the current unit.
 
+### Agent on the same host as the control plane
+
+The install command bakes the public gRPC address into the unit. Behind Cloudflare's
+proxy that address cannot carry raw gRPC, so an agent on the control plane host
+never connects and the page keeps its old privileges. After starting, the installer
+warns when the address cannot be reached, when a systemd drop-in overrides
+`CONTROL_PLANE_ADDR`, and when another agent process (any path) is running. Fix it
+with `CONTROL_PLANE_ADDR=127.0.0.1:<grpc port>` and `CONTROL_PLANE_SNI=<cert host>`
+in the install command, and stop any hand-started agent so only one runs.
+
 ### Toggle changed while the agent was offline
 
 The desired flag is saved before the command is sent. If the agent was offline or

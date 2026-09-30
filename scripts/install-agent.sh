@@ -245,9 +245,27 @@ report_agent_user() {
   else
     echo "==> agent pid $pid runs as uid ${uid:-unknown}"
   fi
-  stray="$(pgrep -f "^${BIN_PATH} run" 2>/dev/null | grep -vx "$pid" | tr '\n' ' ' || true)"
+  stray="$(pgrep -f '(^|/)(croncompose-agent|agent) run$' 2>/dev/null | grep -vx "$pid" | tr '\n' ' ' || true)"
   if [[ -n "${stray// /}" ]]; then
-    echo "warning: another agent process not managed by systemd is running (pid ${stray}); stop it so it cannot shadow the service" >&2
+    echo "warning: another agent process not managed by systemd is running (pid ${stray}); stop it, two agents on one server fight over its state" >&2
+  fi
+}
+
+# check_agent_endpoint: warns (never fails) when the address the service really
+# dials differs from the one this install asked for (a systemd drop-in overriding
+# the unit), or when that address cannot be reached. An agent that cannot dial never
+# sends its Hello, so the UI keeps showing its old privileges.
+check_agent_endpoint() {
+  local want="$CONTROL_PLANE_ADDR" env="" got="" drop=""
+  env="$(systemctl show -p Environment --value "$AGENT_UNIT" 2>/dev/null || true)"
+  got="$(printf '%s\n' $env | sed -n 's/^CONTROL_PLANE_ADDR=//p' | tail -1)"
+  if [[ -n "$got" && "$got" != "$want" ]]; then
+    drop="$(systemctl show -p DropInPaths --value "$AGENT_UNIT" 2>/dev/null || true)"
+    echo "warning: the service dials $got, not the $want this install asked for; a systemd drop-in overrides it (${drop:-see: systemctl cat $AGENT_UNIT})" >&2
+    want="$got"
+  fi
+  if ! timeout 5 bash -c "exec 3<>/dev/tcp/${want%:*}/${want##*:}" 2>/dev/null; then
+    echo "warning: cannot open a TCP connection to $want, so the agent will retry forever and never report its privileges. Raw gRPC does not pass Cloudflare's proxy; on the control plane host use CONTROL_PLANE_ADDR=127.0.0.1:<port> with CONTROL_PLANE_SNI set to the certificate hostname" >&2
   fi
 }
 
@@ -327,6 +345,7 @@ EOF
   echo "==> starting service"
   start_agent_service
   report_agent_user "$run_as_root"
+  check_agent_endpoint
 
   echo
   if [[ "$run_as_root" == "1" ]]; then

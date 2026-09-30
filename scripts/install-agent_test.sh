@@ -24,8 +24,9 @@ extract() { sed -n "/^$1() {/,/^}/p" "$SCRIPT"; }
   extract stop_existing_agent
   extract start_agent_service
   extract report_agent_user
+  extract check_agent_endpoint
 } >"$WORK/helpers.sh"
-for fn in stop_existing_agent start_agent_service report_agent_user; do
+for fn in stop_existing_agent start_agent_service report_agent_user check_agent_endpoint; do
   grep -q "^$fn() {" "$WORK/helpers.sh" || fail "could not find $fn in $SCRIPT"
 done
 
@@ -34,7 +35,11 @@ cat >"$WORK/bin/systemctl" <<'SH'
 echo "systemctl $*" >>"$CALLS"
 case "$1" in
   is-active) [ "${FAKE_ACTIVE:-0}" = "1" ] ;;
-  show) echo "${FAKE_MAINPID:-0}" ;;
+  show) case "$3" in
+      MainPID) echo "${FAKE_MAINPID:-0}" ;;
+      Environment) echo "${FAKE_ENV:-}" ;;
+      DropInPaths) echo "${FAKE_DROPINS:-}" ;;
+    esac ;;
 esac
 SH
 cat >"$WORK/bin/pgrep" <<'SH'
@@ -43,6 +48,7 @@ cat >"$WORK/bin/pgrep" <<'SH'
 for p in $FAKE_PGREP; do echo "$p"; done
 SH
 printf '#!/usr/bin/env bash\nexit 0\n' >"$WORK/bin/sleep"
+printf '#!/usr/bin/env bash\n[ "${FAKE_TCP_OK:-1}" = "1" ]\n' >"$WORK/bin/timeout"
 chmod +x "$WORK/bin/"*
 
 # run_fn <function> [args...]: run a helper in a clean subshell; stdout+stderr on stdout.
@@ -98,3 +104,18 @@ out="$(FAKE_MAINPID=0 run_fn report_agent_user 1)"
 contains "$out" "no running process yet" || fail "missing-process warning absent: $out"
 
 printf 'ok\n'
+
+# 8. Endpoint check: quiet when the service dials what was asked and it is reachable.
+export CONTROL_PLANE_ADDR=127.0.0.1:9077
+out="$(FAKE_ENV='CONTROL_PLANE_ADDR=127.0.0.1:9077 DATA_DIR=/x' run_fn check_agent_endpoint)"
+contains "$out" "warning" && fail "endpoint ok: unexpected warning: $out"
+
+# 9. A drop-in that overrides the address is named, and the effective address is what gets probed.
+out="$(FAKE_ENV='CONTROL_PLANE_ADDR=grpc.example.com:9077' FAKE_DROPINS=/etc/x/local.conf run_fn check_agent_endpoint)"
+contains "$out" "dials grpc.example.com:9077" || fail "override: not reported: $out"
+contains "$out" "/etc/x/local.conf" || fail "override: drop-in not named: $out"
+
+# 10. An unreachable address warns and points at the local-endpoint fix.
+out="$(FAKE_TCP_OK=0 FAKE_ENV='CONTROL_PLANE_ADDR=127.0.0.1:9077' run_fn check_agent_endpoint)"
+contains "$out" "cannot open a TCP connection to 127.0.0.1:9077" || fail "unreachable: no warning: $out"
+contains "$out" "CONTROL_PLANE_SNI" || fail "unreachable: no remedy: $out"
