@@ -212,9 +212,10 @@ restart_source() {
   fi
 }
 
-# Existing installs: turn on edge mode by itself when the gRPC hostname is behind a
-# proxy that ends TLS, so nobody edits .env. Idempotent; an existing PUBLIC_GRPC_MODE
-# is left alone. Needs install/lib/edge.sh from the source tree.
+# Existing installs: turn on edge mode by itself when agents would cross Cloudflare,
+# so nobody edits .env. A Tunnel TCP hostname does not answer HTTPS, so the public
+# URL is probed too, and a saved PUBLIC_GRPC_MODE=mtls is upgraded when that says
+# edge. CC_GRPC_MODE=mtls keeps mutual TLS for this run. Needs install/lib/edge.sh.
 migrate_edge_env() {
   [ -f "$REPO_ROOT/install/lib/edge.sh" ] || return 0
   # shellcheck source=install/lib/edge.sh

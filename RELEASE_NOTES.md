@@ -1,52 +1,32 @@
-# CronCompose v0.0.27
+# CronCompose v0.0.28
 
-Adds edge mode, so agents can connect through a Cloudflare proxy or tunnel with nothing
-installed on the client. Until now an agent needed mutual TLS, which a TLS-terminating
-edge cannot carry, so a proxied hostname failed with "certificate signed by unknown
-authority".
+`install.sh` and `update.sh` now turn on edge mode for a Cloudflare Tunnel whose gRPC
+hostname is a TCP route. v0.0.27 only looked at that hostname, and a `tcp://` route does
+not speak HTTPS, so the probe failed and the control plane stayed on mutual TLS. Agents
+enrolled, showed Online, and never reported root, because the gRPC stream never connected.
 
 ## Highlights
 
-- **Edge mode for agents.** The agent dials a hostname such as `grpc.example.com` on 443
-  over ordinary TLS, verifies the edge's public certificate, and logs in with a
-  per-server secret instead of a client certificate. No `cloudflared`, no forwarder, no
-  extra step on the client.
-- **Edge listener on the control plane.** Set `EDGE_GRPC_ADDR` to open a second gRPC
-  listener for edge agents. It binds loopback only and refuses any other address, because
-  it has no TLS of its own. The existing mutual TLS listener is unchanged and stays the
-  default.
-- **Per-server secrets.** Enrollment now creates a random secret for the server and
-  returns it once. Only its SHA-256 is stored, it is compared in constant time, a server
-  with no secret cannot log in, and the agent keeps its copy in `identity.json` (mode
-  0600). Re-enrolling replaces it.
-- **The scripts set it up.** `install.sh` and `update.sh` detect a gRPC hostname behind
-  Cloudflare and write `PUBLIC_GRPC_MODE`, `EDGE_GRPC_ADDR` and a bare
-  `PUBLIC_GRPC_ADDR` for you, so `.env` is never edited by hand. An existing
-  `PUBLIC_GRPC_MODE` is left alone, and `CC_GRPC_MODE=edge|mtls` overrides the detection.
-  They print the one Cloudflare step they cannot do.
-- **One setting decides the mode.** `PUBLIC_GRPC_MODE=edge` on the control plane tells
-  newly enrolled agents to use edge mode, and the agent records it. `AGENT_GRPC_MODE` on
-  the agent overrides it. The install command is unchanged apart from the address, so
-  nothing can disagree between the command and the control plane.
-- **Tests and docs.** New tests cover the secret handling, the detection and `.env` changes in the scripts, the edge login path through a
-  TLS-terminating proxy, the agent's TLS verification, mode selection and the database
-  lookup. `docs/operations.md` has a new section, "Agents behind Cloudflare (edge mode)",
-  and `.env.example` lists the new settings.
+- **The public URL is the fallback signal.** When `https://<grpc-host>/` does not answer,
+  the scripts probe `PUBLIC_BASE_URL` (then `PUBLIC_HTTP_URL`). If that is Cloudflare,
+  they write `PUBLIC_GRPC_MODE=edge`, `EDGE_GRPC_ADDR=127.0.0.1:<free port>` and a bare
+  `PUBLIC_GRPC_ADDR`. Nothing in `.env` is edited by hand.
+- **A saved `mtls` is corrected.** A previous run that missed Cloudflare left
+  `PUBLIC_GRPC_MODE=mtls` or left the key unset. `update.sh` upgrades that when detection
+  now says edge. `CC_GRPC_MODE=mtls` keeps mutual TLS for that run.
+- **A gRPC host that answers as a normal server stays on mutual TLS,** even if the web UI
+  is behind Cloudflare.
 
 ## Upgrade
 
-This release adds a database migration (`0020`, one nullable column). It runs on start.
+Run `./update.sh` on the control plane. It rewrites `.env`, restarts the stack, and
+prints the listener port. Then, in Cloudflare:
 
-Run `update.sh` as usual. If your gRPC hostname is behind Cloudflare it turns on edge mode
-by itself, restarts the stack, and prints the one step left in Cloudflare: turn on
-Network, gRPC for the zone, and point the hostname's tunnel route at
-`http://localhost:<edge port>` with HTTP2 connection enabled. A hostname has one route, so
-this replaces a `tcp://localhost:9077` route on the same name. Then install or reinstall
-agents with a new token. Agents enrolled before this release have no secret and must be
-reinstalled to use edge mode. Hosts that are not behind Cloudflare are left on mutual TLS.
+1. Turn on gRPC for the zone (Network, gRPC).
+2. Edit the gRPC public hostname. Replace `tcp://localhost:<grpc port>` with service
+   type HTTP, URL `http://localhost:<edge port>`, and enable HTTP2 connection.
+3. Leave the web hostname pointed at the control plane HTTP port.
 
-Docker Compose installs are not detected; see `docs/operations.md`.
-
-What edge mode gives up: Cloudflare can read the traffic between the agent and the control
-plane, and a stolen secret logs in as that server until it is replaced by re-enrolling.
-Agents on the same host as the control plane should keep using `127.0.0.1:<port>` with mTLS.
+Reinstall each agent with a new enrollment token. Agents enrolled before edge mode have
+no secret and keep trying mutual TLS. Root installs stay `AGENT_RUN_AS_ROOT=1`; once the
+stream connects, the server page shows On (root).

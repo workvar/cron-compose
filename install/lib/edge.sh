@@ -10,9 +10,11 @@
 #   EDGE_GRPC_ADDR=...      the loopback listener the tunnel route points at
 #   PUBLIC_GRPC_ADDR=host   bare host, so agents dial 443 (no port to pin)
 #
-# CC_GRPC_MODE=edge|mtls|auto overrides detection. An existing PUBLIC_GRPC_MODE in
-# .env is an operator decision and is never changed. Standalone on purpose: update.sh
-# does not source common.sh, so nothing here depends on it.
+# CC_GRPC_MODE=edge|mtls|auto overrides detection for this run. A saved
+# PUBLIC_GRPC_MODE=mtls is upgraded when detection says edge, because a Tunnel TCP
+# route does not answer HTTPS and an earlier run often saved the wrong mode.
+# CC_GRPC_MODE=mtls keeps mutual TLS. Standalone on purpose: update.sh does not
+# source common.sh, so nothing here depends on it.
 
 # True for hosts a proxy cannot be in front of: loopback, IP literals, .local names.
 edge_host_is_local() { # <host>
@@ -20,23 +22,58 @@ edge_host_is_local() { # <host>
   case "$1" in *[!0-9.]*) return 1 ;; *) return 0 ;; esac
 }
 
-# True when https://<host>/ answers with Cloudflare's headers. A proxied hostname, and
-# a tunnel public hostname, both do, and neither can pass a client certificate.
-edge_host_is_proxied() { # <host>
-  command -v curl >/dev/null 2>&1 || return 1
-  local headers
-  headers="$(curl -sI --connect-timeout 4 --max-time 8 "https://$1/" 2>/dev/null | tr -d '\r' | tr 'A-Z' 'a-z')" || true
-  printf '%s\n' "$headers" | grep -Eq '^(server: cloudflare|cf-ray:)'
+# proxied, plain, or fail. A Tunnel TCP route (tcp://localhost:9077) does not speak
+# HTTPS, so curl fails even though Cloudflare is in front. An HTTP hostname on the
+# same tunnel answers with Cloudflare's headers.
+edge_host_probe() { # <host>
+  local host="$1" headers rc=0
+  if edge_host_is_local "$host"; then printf plain; return 0; fi
+  command -v curl >/dev/null 2>&1 || { printf fail; return 0; }
+  headers="$(curl -sI --connect-timeout 4 --max-time 8 "https://$host/" 2>/dev/null)" || rc=$?
+  if [ "$rc" -ne 0 ]; then printf fail; return 0; fi
+  headers="$(printf '%s\n' "$headers" | tr -d '\r' | tr 'A-Z' 'a-z')"
+  if printf '%s\n' "$headers" | grep -Eq '^(server: cloudflare|cf-ray:)'; then
+    printf proxied
+  else
+    printf plain
+  fi
 }
 
-# Prints edge or mtls for a gRPC hostname.
-edge_choose_mode() { # <host>
+# True when https://<host>/ answers with Cloudflare's headers. A proxied hostname, and
+# a tunnel public hostname that speaks HTTP, both do, and neither can pass a client
+# certificate.
+edge_host_is_proxied() { # <host>
+  [ "$(edge_host_probe "$1")" = proxied ]
+}
+
+# Host of an http(s) URL, or of a bare host / host:port.
+edge_url_host() { # <url>
+  local u="$1"
+  u="${u#*://}"
+  u="${u%%/*}"
+  u="${u%%\?*}"
+  case "$u" in *@*) u="${u#*@}" ;; esac
+  edge_host_of "$u"
+}
+
+# Prints edge or mtls. The optional second host is the control plane's public URL.
+# When the gRPC hostname is a Tunnel TCP route, probing it fails; the public URL is
+# on the same tunnel and is what shows Cloudflare.
+edge_choose_mode() { # <grpc-host> [public-http-host]
   case "$(printf '%s' "${CC_GRPC_MODE:-auto}" | tr 'A-Z' 'a-z')" in
     edge) printf edge; return 0 ;;
     mtls) printf mtls; return 0 ;;
   esac
   if edge_host_is_local "$1"; then printf mtls; return 0; fi
-  if edge_host_is_proxied "$1"; then printf edge; else printf mtls; fi
+  case "$(edge_host_probe "$1")" in
+    proxied) printf edge; return 0 ;;
+    plain)   printf mtls; return 0 ;;
+  esac
+  local http="${2:-}"
+  if [ -n "$http" ] && [ "$http" != "$1" ] && ! edge_host_is_local "$http"; then
+    if [ "$(edge_host_probe "$http")" = proxied ]; then printf edge; return 0; fi
+  fi
+  printf mtls
 }
 
 _edge_port_in_use() { # <port>
@@ -100,17 +137,36 @@ edge_port_of() { # <addr> <default>
   case "$1" in *:[0-9]*) printf '%s' "${1##*:}" ;; *) printf '%s' "$2" ;; esac
 }
 
-# For an existing install: switch it to edge mode when its gRPC hostname is behind a
-# proxy and no mode was ever chosen. Idempotent. Prints "edge <port>" when it changed
-# the file, nothing otherwise.
+# For an existing install: switch it to edge mode when agents would cross Cloudflare.
+# Idempotent. Prints "edge <port>" when it changed the file, nothing otherwise.
+# A saved PUBLIC_GRPC_MODE=mtls is upgraded when detection says edge. CC_GRPC_MODE=mtls
+# keeps mutual TLS for this run.
 edge_migrate_env() { # <env file>
-  local f="$1" mode_now addr host grpc_port port
+  local f="$1" addr host http_host base chosen grpc_port port current
   [ -f "$f" ] || return 0
-  if edge_env_get "$f" PUBLIC_GRPC_MODE >/dev/null; then return 0; fi
 
-  addr="$(edge_env_get "$f" PUBLIC_GRPC_ADDR)" || return 0
+  current="$(edge_env_get "$f" PUBLIC_GRPC_MODE || true)"
+  addr="$(edge_env_get "$f" PUBLIC_GRPC_ADDR || true)"
   host="$(edge_host_of "$addr")"
-  [ "$(edge_choose_mode "$host")" = edge ] || return 0
+  # Fully configured edge installs are left untouched, including the listener port.
+  if [ "$current" = edge ] && [ -n "$addr" ] && [ "$addr" = "$host" ] \
+      && edge_env_get "$f" EDGE_GRPC_ADDR >/dev/null; then
+    return 0
+  fi
+
+  [ -n "$addr" ] || return 0
+  http_host=""
+  if base="$(edge_env_get "$f" PUBLIC_BASE_URL || true)" && [ -n "$base" ]; then
+    http_host="$(edge_url_host "$base")"
+  elif base="$(edge_env_get "$f" PUBLIC_HTTP_URL || true)" && [ -n "$base" ]; then
+    http_host="$(edge_url_host "$base")"
+  fi
+  if [ "$current" = edge ]; then
+    chosen=edge
+  else
+    chosen="$(edge_choose_mode "$host" "$http_host")"
+  fi
+  [ "$chosen" = edge ] || return 0
 
   grpc_port="$(edge_port_of "$(edge_env_get "$f" GRPC_ADDR || true)" 9090)"
   if ! edge_env_get "$f" EDGE_GRPC_ADDR >/dev/null; then
@@ -121,8 +177,7 @@ edge_migrate_env() { # <env file>
   fi
   edge_env_set "$f" PUBLIC_GRPC_ADDR "$host" || return 1
   edge_env_set "$f" PUBLIC_GRPC_MODE edge || return 1
-  mode_now=edge
-  printf '%s %s' "$mode_now" "$port"
+  printf '%s %s' edge "$port"
 }
 
 # The one step the scripts cannot do for you: the Cloudflare route.

@@ -77,11 +77,12 @@ configure_ports() {
 
   # A gRPC hostname behind a proxy that ends TLS (Cloudflare) cannot carry mutual TLS,
   # so the control plane also needs its loopback edge listener. Detected, not asked.
-  GRPC_MODE="$(edge_choose_mode "$GRPC_ADVERTISE_HOST")"
+  # A Tunnel TCP hostname does not answer HTTPS; the public URL is checked too.
+  GRPC_MODE="$(edge_choose_mode "$GRPC_ADVERTISE_HOST" "$ADVERTISE_HOST")"
   EDGE_PORT=""
   if [ "$GRPC_MODE" = edge ]; then
     EDGE_PORT="$(find_free_port "$((GRPC_PORT + 1))" "$taken $GRPC_PORT")"
-    ok "gRPC host $GRPC_ADVERTISE_HOST is behind a TLS-terminating proxy: edge mode on (listener 127.0.0.1:$EDGE_PORT)"
+    ok "Cloudflare fronts this install: edge mode on (listener 127.0.0.1:$EDGE_PORT)"
   fi
 
   ok "backend=$API_PORT  frontend=$WEB_PORT  agent=$GRPC_PORT ($GRPC_ADVERTISE_HOST)"

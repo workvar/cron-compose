@@ -216,12 +216,16 @@ authority". Edge mode lets clients install and connect with nothing extra:
 - The control plane runs a second gRPC listener for this, plain HTTP/2 on loopback.
 
 You do not edit `.env`. `install.sh` and `update.sh` check whether the gRPC hostname
-answers with Cloudflare's headers. If it does, they write `PUBLIC_GRPC_MODE=edge`,
-`EDGE_GRPC_ADDR=127.0.0.1:<free port>` and a bare `PUBLIC_GRPC_ADDR=<hostname>` (an
-existing `PUBLIC_GRPC_MODE` is never changed), and `update.sh` then restarts the stack.
-Set `CC_GRPC_MODE=edge` or `mtls` when running either script to override the detection.
-Docker Compose installs are not covered; set the three variables in the compose
-environment yourself.
+answers with Cloudflare's headers. A Tunnel TCP route (`tcp://localhost:9077`) does
+not speak HTTPS, so that probe fails even though Cloudflare is in front; they then
+check the public URL (`PUBLIC_BASE_URL`) the same way. When the gRPC hostname is
+Cloudflare, or that probe fails and the public URL is Cloudflare, they write
+`PUBLIC_GRPC_MODE=edge`, `EDGE_GRPC_ADDR=127.0.0.1:<free port>` and a bare
+`PUBLIC_GRPC_ADDR=<hostname>`. A previously saved `PUBLIC_GRPC_MODE=mtls` is upgraded
+in that case, because it is what a failed probe used to leave behind. `update.sh`
+then restarts the stack. Set `CC_GRPC_MODE=edge` or `mtls` when running either script
+to override the detection for that run. Docker Compose installs are not covered; set
+the three variables in the compose environment yourself.
 
 The one step the scripts cannot do is in Cloudflare, and they print it: turn on
 **Network, gRPC** for the zone, and point the hostname's tunnel route at

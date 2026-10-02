@@ -17,6 +17,20 @@ case "${FAKE_CURL:-plain}" in
   cloudflare) printf 'HTTP/2 200\r\nServer: cloudflare\r\nCF-RAY: abc-BOM\r\n\r\n' ;;
   plain)      printf 'HTTP/1.1 200 OK\r\nServer: nginx\r\n\r\n' ;;
   fail)       exit 7 ;;
+  # gRPC hostname is a Tunnel TCP route (curl fails); the public URL is Cloudflare.
+  grpc-fail)
+    case "$*" in
+      *grpc.example.com*) exit 7 ;;
+      *) printf 'HTTP/2 200\r\nServer: cloudflare\r\nCF-RAY: abc-BOM\r\n\r\n' ;;
+    esac
+    ;;
+  # gRPC hostname is a normal server; the public URL being Cloudflare is not enough.
+  grpc-plain)
+    case "$*" in
+      *cron.example.com*) printf 'HTTP/2 200\r\nServer: cloudflare\r\nCF-RAY: abc-BOM\r\n\r\n' ;;
+      *) printf 'HTTP/1.1 200 OK\r\nServer: nginx\r\n\r\n' ;;
+    esac
+    ;;
 esac
 SH
 cat >"$WORK/bin/lsof" <<'SH'
@@ -75,13 +89,28 @@ cp "$ENVF" "$WORK/after"
 out="$(FAKE_CURL=cloudflare run edge_migrate_env "$ENVF")"
 [ -z "$out" ] && cmp -s "$ENVF" "$WORK/after" || fail "second run must change nothing"
 
-# 6. An operator's choice is never overridden, nor is a host that is not proxied.
+# 6. A saved mtls is upgraded when the host is proxied. CC_GRPC_MODE=mtls keeps it,
+# and a host that is not proxied is left alone.
+fresh; echo 'PUBLIC_GRPC_MODE=mtls' >>"$ENVF"
+out="$(FAKE_CURL=cloudflare run edge_migrate_env "$ENVF")"
+[ "$out" = "edge 9078" ] || fail "stored mtls must upgrade: $out"
+grep -qx 'PUBLIC_GRPC_MODE=edge' "$ENVF" || fail "stored mtls was not upgraded"
 fresh; echo 'PUBLIC_GRPC_MODE=mtls' >>"$ENVF"; cp "$ENVF" "$WORK/before"
-FAKE_CURL=cloudflare run edge_migrate_env "$ENVF" >/dev/null
-cmp -s "$ENVF" "$WORK/before" || fail "an explicit mode must be left alone"
+CC_GRPC_MODE=mtls FAKE_CURL=cloudflare run edge_migrate_env "$ENVF" >/dev/null
+cmp -s "$ENVF" "$WORK/before" || fail "CC_GRPC_MODE=mtls must keep mutual TLS"
 fresh; cp "$ENVF" "$WORK/before"
 FAKE_CURL=plain run edge_migrate_env "$ENVF" >/dev/null
 cmp -s "$ENVF" "$WORK/before" || fail "an unproxied host must be left alone"
+
+# 8. A Tunnel TCP gRPC hostname does not answer HTTPS. The public URL does.
+fresh; printf '\nPUBLIC_BASE_URL=https://cron.example.com\n' >>"$ENVF"
+out="$(FAKE_CURL=grpc-fail run edge_migrate_env "$ENVF")"
+[ "$out" = "edge 9078" ] || fail "tcp tunnel via public URL: $out"
+grep -qx 'PUBLIC_GRPC_ADDR=grpc.example.com' "$ENVF" || fail "tcp tunnel must drop the port"
+grep -qx 'PUBLIC_GRPC_MODE=edge' "$ENVF" || fail "tcp tunnel must set edge"
+fresh; printf '\nPUBLIC_BASE_URL=https://cron.example.com\n' >>"$ENVF"; cp "$ENVF" "$WORK/before"
+FAKE_CURL=grpc-plain run edge_migrate_env "$ENVF" >/dev/null
+cmp -s "$ENVF" "$WORK/before" || fail "a plain gRPC host must stay mtls when only the UI is proxied"
 
 # 7. An existing EDGE_GRPC_ADDR is kept.
 fresh; echo 'EDGE_GRPC_ADDR=127.0.0.1:9555' >>"$ENVF"

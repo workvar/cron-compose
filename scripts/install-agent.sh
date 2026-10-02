@@ -277,7 +277,7 @@ check_agent_endpoint() {
   local probe_host="${want%:*}" probe_port="${want##*:}"
   if [[ "$want" != *:* ]]; then probe_host="$want" probe_port=443; fi   # a bare host means 443
   if ! timeout 5 bash -c "exec 3<>/dev/tcp/${probe_host}/${probe_port}" 2>/dev/null; then
-    echo "warning: cannot open a TCP connection to $want, so the agent will retry forever and never report its privileges. A Cloudflare proxy or Tunnel TCP route does not carry raw gRPC on 443 (set EDGE_GRPC_ADDR and PUBLIC_GRPC_MODE=edge on the control plane to use edge mode). On the control plane host use AGENT_GRPC_ADDR=127.0.0.1:<port> with AGENT_GRPC_SNI set to the certificate hostname; on another host run: cloudflared access tcp --hostname <host> --url 127.0.0.1:<port>, then use that local address" >&2
+    echo "warning: cannot open a TCP connection to $want, so the agent will retry forever and never report its privileges. A Cloudflare Tunnel TCP route does not carry raw gRPC on 443. On the control plane run ./update.sh — it turns on edge mode when the public URL is behind Cloudflare — then point this hostname at the printed loopback port with HTTP/2. On the control plane host itself use AGENT_GRPC_ADDR=127.0.0.1:<port> with AGENT_GRPC_SNI set to the certificate hostname." >&2
   fi
 }
 
