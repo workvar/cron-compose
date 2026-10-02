@@ -214,6 +214,9 @@ authority". Edge mode lets clients install and connect with nothing extra:
   it at enrollment (saved in `identity.json`, mode 0600; only a SHA-256 is stored on the
   server).
 - The control plane runs a second gRPC listener for this, plain HTTP/2 on loopback.
+  cloudflared only speaks HTTP/2 to an `https://` origin, so `install.sh` and
+  `update.sh` install nginx on that same loopback address. nginx presents the
+  control plane certificate and forwards gRPC to the plain listener.
 
 You do not edit `.env`. `install.sh` and `update.sh` check whether the gRPC hostname
 answers with Cloudflare's headers. A Tunnel TCP route (`tcp://localhost:9077`) does
@@ -229,10 +232,13 @@ the three variables in the compose environment yourself.
 
 The one step the scripts cannot do is in Cloudflare, and they print it: turn on
 **Network, gRPC** for the zone, and point the hostname's tunnel route at
-`http://localhost:<edge port>` with **HTTP2 connection** enabled (a hostname has one
-route, so this replaces a `tcp://localhost:9077` route on the same name; keep that route
-on another hostname if you still want mutual TLS for agents elsewhere). The direct
-`GRPC_ADDR` listener stays mutual TLS and is unchanged.
+`https://localhost:<nginx port>` (`EDGE_NGINX_PORT` in `.env`). Under additional
+application settings, TLS, turn **Use HTTP/2 to origin** on and **Disable TLS
+certificate verification** on. A hostname has one route, so this replaces an
+`http://` or `tcp://localhost:9077` route on the same name. "Use HTTP/2 to origin"
+does nothing while the URL is `http://`, which is why the origin is nginx rather
+than the plain listener. The direct `GRPC_ADDR` listener stays mutual TLS and is
+unchanged.
 
 Then create or reinstall servers as usual. The install command carries the bare hostname,
 and the enrolled agent records `edge` as its mode (`AGENT_GRPC_MODE` overrides it). An

@@ -96,6 +96,7 @@ run_services() {
   fi
   print_summary
   if [ "${GRPC_MODE:-mtls}" = edge ]; then
+    edge_ensure_nginx_bridge "$REPO_ROOT/.env" quiet || true
     edge_print_cloudflare_hint "$GRPC_ADVERTISE_HOST" "$EDGE_PORT"
   fi
 }

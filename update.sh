@@ -215,7 +215,9 @@ restart_source() {
 # Existing installs: turn on edge mode by itself when agents would cross Cloudflare,
 # so nobody edits .env. A Tunnel TCP hostname does not answer HTTPS, so the public
 # URL is probed too, and a saved PUBLIC_GRPC_MODE=mtls is upgraded when that says
-# edge. CC_GRPC_MODE=mtls keeps mutual TLS for this run. Needs install/lib/edge.sh.
+# edge. CC_GRPC_MODE=mtls keeps mutual TLS for this run. When edge mode is on, the
+# sourced edge.sh also installs the nginx TLS bridge (cloudflared will not speak
+# HTTP/2 to the plain listener). Needs install/lib/edge.sh.
 migrate_edge_env() {
   [ -f "$REPO_ROOT/install/lib/edge.sh" ] || return 0
   # shellcheck source=install/lib/edge.sh

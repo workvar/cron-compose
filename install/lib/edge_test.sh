@@ -3,6 +3,8 @@
 #   bash install/lib/edge_test.sh
 # curl, lsof and nc are stubbed, so nothing touches the network or real ports.
 set -euo pipefail
+# Do not apt-install nginx while exercising the env migration.
+export CC_EDGE_NGINX=0
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="${EDGE_SCRIPT:-$HERE/edge.sh}"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
@@ -117,4 +119,10 @@ fresh; echo 'EDGE_GRPC_ADDR=127.0.0.1:9555' >>"$ENVF"
 out="$(FAKE_CURL=cloudflare run edge_migrate_env "$ENVF")"
 [ "$out" = "edge 9555" ] || fail "existing edge addr: $out"
 [ "$(grep -c '^EDGE_GRPC_ADDR=' "$ENVF")" = 1 ] || fail "edge addr duplicated"
+
+# 9. nginx config points Cloudflare at a TLS port and the plain listener at grpc_pass.
+cfg="$(run edge_nginx_config 9443 9078 /etc/nginx/croncompose/server.crt /etc/nginx/croncompose/server.key)"
+printf '%s\n' "$cfg" | grep -q 'listen 127.0.0.1:9443 ssl http2;' || fail "listen line: $cfg"
+printf '%s\n' "$cfg" | grep -q 'grpc_pass grpc://127.0.0.1:9078;' || fail "upstream: $cfg"
+printf '%s\n' "$cfg" | grep -q 'ssl_certificate_key /etc/nginx/croncompose/server.key;' || fail "key path: $cfg"
 echo ok

@@ -149,8 +149,11 @@ edge_migrate_env() { # <env file>
   addr="$(edge_env_get "$f" PUBLIC_GRPC_ADDR || true)"
   host="$(edge_host_of "$addr")"
   # Fully configured edge installs are left untouched, including the listener port.
+  # The nginx bridge still runs: cloudflared cannot speak plain HTTP/2, and an
+  # update.sh that is already loaded only calls this function.
   if [ "$current" = edge ] && [ -n "$addr" ] && [ "$addr" = "$host" ] \
       && edge_env_get "$f" EDGE_GRPC_ADDR >/dev/null; then
+    edge_ensure_nginx_bridge "$f" hint || true
     return 0
   fi
 
@@ -177,17 +180,152 @@ edge_migrate_env() { # <env file>
   fi
   edge_env_set "$f" PUBLIC_GRPC_ADDR "$host" || return 1
   edge_env_set "$f" PUBLIC_GRPC_MODE edge || return 1
+  # The caller prints the Cloudflare hint after this returns. Nginx is still
+  # installed here so a running update.sh, which only sources this file, sets
+  # the bridge up on the same run.
+  edge_ensure_nginx_bridge "$f" quiet || true
   printf '%s %s' edge "$port"
 }
 
+# cloudflared speaks HTTP/2 only to an https:// origin. The edge listener is plain
+# HTTP/2, so nginx on loopback terminates TLS with the control plane certificate
+# and forwards gRPC to it. CC_EDGE_NGINX=0 skips this (tests).
+edge_nginx_config() { # <listen port> <upstream port> <cert> <key>
+  cat <<EOF
+# Managed by CronCompose. TLS front for the edge gRPC listener.
+server {
+    listen 127.0.0.1:${1} ssl http2;
+    server_name localhost;
+    ssl_certificate     ${3};
+    ssl_certificate_key ${4};
+    location / {
+        grpc_pass grpc://127.0.0.1:${2};
+        grpc_read_timeout 1d;
+        grpc_send_timeout 1d;
+    }
+}
+EOF
+}
+
+edge_as_root() {
+  if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi
+}
+
+edge_install_nginx_pkg() {
+  command -v nginx >/dev/null 2>&1 && return 0
+  local mgr=""
+  case "$(uname -s)" in
+    Darwin)
+      command -v brew >/dev/null 2>&1 || { printf '  nginx: brew is not installed, so the TLS bridge was not set up\n' >&2; return 1; }
+      brew install nginx
+      return
+      ;;
+  esac
+  local m
+  for m in apt-get dnf yum pacman apk zypper; do
+    command -v "$m" >/dev/null 2>&1 && mgr="$m" && break
+  done
+  [ -n "$mgr" ] || { printf '  nginx: no package manager found, so the TLS bridge was not set up\n' >&2; return 1; }
+  printf '  installing nginx (%s)\n' "$mgr" >&2
+  case "$mgr" in
+    apt-get) edge_as_root apt-get update -qq && edge_as_root apt-get install -y nginx ;;
+    dnf|yum) edge_as_root "$mgr" install -y nginx ;;
+    pacman)  edge_as_root pacman -Sy --noconfirm nginx ;;
+    apk)     edge_as_root apk add --no-cache nginx ;;
+    zypper)  edge_as_root zypper --non-interactive install nginx ;;
+  esac
+}
+
+# Installs or refreshes the loopback TLS bridge. Never prints to stdout.
+# Pass "hint" to print the Cloudflare steps when the bridge was created or changed.
+edge_ensure_nginx_bridge() { # <env file> [hint]
+  [ "${CC_EDGE_NGINX:-1}" = 1 ] || return 0
+  local f="$1" tls_dir cert key upstream listen dest dir changed=0 body cur host
+  [ -f "$f" ] || return 0
+  [ "$(edge_env_get "$f" PUBLIC_GRPC_MODE || true)" = edge ] || return 0
+  tls_dir="$(edge_env_get "$f" TLS_DIR || true)"
+  [ -n "$tls_dir" ] || tls_dir="$(edge_env_get "$f" CC_RUNTIME_DIR || true)/tls"
+  cert="$tls_dir/server.crt"
+  key="$tls_dir/server.key"
+  if [ ! -f "$cert" ] || [ ! -f "$key" ]; then
+    printf '  nginx: %s is missing, so the TLS bridge waits until the control plane has started\n' "$cert" >&2
+    return 0
+  fi
+  upstream="$(edge_port_of "$(edge_env_get "$f" EDGE_GRPC_ADDR || true)" "")"
+  [ -n "$upstream" ] || return 0
+  listen="$(edge_env_get "$f" EDGE_NGINX_PORT || true)"
+  if [ -z "$listen" ]; then
+    listen="$(edge_pick_port 9443 "$upstream")"
+    edge_env_set "$f" EDGE_NGINX_PORT "$listen" || return 1
+    changed=1
+  fi
+  edge_install_nginx_pkg || return 1
+  if [ -d /etc/nginx/sites-enabled ] && [ ! -e /etc/nginx/croncompose/.keep-default-site ]; then
+    # A fresh nginx package also listens on port 80. This bridge does not use it.
+    if [ ! -e /etc/nginx/croncompose/server.crt ]; then
+      edge_as_root rm -f /etc/nginx/sites-enabled/default
+    fi
+  fi
+  dir=/etc/nginx/croncompose
+  dest=/etc/nginx/conf.d/croncompose-edge.conf
+  edge_as_root mkdir -p "$dir" /etc/nginx/conf.d
+  if ! edge_as_root cmp -s "$cert" "$dir/server.crt" 2>/dev/null \
+      || ! edge_as_root cmp -s "$key" "$dir/server.key" 2>/dev/null; then
+    edge_as_root cp "$cert" "$dir/server.crt"
+    edge_as_root cp "$key" "$dir/server.key"
+    edge_as_root chmod 0644 "$dir/server.crt"
+    edge_as_root chmod 0600 "$dir/server.key"
+    changed=1
+  fi
+  body="$(edge_nginx_config "$listen" "$upstream" "$dir/server.crt" "$dir/server.key")"
+  cur="$(edge_as_root cat "$dest" 2>/dev/null || true)"
+  if [ "$body" != "$cur" ]; then
+    printf '%s' "$body" | edge_as_root tee "$dest" >/dev/null
+    changed=1
+  fi
+  edge_as_root nginx -t >&2 || return 1
+  if command -v systemctl >/dev/null 2>&1; then
+    edge_as_root systemctl enable nginx >/dev/null 2>&1 || true
+    if edge_as_root systemctl is-active --quiet nginx; then
+      [ "$changed" = 1 ] && edge_as_root systemctl reload nginx
+    else
+      edge_as_root systemctl restart nginx
+      changed=1
+    fi
+  else
+    edge_as_root nginx -s reload >/dev/null 2>&1 || edge_as_root nginx
+    changed=1
+  fi
+  if [ "$changed" = 1 ]; then
+    host="$(edge_host_of "$(edge_env_get "$f" PUBLIC_GRPC_ADDR || true)")"
+    printf '  nginx is listening on https://127.0.0.1:%s and forwarding to 127.0.0.1:%s\n' "$listen" "$upstream" >&2
+    [ "${2:-}" = hint ] && edge_print_cloudflare_hint "$host" "$upstream"
+  fi
+}
+
 # The one step the scripts cannot do for you: the Cloudflare route.
+# The port in the dashboard is the nginx TLS bridge (EDGE_NGINX_PORT), not the
+# plain edge listener. cloudflared ignores "HTTP/2 to origin" for an http:// URL.
 edge_print_cloudflare_hint() { # <host> <edge port>
+  local https=""
+  if [ -n "${REPO_ROOT:-}" ] && [ -f "${REPO_ROOT}/.env" ]; then
+    https="$(edge_env_get "${REPO_ROOT}/.env" EDGE_NGINX_PORT || true)"
+  fi
   {
     printf '\n  Agents reach %s through Cloudflare, so edge mode is on.\n' "$1"
     printf '  One step is left in the Cloudflare dashboard:\n'
     printf '    - Network: turn gRPC on for the zone.\n'
     printf '    - Zero Trust, Networks, Tunnels, your tunnel, Public hostname %s:\n' "$1"
-    printf '      service type HTTP, URL localhost:%s, and enable "HTTP2 connection"\n' "$2"
-    printf '      (this replaces a tcp://localhost:<grpc port> route on that name).\n\n'
+    if [ -n "$https" ]; then
+      printf '      URL https://localhost:%s\n' "$https"
+      printf '      Additional application settings, TLS:\n'
+      printf '        Use HTTP/2 to origin: on\n'
+      printf '        Disable TLS certificate verification: on\n'
+      printf '      (this replaces an http:// or tcp:// route on that name; the plain\n'
+      printf '      listener stays on 127.0.0.1:%s and is not the tunnel origin).\n\n' "$2"
+    else
+      printf '      URL https://localhost:<EDGE_NGINX_PORT from .env>\n'
+      printf '      Use HTTP/2 to origin, and disable TLS certificate verification.\n\n'
+    fi
   } >&2
 }
