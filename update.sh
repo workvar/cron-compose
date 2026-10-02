@@ -212,8 +212,26 @@ restart_source() {
   fi
 }
 
+# Existing installs: turn on edge mode by itself when the gRPC hostname is behind a
+# proxy that ends TLS, so nobody edits .env. Idempotent; an existing PUBLIC_GRPC_MODE
+# is left alone. Needs install/lib/edge.sh from the source tree.
+migrate_edge_env() {
+  [ -f "$REPO_ROOT/install/lib/edge.sh" ] || return 0
+  # shellcheck source=install/lib/edge.sh
+  . "$REPO_ROOT/install/lib/edge.sh"
+  local out host port
+  out="$(edge_migrate_env "$REPO_ROOT/.env")" || { warn "could not enable edge mode automatically; see docs/operations.md"; return 0; }
+  [ -n "$out" ] || return 0
+  port="${out#edge }"
+  host="$(edge_host_of "$(edge_env_get "$REPO_ROOT/.env" PUBLIC_GRPC_ADDR)")"
+  ok "enabled edge mode for $host (listener 127.0.0.1:$port) in .env"
+  edge_print_cloudflare_hint "$host" "$port"
+  load_env
+}
+
 run_source() {
   load_env
+  migrate_edge_env
   if [ "$DO_BUILD" = 1 ]; then build_go_source; build_web_source; else warn "skipping build (--no-build)"; fi
   migrate_source
   if type cleanup_build_tree >/dev/null 2>&1; then

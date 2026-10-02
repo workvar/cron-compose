@@ -54,6 +54,8 @@ export NONINTERACTIVE ENABLE_AGENT ENABLE_WEB ADVANCED
 . "$LIB_DIR/pgdetect.sh" # local PostgreSQL discovery, used by configure.sh
 # shellcheck source=lib/url.sh
 . "$LIB_DIR/url.sh"       # advertise-host parsing, used by configure.sh and services.sh
+# shellcheck source=lib/edge.sh
+. "$LIB_DIR/edge.sh"      # edge mode detection, used by configure.sh and services.sh
 # shellcheck source=lib/configure.sh
 . "$LIB_DIR/configure.sh"
 # shellcheck source=lib/configure_db.sh

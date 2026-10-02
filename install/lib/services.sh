@@ -56,7 +56,11 @@ print_summary() {
   info "Web UI:        $ui_url"
   dim "(the bare host:port redirects to /app)"
   info "REST API:      $rest_url   (health: /healthz)"
-  info "Agent gRPC:    $grpc_addr"
+  if [ "${GRPC_MODE:-mtls}" = edge ]; then
+    info "Agent gRPC:    $PUBLIC_GRPC_ADDR (edge mode, listener 127.0.0.1:$EDGE_PORT)"
+  else
+    info "Agent gRPC:    $grpc_addr"
+  fi
   info ""
   info "Sign in with:  $ADMIN_EMAIL"
   if [ "${ADMIN_PASSWORD_GENERATED:-0}" = "1" ]; then
@@ -91,4 +95,7 @@ run_services() {
     install_agent_sudoers "$(id -un)" || true
   fi
   print_summary
+  if [ "${GRPC_MODE:-mtls}" = edge ]; then
+    edge_print_cloudflare_hint "$GRPC_ADVERTISE_HOST" "$EDGE_PORT"
+  fi
 }

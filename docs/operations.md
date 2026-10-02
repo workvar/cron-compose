@@ -215,16 +215,17 @@ authority". Edge mode lets clients install and connect with nothing extra:
   server).
 - The control plane runs a second gRPC listener for this, plain HTTP/2 on loopback.
 
-Setup on the control plane `.env`, then restart it:
+You do not edit `.env`. `install.sh` and `update.sh` check whether the gRPC hostname
+answers with Cloudflare's headers. If it does, they write `PUBLIC_GRPC_MODE=edge`,
+`EDGE_GRPC_ADDR=127.0.0.1:<free port>` and a bare `PUBLIC_GRPC_ADDR=<hostname>` (an
+existing `PUBLIC_GRPC_MODE` is never changed), and `update.sh` then restarts the stack.
+Set `CC_GRPC_MODE=edge` or `mtls` when running either script to override the detection.
+Docker Compose installs are not covered; set the three variables in the compose
+environment yourself.
 
-```
-EDGE_GRPC_ADDR=127.0.0.1:9078
-PUBLIC_GRPC_MODE=edge
-PUBLIC_GRPC_ADDR=grpc.example.com
-```
-
-In Cloudflare: turn on **Network, gRPC** for the zone, and point the hostname's tunnel
-route at `http://localhost:9078` with **HTTP2 connection** enabled (a hostname has one
+The one step the scripts cannot do is in Cloudflare, and they print it: turn on
+**Network, gRPC** for the zone, and point the hostname's tunnel route at
+`http://localhost:<edge port>` with **HTTP2 connection** enabled (a hostname has one
 route, so this replaces a `tcp://localhost:9077` route on the same name; keep that route
 on another hostname if you still want mutual TLS for agents elsewhere). The direct
 `GRPC_ADDR` listener stays mutual TLS and is unchanged.

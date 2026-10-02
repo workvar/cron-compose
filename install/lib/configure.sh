@@ -75,6 +75,15 @@ configure_ports() {
     ADVERTISE_HOST="$saved_host"; ADVERTISE_SCHEME="$saved_scheme"; ADVERTISE_PORT="$saved_port"; ADVERTISE_PROXIED="$saved_proxied"
   fi
 
+  # A gRPC hostname behind a proxy that ends TLS (Cloudflare) cannot carry mutual TLS,
+  # so the control plane also needs its loopback edge listener. Detected, not asked.
+  GRPC_MODE="$(edge_choose_mode "$GRPC_ADVERTISE_HOST")"
+  EDGE_PORT=""
+  if [ "$GRPC_MODE" = edge ]; then
+    EDGE_PORT="$(find_free_port "$((GRPC_PORT + 1))" "$taken $GRPC_PORT")"
+    ok "gRPC host $GRPC_ADVERTISE_HOST is behind a TLS-terminating proxy: edge mode on (listener 127.0.0.1:$EDGE_PORT)"
+  fi
+
   ok "backend=$API_PORT  frontend=$WEB_PORT  agent=$GRPC_PORT ($GRPC_ADVERTISE_HOST)"
 }
 
@@ -172,7 +181,12 @@ write_env_file() {
   # own fallback only knows PUBLIC_BASE_URL's host and would get it wrong whenever
   # gRPC is published on a different hostname.
   PUBLIC_BASE_URL="${CC_PUBLIC_BASE_URL:-$(public_base_url "$API_PORT")}"
-  PUBLIC_GRPC_ADDR="${CC_PUBLIC_GRPC_ADDR:-$(public_grpc_addr "$GRPC_PORT" "$GRPC_ADVERTISE_HOST")}"
+  if [ "${GRPC_MODE:-mtls}" = edge ]; then
+    # Edge agents dial the hostname on 443, so no port goes into the address.
+    PUBLIC_GRPC_ADDR="${CC_PUBLIC_GRPC_ADDR:-$(url_host "$GRPC_ADVERTISE_HOST")}"
+  else
+    PUBLIC_GRPC_ADDR="${CC_PUBLIC_GRPC_ADDR:-$(public_grpc_addr "$GRPC_PORT" "$GRPC_ADVERTISE_HOST")}"
+  fi
 
   umask 077
   {
@@ -196,6 +210,12 @@ write_env_file() {
     echo "# only differs when the gRPC public hostname question was answered separately"
     echo "# (e.g. gRPC fronted by its own Cloudflare Access TCP application)."
     env_line PUBLIC_GRPC_ADDR "$PUBLIC_GRPC_ADDR"
+    if [ "${GRPC_MODE:-mtls}" = edge ]; then
+      echo "# Edge mode: agents behind a TLS-terminating proxy log in with a per-server secret on"
+      echo "# this loopback listener. Point the proxy's route for the gRPC hostname at it."
+      env_line PUBLIC_GRPC_MODE edge
+      env_line EDGE_GRPC_ADDR "127.0.0.1:$EDGE_PORT"
+    fi
     echo "# web UI (internal; the control plane reverse-proxies /app to it)"
     env_line PORT "$WEB_PORT"
     env_line API_BASE "$API_BASE"
