@@ -1,32 +1,47 @@
-# CronCompose v0.0.26
+# CronCompose v0.0.27
 
-Fixes an agent ignoring `AGENT_GRPC_ADDR`. The agent always dialed the public address the
-control plane gave it at enrollment, so a host that reaches the control plane another way,
-such as loopback on the control plane host, could not be pointed there. That left an agent
-running as root but unable to connect, so the page kept showing "Enable as root".
+Adds edge mode, so agents can connect through a Cloudflare proxy or tunnel with nothing
+installed on the client. Until now an agent needed mutual TLS, which a TLS-terminating
+edge cannot carry, so a proxied hostname failed with "certificate signed by unknown
+authority".
 
 ## Highlights
 
-- **An explicit address wins.** When `AGENT_GRPC_ADDR` (or the old `CONTROL_PLANE_ADDR`)
-  is set, the agent dials it instead of the address saved in `identity.json` at
-  enrollment. With nothing set, behaviour is unchanged. The agent logs a line at startup
-  when it uses the configured address over the enrolled one.
-- **Clearer connection warning.** When the installer cannot reach the gRPC address it now
-  says that a Cloudflare proxy or Tunnel TCP route does not carry raw gRPC on 443, and
-  gives both fixes: loopback plus `AGENT_GRPC_SNI` on the control plane host, or
-  `cloudflared access tcp` on other hosts.
-- **Corrected docs for tunnels.** A Cloudflare Tunnel application route such as
-  `tcp://localhost:9077` is not plain TCP on 443. The docs now say so, and show the
-  `cloudflared access tcp` setup for remote agents. The bare-hostname support added in
-  v0.0.25 is for plain TCP forwards only.
-- **Tests and docs.** New tests for address precedence and the explicit-address flag, and
-  a new "Explicit address beats the enrolled address" section in `docs/operations.md`.
+- **Edge mode for agents.** The agent dials a hostname such as `grpc.example.com` on 443
+  over ordinary TLS, verifies the edge's public certificate, and logs in with a
+  per-server secret instead of a client certificate. No `cloudflared`, no forwarder, no
+  extra step on the client.
+- **Edge listener on the control plane.** Set `EDGE_GRPC_ADDR` to open a second gRPC
+  listener for edge agents. It binds loopback only and refuses any other address, because
+  it has no TLS of its own. The existing mutual TLS listener is unchanged and stays the
+  default.
+- **Per-server secrets.** Enrollment now creates a random secret for the server and
+  returns it once. Only its SHA-256 is stored, it is compared in constant time, a server
+  with no secret cannot log in, and the agent keeps its copy in `identity.json` (mode
+  0600). Re-enrolling replaces it.
+- **One setting decides the mode.** `PUBLIC_GRPC_MODE=edge` on the control plane tells
+  newly enrolled agents to use edge mode, and the agent records it. `AGENT_GRPC_MODE` on
+  the agent overrides it. The install command is unchanged apart from the address, so
+  nothing can disagree between the command and the control plane.
+- **Tests and docs.** New tests cover the secret handling, the edge login path through a
+  TLS-terminating proxy, the agent's TLS verification, mode selection and the database
+  lookup. `docs/operations.md` has a new section, "Agents behind Cloudflare (edge mode)",
+  and `.env.example` lists the new settings.
 
 ## Upgrade
 
-No database migration. Update the agent to this release on any host where you set
-`AGENT_GRPC_ADDR` to something other than the public address.
+This release adds a database migration (`0020`, one nullable column). It runs on start.
 
-Until then, on older agents, edit `control_plane_grpc_addr` in
-`/var/lib/croncompose/identity.json` to the address you want, then run
-`sudo systemctl restart croncompose-agent`.
+Nothing changes until you opt in. To use edge mode:
+
+1. In the control plane `.env`, set `EDGE_GRPC_ADDR=127.0.0.1:9078`, `PUBLIC_GRPC_MODE=edge`
+   and `PUBLIC_GRPC_ADDR=grpc.example.com`, then restart it.
+2. In Cloudflare, turn on Network, gRPC for the zone, and point the hostname's tunnel
+   route at `http://localhost:9078` with HTTP2 connection enabled. A hostname has one
+   route, so this replaces a `tcp://localhost:9077` route on the same name.
+3. Install or reinstall agents with a new token. Agents enrolled before this release have
+   no secret and must be reinstalled to use edge mode.
+
+What edge mode gives up: Cloudflare can read the traffic between the agent and the control
+plane, and a stolen secret logs in as that server until it is replaced by re-enrolling.
+Agents on the same host as the control plane should keep using `127.0.0.1:<port>` with mTLS.
