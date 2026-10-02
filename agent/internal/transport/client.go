@@ -23,16 +23,20 @@ type Client struct {
 
 // Dial opens a mTLS connection to the control plane.
 func Dial(ctx context.Context, addr string, tlsCfg *tls.Config) (*Client, error) {
-	addr = NormalizeAddr(addr)
+	return dial(ctx, NormalizeAddr(addr), grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)))
+}
+
+// dial connects with the given credentials and fails fast with a useful error.
+func dial(ctx context.Context, addr string, creds ...grpc.DialOption) (*Client, error) {
 	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	conn, err := grpc.DialContext(dialCtx, addr,
-		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)),
+	opts := append(creds,
 		grpc.WithBlock(),
 		// Without this a refused port, a TLS mismatch and a timeout all surface as
 		// "context deadline exceeded", which hides a wrong address or port clash.
 		grpc.WithReturnConnectionError(),
 	)
+	conn, err := grpc.DialContext(dialCtx, addr, opts...)
 	if err != nil {
 		if hint := dialHint(err); hint != "" {
 			return nil, fmt.Errorf("dial %s: %w (%s)", addr, err, hint)

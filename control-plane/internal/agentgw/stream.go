@@ -76,8 +76,13 @@ func (s *service) AgentStream(stream agentv1.AgentService_AgentStreamServer) err
 	}
 }
 
-// authenticate resolves the peer's client cert fingerprint to a server row.
+// authenticate resolves the caller to a server: the edge listener's interceptor has
+// already done so for edge streams, otherwise the peer's client cert fingerprint is
+// looked up.
 func (s *service) authenticate(ctx context.Context) (string, error) {
+	if id, ok := edgeServerID(ctx); ok {
+		return id, nil // already authenticated by the edge listener's interceptor
+	}
 	p, ok := peer.FromContext(ctx)
 	if !ok {
 		return "", status.Error(codes.Unauthenticated, "no peer")

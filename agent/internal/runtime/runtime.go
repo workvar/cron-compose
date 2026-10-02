@@ -114,6 +114,8 @@ func (r *Runtime) Run(ctx context.Context) error {
 			"enrolled", enrolled, "using", addr, "explicit", r.cfg.GRPCAddrSet)
 	}
 
+	r.log.Info("control plane connection", "addr", addr, "mode", r.connMode())
+
 	backoff := newBackoff()
 	for {
 		if ctx.Err() != nil {
@@ -149,7 +151,7 @@ func (r *Runtime) connectAndServe(ctx context.Context, addr string) error {
 	connCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	client, err := transport.Dial(connCtx, addr, r.tlsCfg)
+	client, err := r.dial(connCtx, addr)
 	if err != nil {
 		return err
 	}

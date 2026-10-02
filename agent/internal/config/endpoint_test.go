@@ -70,3 +70,13 @@ func TestGRPCAddrSetByLegacyName(t *testing.T) {
 		t.Fatal("legacy name must count as explicit")
 	}
 }
+
+func TestGRPCModeIsTakenFromTheEnvironment(t *testing.T) {
+	if c, _ := Load(); c.GRPCMode != "" {
+		t.Fatalf("got %q", c.GRPCMode)
+	}
+	t.Setenv("AGENT_GRPC_MODE", "edge")
+	if c, _ := Load(); c.GRPCMode != "edge" {
+		t.Fatalf("got %q", c.GRPCMode)
+	}
+}

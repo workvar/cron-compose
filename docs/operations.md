@@ -203,6 +203,40 @@ fallback, so installed agents keep running. If both spellings are set to differe
 values the new name wins, and the agent logs a warning naming the ignored one. The
 install command shown in the UI still uses the old names; the installer accepts both.
 
+### Agents behind Cloudflare (edge mode)
+
+Cloudflare's proxy ends TLS, so an agent cannot present its client certificate through
+it, and plain gRPC to `grpc.example.com` fails with "certificate signed by unknown
+authority". Edge mode lets clients install and connect with nothing extra:
+
+- The agent dials the hostname on 443 over ordinary TLS and verifies Cloudflare's public
+  certificate. It proves who it is with a per-server secret that the control plane gave
+  it at enrollment (saved in `identity.json`, mode 0600; only a SHA-256 is stored on the
+  server).
+- The control plane runs a second gRPC listener for this, plain HTTP/2 on loopback.
+
+Setup on the control plane `.env`, then restart it:
+
+```
+EDGE_GRPC_ADDR=127.0.0.1:9078
+PUBLIC_GRPC_MODE=edge
+PUBLIC_GRPC_ADDR=grpc.example.com
+```
+
+In Cloudflare: turn on **Network, gRPC** for the zone, and point the hostname's tunnel
+route at `http://localhost:9078` with **HTTP2 connection** enabled (a hostname has one
+route, so this replaces a `tcp://localhost:9077` route on the same name; keep that route
+on another hostname if you still want mutual TLS for agents elsewhere). The direct
+`GRPC_ADDR` listener stays mutual TLS and is unchanged.
+
+Then create or reinstall servers as usual. The install command carries the bare hostname,
+and the enrolled agent records `edge` as its mode (`AGENT_GRPC_MODE` overrides it). An
+agent enrolled before this feature has no secret and must be reinstalled with a new token.
+
+What you give up: Cloudflare can read the traffic between the agent and the control
+plane, and a stolen secret logs in as that server until it is replaced by re-enrolling.
+The edge listener refuses to bind anything but loopback, since it has no TLS of its own.
+
 ### GRPC hostname without a port
 
 If the gRPC hostname reaches the gRPC port on 443 through a plain TCP forward (a load

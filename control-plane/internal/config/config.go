@@ -46,6 +46,13 @@ type Config struct {
 	PublicGRPCAddr   string
 	InstallScriptURL string
 
+	// EdgeGRPCAddr enables a second, loopback-only gRPC listener for agents reached
+	// through an edge that ends TLS (a Cloudflare proxy or tunnel route), where a
+	// client certificate cannot be presented. Empty disables it. See docs/operations.md.
+	EdgeGRPCAddr string
+	// PublicGRPCMode is how new agents are told to connect: "mtls" (default) or "edge".
+	PublicGRPCMode string
+
 	SecretsMasterKey string // 32 bytes hex
 
 	// Retention windows, in days. Zero disables pruning for that table, which is the
@@ -133,6 +140,8 @@ func Load() (Config, error) {
 		PublicHTTPURL:    env("PUBLIC_HTTP_URL", "http://localhost:8080/api"),
 		PublicGRPCAddr:   env("PUBLIC_GRPC_ADDR", "localhost:9090"),
 		InstallScriptURL: env("INSTALL_SCRIPT_URL", "https://github.com/workvar/cron-compose/releases/latest/download/install-agent.sh"),
+		EdgeGRPCAddr:     env("EDGE_GRPC_ADDR", ""),
+		PublicGRPCMode:   env("PUBLIC_GRPC_MODE", "mtls"),
 
 		// 32-byte hex. Default is a clearly-marked dev key so local dev works; prod
 		// MUST set this to a real value generated with `openssl rand -hex 32`.

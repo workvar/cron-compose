@@ -18,6 +18,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/croncompose/croncompose/control-plane/internal/agentsecret"
 	"github.com/croncompose/croncompose/control-plane/internal/pki"
 )
 
@@ -41,6 +42,10 @@ type Response struct {
 	ClientCertPEM        string `json:"client_cert_pem"`
 	ServerCAPEM          string `json:"server_ca_pem"`
 	ControlPlaneGRPCAddr string `json:"control_plane_grpc_addr"`
+	// AgentSecret is shown once. The agent presents it on the edge listener, where a
+	// client certificate cannot be used. GRPCMode tells it which listener to use.
+	AgentSecret string `json:"agent_secret"`
+	GRPCMode    string `json:"grpc_mode"`
 }
 
 type handler struct {
@@ -48,10 +53,11 @@ type handler struct {
 	pool     *pgxpool.Pool
 	bundle   *pki.Bundle
 	grpcAddr string
+	grpcMode string
 }
 
-func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, bundle *pki.Bundle, grpcAddr string) {
-	h := &handler{log: log, pool: pool, bundle: bundle, grpcAddr: grpcAddr}
+func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, bundle *pki.Bundle, grpcAddr, grpcMode string) {
+	h := &handler{log: log, pool: pool, bundle: bundle, grpcAddr: grpcAddr, grpcMode: normalizeMode(grpcMode)}
 	r.Post("/agents/enroll", h.enroll)
 }
 
@@ -82,11 +88,18 @@ func (h *handler) enroll(c fiber.Ctx) error {
 		})
 	}
 
+	secret, secretHash, err := agentsecret.Generate()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": fiber.Map{"code": "secret_failed", "message": err.Error()},
+		})
+	}
 	if _, err := h.pool.Exec(c.Context(), `
 		update servers
-		set cert_fingerprint = $1, os = $2, arch = $3, agent_version = $4, status = 'online', last_seen_at = now()
+		set cert_fingerprint = $1, os = $2, arch = $3, agent_version = $4, status = 'online', last_seen_at = now(),
+			agent_secret_hash = $6
 		where id = $5
-	`, fingerprint, req.OS, req.Arch, req.AgentVersion, serverID); err != nil {
+	`, fingerprint, req.OS, req.Arch, req.AgentVersion, serverID, secretHash); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": fiber.Map{"code": "bind_failed", "message": err.Error()},
 		})
@@ -105,6 +118,8 @@ func (h *handler) enroll(c fiber.Ctx) error {
 		ClientCertPEM:        string(certPEM),
 		ServerCAPEM:          string(h.bundle.CACertPEM),
 		ControlPlaneGRPCAddr: advertisedGRPCAddr(h.grpcAddr),
+		AgentSecret:          secret,
+		GRPCMode:             h.grpcMode,
 	})
 }
 

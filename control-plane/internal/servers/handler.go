@@ -79,16 +79,12 @@ func (h *handler) create(c fiber.Ctx) error {
 // enrollment token. asRoot sets AGENT_RUN_AS_ROOT=1 so the agent runs as root from
 // the start instead of the croncompose service user.
 func (h *handler) installCommand(token string, asRoot bool) string {
+	vars := fmt.Sprintf("TOKEN=%s AGENT_ENROLL_HTTP=%s AGENT_GRPC_ADDR=%s",
+		token, h.endpoints.PublicHTTPURL, h.endpoints.PublicGRPCAddr)
 	if asRoot {
-		return fmt.Sprintf(
-			"curl -sSL %s | sudo TOKEN=%s AGENT_ENROLL_HTTP=%s AGENT_GRPC_ADDR=%s AGENT_RUN_AS_ROOT=1 bash",
-			h.endpoints.InstallScriptURL, token, h.endpoints.PublicHTTPURL, h.endpoints.PublicGRPCAddr,
-		)
+		vars += " AGENT_RUN_AS_ROOT=1"
 	}
-	return fmt.Sprintf(
-		"curl -sSL %s | sudo TOKEN=%s AGENT_ENROLL_HTTP=%s AGENT_GRPC_ADDR=%s bash",
-		h.endpoints.InstallScriptURL, token, h.endpoints.PublicHTTPURL, h.endpoints.PublicGRPCAddr,
-	)
+	return fmt.Sprintf("curl -sSL %s | sudo %s bash", h.endpoints.InstallScriptURL, vars)
 }
 
 func (h *handler) get(c fiber.Ctx) error {

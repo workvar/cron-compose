@@ -17,7 +17,9 @@ type Config struct {
 	ControlPlaneSNI      string // server name to verify against in TLS
 	// GRPCAddrSet is true when the operator set AGENT_GRPC_ADDR (or the legacy name).
 	// An explicit address beats the one the control plane advertised at enrollment.
-	GRPCAddrSet  bool
+	GRPCAddrSet bool
+	// GRPCMode is AGENT_GRPC_MODE as set (empty when unset); see transport.ResolveMode.
+	GRPCMode     string
 	Warnings     []string // conflicting endpoint settings, logged by the caller
 	DataDir      string   // where the local store, cert, and key live
 	AgentVersion string   // injected at build time or hard-coded
@@ -35,6 +37,7 @@ func Load() (Config, error) {
 	c := Config{
 		ControlPlaneAddr:     addr,
 		GRPCAddrSet:          os.Getenv(envGRPCAddr) != "" || os.Getenv(legacyGRPCAddr) != "",
+		GRPCMode:             os.Getenv("AGENT_GRPC_MODE"),
 		ControlPlaneHTTPBase: httpBase,
 		ControlPlaneSNI:      sni,
 		DataDir:              env("DATA_DIR", defaultDataDir),

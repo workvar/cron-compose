@@ -59,6 +59,8 @@ type Gateway struct {
 	progress    *UpdateProgressTracker
 	rootSent    *rootDelivery
 	grpc        *grpc.Server
+	edgeAddr    string
+	edgeGRPC    *grpc.Server
 	lis         net.Listener
 }
 
@@ -176,6 +178,10 @@ func (g *Gateway) Start(_ context.Context) error {
 	svc := newService(g.log, g.pool, g.registry, g.broker, g.terminals, g.pending, g.users, g.logMaxBytes, g.update, g.resolver, g.onFailed, g.onDeployFin, g.progress)
 	svc.rootSent = g.rootSent
 	agentv1.RegisterAgentServiceServer(g.grpc, svc)
+	if err := g.startEdge(svc); err != nil {
+		_ = lis.Close()
+		return err
+	}
 
 	go func() {
 		g.log.Info("grpc listening (mTLS)", "addr", g.addr)
@@ -188,6 +194,9 @@ func (g *Gateway) Start(_ context.Context) error {
 
 // Stop attempts a graceful shutdown.
 func (g *Gateway) Stop() {
+	if g.edgeGRPC != nil {
+		g.edgeGRPC.GracefulStop()
+	}
 	if g.grpc != nil {
 		g.grpc.GracefulStop()
 	}

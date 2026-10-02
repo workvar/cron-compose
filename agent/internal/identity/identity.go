@@ -17,6 +17,11 @@ import (
 type Identity struct {
 	ServerID             string `json:"server_id"`
 	ControlPlaneGRPCAddr string `json:"control_plane_grpc_addr,omitempty"`
+	// AgentSecret and GRPCMode are only used in edge mode, where the connection passes
+	// through an edge that ends TLS and a client certificate cannot be presented. The
+	// file is written 0600. Empty for agents enrolled before edge mode existed.
+	AgentSecret string `json:"agent_secret,omitempty"`
+	GRPCMode    string `json:"grpc_mode,omitempty"`
 }
 
 const fileName = "identity.json"

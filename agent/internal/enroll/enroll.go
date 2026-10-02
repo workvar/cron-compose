@@ -32,6 +32,8 @@ type Response struct {
 	ClientCertPEM        string `json:"client_cert_pem"`
 	ServerCAPEM          string `json:"server_ca_pem"`
 	ControlPlaneGRPCAddr string `json:"control_plane_grpc_addr"`
+	AgentSecret          string `json:"agent_secret"`
+	GRPCMode             string `json:"grpc_mode"`
 }
 
 // Post calls POST <baseURL>/agents/enroll. baseURL is e.g. http://localhost:8080/api/v1.

@@ -137,6 +137,10 @@ func run(seedAndExit bool) error {
 	manualUpdate := agentgw.ParseUpdatePolicy(
 		cfg.AgentUpdateVersion, cfg.AgentUpdateURL, cfg.AgentUpdateSHA256, cfg.AgentUpdateRestart)
 	gw.SetUpdatePolicy(manualUpdate)
+	gw.SetEdgeAddr(cfg.EdgeGRPCAddr)
+	if cfg.PublicGRPCMode == "edge" && cfg.EdgeGRPCAddr == "" {
+		log.Warn("PUBLIC_GRPC_MODE=edge but EDGE_GRPC_ADDR is empty: new agents will be told to use an edge listener that is not running")
+	}
 	if err := gw.Start(ctx); err != nil {
 		return err
 	}
@@ -186,6 +190,7 @@ func run(seedAndExit bool) error {
 		SessionSecret:      []byte(cfg.SessionSecret),
 		PublicHTTPURL:      cfg.PublicHTTPURL,
 		PublicGRPCAddr:     cfg.PublicGRPCAddr,
+		PublicGRPCMode:     cfg.PublicGRPCMode,
 		InstallScriptURL:   cfg.InstallScriptURL,
 		WebUpstream:        cfg.WebUpstream,
 		Crypto:             box,

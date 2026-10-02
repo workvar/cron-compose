@@ -93,6 +93,8 @@ func cmdEnroll(args []string) int {
 	id := identity.Identity{
 		ServerID:             resp.ServerID,
 		ControlPlaneGRPCAddr: resp.ControlPlaneGRPCAddr,
+		AgentSecret:          resp.AgentSecret,
+		GRPCMode:             resp.GRPCMode,
 	}
 	if err := identity.Save(cfg.DataDir, id); err != nil {
 		log.Error("save identity failed", "err", err)

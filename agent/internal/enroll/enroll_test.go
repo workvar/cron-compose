@@ -38,3 +38,19 @@ func TestPostSendsRunAsRoot(t *testing.T) {
 		}
 	}
 }
+
+// Production change that would fail this test: dropping agent_secret or grpc_mode from
+// the response, so an edge-mode agent would have no secret to log in with.
+func TestPostReadsSecretAndMode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"server_id":"srv-1","client_cert_pem":"c","server_ca_pem":"ca","agent_secret":"sek","grpc_mode":"edge"}`))
+	}))
+	defer srv.Close()
+	resp, err := Post(srv.URL, Request{Token: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.AgentSecret != "sek" || resp.GRPCMode != "edge" {
+		t.Fatalf("got %+v", resp)
+	}
+}
