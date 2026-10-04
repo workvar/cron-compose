@@ -1,33 +1,21 @@
-# CronCompose v0.0.30
+# CronCompose v0.0.31
 
-Source updates from a root systemd agent failed with
-`module cache not found: neither GOMODCACHE nor GOPATH is set`. systemd starts
-the agent without a home directory, and Go refuses to build in that case.
+Deploy import now lets you choose which `croncompose.yml` in the repo to use,
+shows the steps that file will run, and confirms before starting. Editing an
+existing project also has searchable server and branch pickers.
 
 ## Highlights
 
-- **The agent fills Go's cache paths** before `go build` when `HOME`, `GOPATH`,
-  `GOMODCACHE` or `GOCACHE` are empty.
-- **The installer writes those variables into the unit** so a fresh root or
-  `croncompose` install has a stable cache under `/root` or the data directory.
+- **Pick a croncompose.yml from the repo** — searchable list of
+  `croncompose.yml` / `.yaml` files anywhere in the branch (not only the root).
+- **Review before deploy** — Next shows the agent plan (preflight → clone →
+  install → release → start → health) derived from the YAML, then Confirm.
+- **Searchable server & branch selectors** — set the target machine on create
+  and edit; GitHub/GitLab projects get a searchable branch picker.
+- **APIs** — `GET /git/specs` lists candidate files; `GET /git/spec` fetches and
+  parses one.
 
 ## Upgrade
 
-If you are stuck on 0.0.28 with this error, set the variables and restart before
-retrying the UI update. The running binary still needs a cache path even after
-this release is tagged:
-
-```sh
-sudo tee /etc/systemd/system/croncompose-agent.service.d/go-cache.conf >/dev/null <<'EOF'
-[Service]
-Environment=HOME=/root
-Environment=GOPATH=/root/go
-Environment=GOMODCACHE=/root/go/pkg/mod
-Environment=GOCACHE=/root/.cache/go-build
-EOF
-sudo systemctl daemon-reload
-sudo systemctl restart croncompose-agent
-```
-
-Then click **Retry** on the server page. After 0.0.30 is installed, later source
-updates set the same paths themselves.
+Pull or rebuild the control plane and web UI. No agent or database migration is
+required for this release.
