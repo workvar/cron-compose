@@ -1,5 +1,5 @@
 import { apiErrorMessage } from "./api-error";
-import type { DeployDetection, GitBranch } from "./types";
+import type { DeployDetection, DeploySpecResult, GitBranch } from "./types";
 
 /**
  * Re-runs detection scoped to one subfolder of the repo (see DetectAt on the
@@ -26,4 +26,30 @@ export async function listBranches(provider: string, repo: string): Promise<GitB
   if (!res.ok) throw new Error(await apiErrorMessage(res, "Could not list branches"));
   const data = (await res.json()) as { items?: GitBranch[] };
   return data.items || [];
+}
+
+/** Lists croncompose.yml paths found anywhere in the repo tree. */
+export async function listSpecFiles(
+  provider: string,
+  repo: string,
+  branch: string,
+): Promise<string[]> {
+  const q = new URLSearchParams({ provider, repo, branch });
+  const res = await fetch(`/api/git/specs?${q}`);
+  if (!res.ok) throw new Error(await apiErrorMessage(res, "Could not list croncompose.yml files"));
+  const data = (await res.json()) as { items?: { path: string }[] };
+  return (data.items || []).map((i) => i.path);
+}
+
+/** Fetches and parses one croncompose.yml from the repo. */
+export async function fetchSpecFile(
+  provider: string,
+  repo: string,
+  branch: string,
+  path: string,
+): Promise<DeploySpecResult> {
+  const q = new URLSearchParams({ provider, repo, branch, path });
+  const res = await fetch(`/api/git/spec?${q}`);
+  if (!res.ok) throw new Error(await apiErrorMessage(res, "Could not read croncompose.yml"));
+  return (await res.json()) as DeploySpecResult;
 }

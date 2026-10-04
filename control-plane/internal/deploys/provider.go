@@ -293,6 +293,92 @@ func (g *GitAPI) fetchGitLab(ctx context.Context, token, fullName, branch string
 	return files, repo, nil
 }
 
+// ListSpecFiles lists croncompose.yml paths in a repo (recursive tree scan, capped).
+func (g *GitAPI) ListSpecFiles(ctx context.Context, provider, token, fullName, branch string) ([]SpecFileEntry, error) {
+	if provider == "gitlab" {
+		return g.listSpecFilesGitLab(ctx, token, fullName, branch)
+	}
+	return g.listSpecFilesGitHub(ctx, token, fullName, branch)
+}
+
+func (g *GitAPI) listSpecFilesGitHub(ctx context.Context, token, fullName, branch string) ([]SpecFileEntry, error) {
+	if branch == "" {
+		var meta struct {
+			DefaultBranch string `json:"default_branch"`
+		}
+		if err := g.getJSON(ctx, g.githubAPI()+"/repos/"+fullName, token, &meta); err != nil {
+			return nil, err
+		}
+		branch = meta.DefaultBranch
+	}
+	var tree struct {
+		Tree []struct {
+			Path string `json:"path"`
+			Type string `json:"type"`
+		} `json:"tree"`
+	}
+	u := fmt.Sprintf("%s/repos/%s/git/trees/%s?recursive=1", g.githubAPI(), fullName, url.PathEscape(branch))
+	if err := g.getJSON(ctx, u, token, &tree); err != nil {
+		return nil, err
+	}
+	var out []SpecFileEntry
+	for _, t := range tree.Tree {
+		if t.Type != "blob" || !IsSpecFileName(t.Path) {
+			continue
+		}
+		out = append(out, SpecFileEntry{Path: t.Path})
+		if len(out) >= MaxSpecFiles {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (g *GitAPI) listSpecFilesGitLab(ctx context.Context, token, fullName, branch string) ([]SpecFileEntry, error) {
+	enc := url.PathEscape(fullName)
+	if branch == "" {
+		var meta struct {
+			DefaultBranch string `json:"default_branch"`
+		}
+		if err := g.getJSON(ctx, g.gitlabAPI()+"/projects/"+enc, token, &meta); err != nil {
+			return nil, err
+		}
+		branch = meta.DefaultBranch
+	}
+	var out []SpecFileEntry
+	for page := 1; ; page++ {
+		q := url.Values{}
+		q.Set("ref", branch)
+		q.Set("per_page", "100")
+		q.Set("page", fmt.Sprintf("%d", page))
+		q.Set("recursive", "true")
+		var pageItems []struct {
+			Path string `json:"path"`
+			Type string `json:"type"`
+		}
+		u := fmt.Sprintf("%s/projects/%s/repository/tree?%s", g.gitlabAPI(), enc, q.Encode())
+		if err := g.getJSON(ctx, u, token, &pageItems); err != nil {
+			return nil, err
+		}
+		if len(pageItems) == 0 {
+			break
+		}
+		for _, t := range pageItems {
+			if t.Type != "blob" || !IsSpecFileName(t.Path) {
+				continue
+			}
+			out = append(out, SpecFileEntry{Path: t.Path})
+			if len(out) >= MaxSpecFiles {
+				return out, nil
+			}
+		}
+		if len(pageItems) < 100 {
+			break
+		}
+	}
+	return out, nil
+}
+
 // ListDirs lists directories in a repo at path (shallow or recursive, capped).
 func (g *GitAPI) ListDirs(ctx context.Context, provider, token, fullName, branch, path string, recursive bool) (DirList, error) {
 	path = NormalizeRepoPath(path)

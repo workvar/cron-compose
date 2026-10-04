@@ -1,14 +1,15 @@
 "use client";
 
 // Vercel-style import: pick a source (connected repo, public URL, or a pasted
-// croncompose.yml), then one Configure page with a single Deploy button. A
-// croncompose.yml in the repo, or pasted here, pre-fills every field.
+// croncompose.yml), configure (including which repo croncompose.yml to use),
+// review the steps that YAML implies, then confirm.
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { GitConnections } from "@/components/deploys/GitConnections";
 import { AppEnvEditor } from "@/components/deploys/AppEnvEditor";
 import { ProjectBlockCard } from "@/components/deploys/ProjectBlockCard";
 import { HealthCheckFields } from "@/components/deploys/HealthCheckFields";
+import { DeployReview } from "@/components/deploys/DeployReview";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import CopyButton from "@/components/CopyButton";
 import {
@@ -36,8 +37,9 @@ import {
   specToDraft,
   type AdvancedSettings,
 } from "@/lib/deploy-spec";
+import { buildDeploySteps } from "@/lib/deploy-steps";
 import { filterGitRepos, listGitRepoOwners, toggleOwnerFilter } from "@/lib/git-repos";
-import { listBranches } from "@/lib/git-detect";
+import { fetchSpecFile, listBranches, listSpecFiles } from "@/lib/git-detect";
 import { githubLanguageIconUrl } from "@/lib/language-icons";
 import type { SelectOption } from "@/lib/ui-helpers";
 import type {
@@ -53,6 +55,9 @@ import type {
   ListResponse,
   Server,
 } from "@/lib/types";
+
+/** Sentinel for "don't use a croncompose.yml; detect from the repo". */
+const SPEC_NONE = "__none__";
 
 type Source = {
   provider: string;
@@ -95,7 +100,7 @@ async function errorText(res: Response): Promise<string> {
 }
 
 export default function NewDeployPage() {
-  const [phase, setPhase] = useState<"import" | "configure">("import");
+  const [phase, setPhase] = useState<"import" | "configure" | "review">("import");
   const [conns, setConns] = useState<GitConnection[] | null>(null);
   const [provider, setProvider] = useState("github");
   const [repos, setRepos] = useState<GitRepo[] | null>(null);
@@ -112,6 +117,8 @@ export default function NewDeployPage() {
   const [branches, setBranches] = useState<SelectOption[]>([]);
   const [inspect, setInspect] = useState<DeployInspect | null>(null);
   const [spec, setSpec] = useState<DeploySpecResult | null>(null);
+  const [specFiles, setSpecFiles] = useState<string[]>([]);
+  const [selectedSpecPath, setSelectedSpecPath] = useState(SPEC_NONE);
   const [form, setForm] = useState<Form>(emptyForm);
   const [showYaml, setShowYaml] = useState(false);
 
@@ -167,6 +174,25 @@ export default function NewDeployPage() {
       live = false;
     };
   }, [source?.provider, source?.fullName]);
+
+  // croncompose.yml files anywhere in the repo, for the file picker.
+  useEffect(() => {
+    if (!source || source.via === "yaml" || phase === "import") {
+      setSpecFiles([]);
+      return;
+    }
+    let live = true;
+    listSpecFiles(source.provider, source.fullName, form.branch || source.defaultBranch || "main")
+      .then((items) => {
+        if (live) setSpecFiles(items);
+      })
+      .catch(() => {
+        if (live) setSpecFiles([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [source?.provider, source?.fullName, source?.via, source?.defaultBranch, form.branch, phase]);
 
   const personalLogin = conns?.find((c) => c.provider === provider)?.login;
   const owners = useMemo(() => listGitRepoOwners(repos || [], personalLogin), [repos, personalLogin]);
@@ -236,6 +262,10 @@ export default function NewDeployPage() {
       });
       setInspect(ins);
       setSpec(fileSpec);
+      // Pasted YAML is not a repo path; root auto-detect is. Nested picks come from the picker.
+      if (pasted) setSelectedSpecPath(SPEC_NONE);
+      else if (fileSpec?.path) setSelectedSpecPath(fileSpec.path);
+      else setSelectedSpecPath(SPEC_NONE);
       setForm(next);
       setShowYaml(false);
       setPhase("configure");
@@ -319,12 +349,97 @@ export default function NewDeployPage() {
   if (!form.serverId) problems.push("Pick a server to deploy to.");
   if (!blocksReady(form.blocks)) problems.push("Every app needs a root folder.");
   if (duplicateRoots) problems.push("Two apps share the same root folder.");
-  const canDeploy = problems.length === 0 && !busy;
+  if (spec && !spec.valid && selectedSpecPath !== SPEC_NONE) {
+    problems.push("Fix the selected croncompose.yml before continuing.");
+  }
+  const canContinue = problems.length === 0 && !busy;
 
   const serverOptions = useMemo(
     () => servers.map((s) => ({ value: s.id, label: `${s.name} · ${s.status}` })),
     [servers],
   );
+
+  const specFileOptions = useMemo<SelectOption[]>(() => {
+    const opts: SelectOption[] = [{ value: SPEC_NONE, label: "None — detect from repo" }];
+    for (const p of specFiles) opts.push({ value: p, label: p });
+    // Keep a selected path visible even if the listing hasn't returned it yet.
+    if (selectedSpecPath !== SPEC_NONE && !specFiles.includes(selectedSpecPath)) {
+      opts.push({ value: selectedSpecPath, label: selectedSpecPath });
+    }
+    return opts;
+  }, [specFiles, selectedSpecPath]);
+
+  const reviewSteps = useMemo(
+    () =>
+      source
+        ? buildDeploySteps({
+            repo: source.fullName,
+            branch: form.branch,
+            serverName: servers.find((s) => s.id === form.serverId)?.name || "",
+            clonePath: form.clonePath,
+            blocks: ensureUniqueBlockNames(form.blocks),
+            advanced: form.advanced,
+          })
+        : [],
+    [source, form, servers],
+  );
+
+  /** Seeds the form from detection only (no croncompose.yml). */
+  function formFromInspect(src: Source, ins: DeployInspect | null): Form {
+    const repoName = src.fullName.split("/").pop() || src.fullName;
+    return {
+      ...emptyForm,
+      name: repoName,
+      // Keep the server / branch the operator already picked when clearing a YAML.
+      serverId: form.serverId || defaultServer(),
+      branch: form.branch || ins?.default_branch || src.defaultBranch || "main",
+      clonePath: ins?.clone_path || "",
+      blocks: ins ? [seedBlockFromInspect(ins, src.fullName)] : [emptyBlock()],
+    };
+  }
+
+  function applySpecToForm(src: Source, ins: DeployInspect | null, fileSpec: DeploySpecResult): Form {
+    const next = formFromInspect(src, ins);
+    if (!fileSpec.valid) return next;
+    const d = specToDraft({ ...fileSpec.spec, repo: fileSpec.spec.repo || src.fullName }, servers, {
+      language: ins?.language,
+      install: ins?.install_script,
+    });
+    next.name = d.name || next.name;
+    next.branch = d.branch || next.branch;
+    next.clonePath = d.clonePath || next.clonePath;
+    next.serverId = d.serverId || next.serverId;
+    next.blocks = d.blocks;
+    next.appEnv = d.appEnv;
+    next.advanced = d.advanced;
+    return next;
+  }
+
+  async function onSelectSpecPath(path: string) {
+    if (!source) return;
+    setSelectedSpecPath(path);
+    setError(null);
+    if (path === SPEC_NONE) {
+      setSpec(null);
+      setForm(formFromInspect(source, inspect));
+      return;
+    }
+    setBusy("spec");
+    try {
+      const result = await fetchSpecFile(
+        source.provider,
+        source.fullName,
+        form.branch || source.defaultBranch || "main",
+        path,
+      );
+      setSpec(result);
+      if (result.valid) setForm(applySpecToForm(source, inspect, result));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
 
   const exportYaml = source
     ? draftToYaml({
@@ -341,7 +456,7 @@ export default function NewDeployPage() {
     : "";
 
   async function deploy() {
-    if (!source || !canDeploy) return;
+    if (!source || !canContinue) return;
     setBusy("deploy");
     setError(null);
     try {
@@ -363,8 +478,8 @@ export default function NewDeployPage() {
         port: first?.port || 0,
         process_manager: first?.process_manager || "none",
         apps: submitApps,
-        // The repo already has its own croncompose.yml: never overwrite it.
-        spec_from_repo: !!inspect?.spec,
+        // A repo croncompose.yml (auto-detected or picked) must not be overwritten.
+        spec_from_repo: selectedSpecPath !== SPEC_NONE || !!inspect?.spec,
         auto_rollback: a.autoRollback,
         health_path: a.healthPath.trim(),
         health_port: Number(a.healthPort) || 0,
@@ -426,8 +541,59 @@ export default function NewDeployPage() {
     );
   }
 
+  if (phase === "review" && source) {
+    const serverName = servers.find((s) => s.id === form.serverId)?.name || "";
+    const reviewSpecPath =
+      selectedSpecPath !== SPEC_NONE
+        ? selectedSpecPath
+        : source.via === "yaml"
+          ? "pasted croncompose.yml"
+          : spec?.path;
+    return (
+      <div className="deploy-flow">
+        <button type="button" className="back-link as-button" onClick={() => setPhase("configure")}>
+          <IconChevronLeft /> Back
+        </button>
+        <div className="page-head">
+          <div>
+            <h1>Confirm deploy</h1>
+            <div className="repo-chip">
+              <IconGit />
+              <span>{source.fullName}</span>
+              <span className="pill">{form.branch || "main"}</span>
+            </div>
+          </div>
+        </div>
+
+        <DeployReview
+          repo={source.fullName}
+          branch={form.branch}
+          serverName={serverName}
+          specPath={reviewSpecPath}
+          steps={reviewSteps}
+          issues={spec?.issues}
+        />
+
+        {error && <p className="form-error">{error}</p>}
+
+        <div className="deploy-bar">
+          <button type="button" className="button ghost sm" onClick={() => setPhase("configure")}>
+            Edit configuration
+          </button>
+          <div className="deploy-bar-right">
+            {problems.length > 0 && <span className="subtle deploy-bar-hint">{problems[0]}</span>}
+            <button type="button" className="button deploy-button" disabled={!canContinue} onClick={deploy}>
+              {busy === "deploy" ? "Deploying…" : "Confirm & deploy"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (phase === "configure" && source) {
     const fromFile = !!spec && spec.valid;
+    const showSpecPicker = source.via !== "yaml";
     return (
       <div className="deploy-flow">
         <button type="button" className="back-link as-button" onClick={() => setPhase("import")}>
@@ -445,13 +611,26 @@ export default function NewDeployPage() {
           </div>
         </div>
 
-        {spec && (
+        {spec && selectedSpecPath !== SPEC_NONE && (
           <div className={`spec-banner${spec.valid ? " ok" : " bad"}`}>
             <div>
               <strong>
                 {spec.valid
                   ? `Configured from ${spec.path || "croncompose.yml"}`
                   : `${spec.path || "croncompose.yml"} has errors and was not applied`}
+              </strong>
+              <span className="subtle"> · you can still change anything below.</span>
+            </div>
+            {spec.issues.length > 0 && <IssueList issues={spec.issues} />}
+          </div>
+        )}
+        {source.via === "yaml" && spec && (
+          <div className={`spec-banner${spec.valid ? " ok" : " bad"}`}>
+            <div>
+              <strong>
+                {spec.valid
+                  ? "Configured from pasted croncompose.yml"
+                  : "Pasted croncompose.yml has errors and was not applied"}
               </strong>
               <span className="subtle"> · you can still change anything below.</span>
             </div>
@@ -489,11 +668,46 @@ export default function NewDeployPage() {
                   onChange={(serverId) => setForm((f) => ({ ...f, serverId }))}
                   options={serverOptions}
                   placeholder="Select a server…"
-                  aria-label="Server"
+                  aria-label="Target server"
                 />
               )}
+              <p className="field-hint">Machine the agent runs this deploy on.</p>
             </div>
           </div>
+          {(source.provider === "github" || source.provider === "gitlab") && (
+            <div className="field">
+              <label htmlFor="branch">Branch</label>
+              <SearchableSelect
+                id="branch"
+                value={form.branch}
+                options={branches}
+                allowCustom
+                placeholder="main"
+                onChange={(branch) => setForm((f) => ({ ...f, branch }))}
+                aria-label="Branch"
+              />
+              <p className="field-hint">Pushes to this branch redeploy automatically.</p>
+            </div>
+          )}
+          {showSpecPicker && (
+            <div className="field">
+              <label htmlFor="specFile">croncompose.yml</label>
+              <SearchableSelect
+                id="specFile"
+                value={selectedSpecPath}
+                options={specFileOptions}
+                onChange={(path) => void onSelectSpecPath(path)}
+                placeholder="Select a file…"
+                aria-label="croncompose.yml from repo"
+                disabled={busy === "spec"}
+              />
+              <p className="field-hint">
+                {specFiles.length === 0
+                  ? "No croncompose.yml found in this branch yet — pick None to detect, or add a file to the repo."
+                  : "Pick which file in the repo drives this deploy. Next shows the steps it will run."}
+              </p>
+            </div>
+          )}
 
           <div className="config-section-h">Build &amp; run</div>
           <div className="stack">
@@ -544,7 +758,7 @@ export default function NewDeployPage() {
               <span className="chev"><IconChevronRight /></span> Advanced
             </summary>
             <div style={{ marginTop: 14 }}>
-              <div className="grid-2">
+              {source.provider !== "github" && source.provider !== "gitlab" && (
                 <div className="field">
                   <label htmlFor="branch">Branch</label>
                   <SearchableSelect
@@ -558,15 +772,15 @@ export default function NewDeployPage() {
                   />
                   <p className="field-hint">Pushes to this branch redeploy automatically.</p>
                 </div>
-                <div className="field">
-                  <label htmlFor="clonePath">Folder on the server</label>
-                  <input
-                    id="clonePath"
-                    placeholder="/opt/apps/…"
-                    value={form.clonePath}
-                    onChange={(e) => setForm((f) => ({ ...f, clonePath: e.target.value }))}
-                  />
-                </div>
+              )}
+              <div className="field">
+                <label htmlFor="clonePath">Folder on the server</label>
+                <input
+                  id="clonePath"
+                  placeholder="/opt/apps/…"
+                  value={form.clonePath}
+                  onChange={(e) => setForm((f) => ({ ...f, clonePath: e.target.value }))}
+                />
               </div>
               {form.blocks.length > 1 && (
                 <p className="field-hint">
@@ -639,8 +853,17 @@ export default function NewDeployPage() {
             </button>
             <div className="deploy-bar-right">
               {problems.length > 0 && <span className="subtle deploy-bar-hint">{problems[0]}</span>}
-              <button type="button" className="button deploy-button" disabled={!canDeploy} onClick={deploy}>
-                {busy === "deploy" ? "Deploying…" : "Deploy"}
+              <button
+                type="button"
+                className="button deploy-button"
+                disabled={!canContinue}
+                onClick={() => {
+                  setError(null);
+                  setPhase("review");
+                  window.scrollTo({ top: 0 });
+                }}
+              >
+                {busy === "spec" ? "Loading…" : "Next"}
               </button>
             </div>
           </div>

@@ -1,9 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { DeployProject } from "@/lib/types";
+import Link from "next/link";
+import type { DeployProject, ListResponse, Server } from "@/lib/types";
+import type { SelectOption } from "@/lib/ui-helpers";
+import { listBranches } from "@/lib/git-detect";
+import { SearchableSelect } from "@/components/SearchableSelect";
 import { HealthCheckFields, type HealthCheckValues } from "./HealthCheckFields";
+
+const GIT_PROVIDERS = new Set(["github", "gitlab"]);
 
 export function ProjectActions({ project }: { project: DeployProject }) {
   const router = useRouter();
@@ -11,6 +17,7 @@ export function ProjectActions({ project }: { project: DeployProject }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState(project.name);
+  const [serverId, setServerId] = useState(project.server_id);
   const [branch, setBranch] = useState(project.default_branch);
   const [install, setInstall] = useState(project.install_script);
   const [clonePath, setClonePath] = useState(project.clone_path);
@@ -24,6 +31,57 @@ export function ProjectActions({ project }: { project: DeployProject }) {
     deployTimeout: project.deploy_timeout_seconds ? String(project.deploy_timeout_seconds) : "",
   });
 
+  const [servers, setServers] = useState<Server[] | null>(null);
+  const [branches, setBranches] = useState<SelectOption[]>([]);
+  const isGit = GIT_PROVIDERS.has(project.provider);
+
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    setServers(null);
+    fetch("/api/servers")
+      .then((r) => r.json() as Promise<ListResponse<Server>>)
+      .then((d) => {
+        if (live) setServers(d.items || []);
+      })
+      .catch(() => {
+        if (live) setServers([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !isGit) {
+      setBranches([]);
+      return;
+    }
+    let live = true;
+    listBranches(project.provider, project.repo_full_name)
+      .then((items) => {
+        if (live) {
+          setBranches(
+            items.map((b) => ({
+              value: b.name,
+              label: b.default ? `${b.name} (default)` : b.name,
+            })),
+          );
+        }
+      })
+      .catch(() => {
+        if (live) setBranches([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [open, isGit, project.provider, project.repo_full_name]);
+
+  const serverOptions = useMemo(
+    () => (servers || []).map((s) => ({ value: s.id, label: `${s.name} · ${s.status}` })),
+    [servers],
+  );
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -34,6 +92,7 @@ export function ProjectActions({ project }: { project: DeployProject }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           name,
+          server_id: serverId,
           default_branch: branch,
           install_script: install,
           clone_path: clonePath,
@@ -86,9 +145,42 @@ export function ProjectActions({ project }: { project: DeployProject }) {
               <input id="name" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div className="field">
-              <label htmlFor="branch">Branch</label>
-              <input id="branch" value={branch} onChange={(e) => setBranch(e.target.value)} />
+              <label htmlFor="server">Server</label>
+              {servers === null ? (
+                <p className="field-hint">Loading servers…</p>
+              ) : servers.length === 0 ? (
+                <p className="field-hint">
+                  No servers yet. <Link href="/servers/new">Add a server</Link>, then come back.
+                </p>
+              ) : (
+                <SearchableSelect
+                  id="server"
+                  value={serverId}
+                  onChange={setServerId}
+                  options={serverOptions}
+                  placeholder="Select a server…"
+                  aria-label="Target server"
+                />
+              )}
+              <p className="field-hint">Machine the agent runs this deploy on.</p>
             </div>
+          </div>
+          <div className="field">
+            <label htmlFor="branch">Branch</label>
+            {isGit ? (
+              <SearchableSelect
+                id="branch"
+                value={branch}
+                options={branches}
+                allowCustom
+                placeholder="main"
+                onChange={setBranch}
+                aria-label="Branch"
+              />
+            ) : (
+              <input id="branch" value={branch} onChange={(e) => setBranch(e.target.value)} />
+            )}
+            <p className="field-hint">Pushes to this branch redeploy automatically.</p>
           </div>
           <div className="field">
             <label htmlFor="install">Install script</label>
@@ -124,7 +216,9 @@ export function ProjectActions({ project }: { project: DeployProject }) {
           </div>
           <HealthCheckFields value={health} onChange={setHealth} appPort={project.port} />
           {error && <p className="form-error">{error}</p>}
-          <button type="submit" className="button" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+          <button type="submit" className="button" disabled={busy || !serverId}>
+            {busy ? "Saving…" : "Save"}
+          </button>
         </form>
       )}
     </>

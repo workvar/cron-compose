@@ -16,8 +16,23 @@ import (
 // CronCompose has always written into imported repos.
 const SpecVersion = 1
 
-// SpecFileNames are the repo-root paths the importer looks for, in order.
+// SpecFileNames are the basename paths the importer looks for, in order.
+// They may sit at the repo root or in a subfolder (monorepos).
 var SpecFileNames = []string{"croncompose.yml", "croncompose.yaml", ".croncompose.yml", ".croncompose.yaml"}
+
+// IsSpecFileName reports whether path's basename is a recognized croncompose.yml.
+func IsSpecFileName(path string) bool {
+	base := path
+	if i := strings.LastIndex(path, "/"); i >= 0 {
+		base = path[i+1:]
+	}
+	for _, n := range SpecFileNames {
+		if base == n {
+			return true
+		}
+	}
+	return false
+}
 
 // SpecIssue is one problem found while reading a croncompose.yml. Errors block a
 // deploy; warnings are shown next to the form and do not.

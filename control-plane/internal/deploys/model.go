@@ -85,9 +85,17 @@ type Settings struct {
 // MaxDirEntries is the cap for recursive directory listings.
 const MaxDirEntries = 2000
 
+// MaxSpecFiles is the cap for GET /git/specs listings.
+const MaxSpecFiles = 100
+
 // DirEntry is one directory in a listing.
 type DirEntry struct {
 	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// SpecFileEntry is one croncompose.yml found in a repo tree.
+type SpecFileEntry struct {
 	Path string `json:"path"`
 }
 

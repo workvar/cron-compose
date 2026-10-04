@@ -112,6 +112,55 @@ func (h *handler) listDirs(c fiber.Ctx) error {
 	return c.JSON(out)
 }
 
+func (h *handler) listSpecs(c fiber.Ctx) error {
+	provider := c.Query("provider", "github")
+	repo := c.Query("repo")
+	branch := c.Query("branch")
+	if repo == "" {
+		return jsonError(c, fiber.StatusBadRequest, "missing_repo", errors.New("repo is required"))
+	}
+	token, err := h.conns.Token(c.Context(), auth.CurrentUserID(c), provider)
+	if err != nil && !errors.Is(err, auth.ErrNotFound) {
+		return jsonError(c, fiber.StatusInternalServerError, "token_failed", err)
+	}
+	items, err := h.git.ListSpecFiles(c.Context(), provider, token, repo, branch)
+	if err != nil {
+		return jsonError(c, fiber.StatusBadGateway, "git_api", err)
+	}
+	if items == nil {
+		items = []SpecFileEntry{}
+	}
+	return c.JSON(fiber.Map{"items": items})
+}
+
+// getSpec is GET /git/spec: fetch and parse one croncompose.yml from the repo.
+func (h *handler) getSpec(c fiber.Ctx) error {
+	provider := c.Query("provider", "github")
+	repo := c.Query("repo")
+	branch := c.Query("branch")
+	path := NormalizeRepoPath(c.Query("path"))
+	if repo == "" {
+		return jsonError(c, fiber.StatusBadRequest, "missing_repo", errors.New("repo is required"))
+	}
+	if path == "" || !IsSpecFileName(path) {
+		return jsonError(c, fiber.StatusBadRequest, "bad_path", errors.New("path must be a croncompose.yml (or .yaml) in the repo"))
+	}
+	token, err := h.conns.Token(c.Context(), auth.CurrentUserID(c), provider)
+	if err != nil && !errors.Is(err, auth.ErrNotFound) {
+		return jsonError(c, fiber.StatusInternalServerError, "token_failed", err)
+	}
+	body, err := h.git.FetchFile(c.Context(), provider, token, repo, branch, path)
+	if err != nil {
+		return jsonError(c, fiber.StatusBadGateway, "git_api", err)
+	}
+	if len(body) > 256<<10 {
+		return jsonError(c, fiber.StatusRequestEntityTooLarge, "too_large", errors.New("croncompose.yml must be under 256 KiB"))
+	}
+	res := ParseSpecFile([]byte(body))
+	res.Path = path
+	return c.JSON(res)
+}
+
 func (h *handler) inspect(c fiber.Ctx) error {
 	provider := c.Query("provider", "github")
 	repo := c.Query("repo")
