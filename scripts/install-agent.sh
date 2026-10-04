@@ -304,9 +304,10 @@ install_linux() {
   fi
 
   echo "==> writing systemd unit"
-  local unit_user_lines=""
+  local unit_user_lines="" go_home="/root"
   if [[ "$run_as_root" != "1" ]]; then
     unit_user_lines=$'User=croncompose\nGroup=croncompose\n'
+    go_home="$DATA_DIR"
   fi
   cat >"$UNIT_PATH" <<EOF
 [Unit]
@@ -319,6 +320,10 @@ ${unit_user_lines}Environment=AGENT_GRPC_ADDR=${CONTROL_PLANE_ADDR}
 Environment=AGENT_ENROLL_HTTP=${CONTROL_PLANE_HTTP}
 Environment=AGENT_GRPC_SNI=${SNI}
 Environment=DATA_DIR=${DATA_DIR}
+Environment=HOME=${go_home}
+Environment=GOPATH=${go_home}/go
+Environment=GOMODCACHE=${go_home}/go/pkg/mod
+Environment=GOCACHE=${go_home}/.cache/go-build
 ExecStart=${BIN_PATH} run
 Restart=always
 RestartSec=5s

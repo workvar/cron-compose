@@ -1,28 +1,33 @@
-# CronCompose v0.0.29
+# CronCompose v0.0.30
 
-cloudflared only speaks HTTP/2 to an `https://` origin. The edge listener is plain
-HTTP/2, so a tunnel route of `http://localhost:9078` with "Use HTTP/2 to origin" still
-ended in `502` and `broken pipe`. `install.sh` and `update.sh` now install nginx on
-loopback to terminate TLS and forward gRPC to that listener.
+Source updates from a root systemd agent failed with
+`module cache not found: neither GOMODCACHE nor GOPATH is set`. systemd starts
+the agent without a home directory, and Go refuses to build in that case.
 
 ## Highlights
 
-- **nginx TLS bridge.** When edge mode is on, the scripts install nginx if it is missing,
-  copy the control plane certificate to `/etc/nginx/croncompose/`, and listen on
-  `127.0.0.1:<EDGE_NGINX_PORT>` (9443, or the next free port). The plain edge listener
-  is unchanged.
-- **The Cloudflare URL is https.** The scripts print `https://localhost:<EDGE_NGINX_PORT>`.
-  Turn **Use HTTP/2 to origin** on and **Disable TLS certificate verification** on.
-  An `http://` origin ignores the HTTP/2 setting.
+- **The agent fills Go's cache paths** before `go build` when `HOME`, `GOPATH`,
+  `GOMODCACHE` or `GOCACHE` are empty.
+- **The installer writes those variables into the unit** so a fresh root or
+  `croncompose` install has a stable cache under `/root` or the data directory.
 
 ## Upgrade
 
-Run `./update.sh` on the control plane. It installs nginx and prints the port. Then, in
-the tunnel public hostname for gRPC:
+If you are stuck on 0.0.28 with this error, set the variables and restart before
+retrying the UI update. The running binary still needs a cache path even after
+this release is tagged:
 
-1. Set the URL to `https://localhost:<EDGE_NGINX_PORT>`.
-2. Additional application settings, TLS: **Use HTTP/2 to origin** on.
-3. **Disable TLS certificate verification** on.
+```sh
+sudo tee /etc/systemd/system/croncompose-agent.service.d/go-cache.conf >/dev/null <<'EOF'
+[Service]
+Environment=HOME=/root
+Environment=GOPATH=/root/go
+Environment=GOMODCACHE=/root/go/pkg/mod
+Environment=GOCACHE=/root/.cache/go-build
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart croncompose-agent
+```
 
-Leave the plain listener (`EDGE_GRPC_ADDR`) as it is. nginx is the tunnel origin.
-Reinstall agents only if they were enrolled before edge mode and still have no secret.
+Then click **Retry** on the server page. After 0.0.30 is installed, later source
+updates set the same paths themselves.

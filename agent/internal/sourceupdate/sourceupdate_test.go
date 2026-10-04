@@ -3,6 +3,7 @@ package sourceupdate
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -32,6 +33,37 @@ func TestIsSource(t *testing.T) {
 	}
 	if IsSource("https://github.com/workvar/cron-compose", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") {
 		t.Fatal("checksummed url is a binary update")
+	}
+}
+
+func TestEnsureGoEnvFillsEmptyCache(t *testing.T) {
+	env := ensureGoEnv([]string{"PATH=/usr/bin", "HOME=", "GOPATH=", "GOMODCACHE=", "GOCACHE="})
+	got := map[string]string{}
+	for _, e := range env {
+		k, v, ok := strings.Cut(e, "=")
+		if ok {
+			got[k] = v
+		}
+	}
+	if got["HOME"] == "" || got["GOPATH"] == "" || got["GOMODCACHE"] == "" || got["GOCACHE"] == "" {
+		t.Fatalf("empty go env was not filled: %#v", got)
+	}
+	if !strings.HasSuffix(got["GOMODCACHE"], filepath.Join("pkg", "mod")) {
+		t.Fatalf("GOMODCACHE=%q", got["GOMODCACHE"])
+	}
+}
+
+func TestEnsureGoEnvKeepsExplicitValues(t *testing.T) {
+	env := ensureGoEnv([]string{"HOME=/srv", "GOPATH=/opt/go", "GOMODCACHE=/opt/mod", "GOCACHE=/opt/cache"})
+	got := map[string]string{}
+	for _, e := range env {
+		k, v, ok := strings.Cut(e, "=")
+		if ok {
+			got[k] = v
+		}
+	}
+	if got["GOPATH"] != "/opt/go" || got["GOMODCACHE"] != "/opt/mod" || got["GOCACHE"] != "/opt/cache" {
+		t.Fatalf("explicit values were replaced: %#v", got)
 	}
 }
 

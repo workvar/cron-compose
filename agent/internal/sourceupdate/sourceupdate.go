@@ -310,6 +310,58 @@ func runWithPATH(ctx context.Context, dir, bin string, args ...string) error {
 	return runEnv(ctx, dir, env, bin, args...)
 }
 
+// ensureGoEnv gives go build a module cache when the agent was started by
+// systemd without a home directory. Go refuses to build in that case:
+// "module cache not found: neither GOMODCACHE nor GOPATH is set".
+func ensureGoEnv(env []string) []string {
+	get := func(key string) string {
+		prefix := key + "="
+		for _, e := range env {
+			if strings.HasPrefix(e, prefix) {
+				return strings.TrimSpace(strings.TrimPrefix(e, prefix))
+			}
+		}
+		return ""
+	}
+	set := func(key, val string) {
+		prefix := key + "="
+		for i, e := range env {
+			if strings.HasPrefix(e, prefix) {
+				env[i] = prefix + val
+				return
+			}
+		}
+		env = append(env, prefix+val)
+	}
+	home := get("HOME")
+	if home == "" {
+		if h, err := os.UserHomeDir(); err == nil && h != "" {
+			home = h
+		} else if os.Geteuid() == 0 {
+			home = "/root"
+		} else {
+			home = filepath.Join(os.TempDir(), "croncompose-go-home")
+		}
+		set("HOME", home)
+	}
+	gopath := get("GOPATH")
+	if gopath == "" {
+		gopath = filepath.Join(home, "go")
+		set("GOPATH", gopath)
+	}
+	if get("GOMODCACHE") == "" {
+		first := gopath
+		if parts := filepath.SplitList(gopath); len(parts) > 0 && parts[0] != "" {
+			first = parts[0]
+		}
+		set("GOMODCACHE", filepath.Join(first, "pkg", "mod"))
+	}
+	if get("GOCACHE") == "" {
+		set("GOCACHE", filepath.Join(home, ".cache", "go-build"))
+	}
+	return env
+}
+
 func runEnv(ctx context.Context, dir string, env []string, name string, args ...string) error {
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
@@ -317,7 +369,7 @@ func runEnv(ctx context.Context, dir string, env []string, name string, args ...
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	cmd.Env = append(env, "GOTOOLCHAIN=local")
+	cmd.Env = append(ensureGoEnv(env), "GOTOOLCHAIN=local")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
