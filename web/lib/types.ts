@@ -305,6 +305,13 @@ export type GitDirList = {
 
 export type GitBranch = { name: string; default: boolean };
 
+/** Branch, tag, or release from GET /git/refs for the redeploy picker. */
+export type GitRef = {
+  name: string;
+  kind: "branch" | "tag" | "release" | string;
+  default?: boolean;
+};
+
 export type DeployDetection = {
   language: string;
   install_script: string;

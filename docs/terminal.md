@@ -98,7 +98,10 @@ resizing work. The agent stays Unix-only here, consistent with the executor.
   terminal analogue of `LogBroker`); plus edits to `server.go`, `service.go`, `stream.go`.
 - `control-plane/internal/terminal/`: `handler.go` (WebSocket bridge), `routes.go`.
 - `web/components/terminal/TerminalView.tsx`, `web/app/servers/[id]/terminal/page.tsx`,
+  `web/app/servers/[id]/terminal/full/page.tsx` (chrome-less pop-out tab),
   `web/app/terminal.css`; entry point added to the server detail page (admin/owner only).
+  From the setup screen or a live session, **Open in new tab** / **New tab** opens the
+  fullscreen route without the app sidebar.
 
 ## Build
 

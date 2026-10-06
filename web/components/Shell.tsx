@@ -39,6 +39,8 @@ export async function Shell({ children }: { children: React.ReactNode }) {
   const pathname = hdrs.get("x-cc-pathname") || "";
 
   const isDocs = pathname === "/docs" || pathname.startsWith("/docs/");
+  // Fullscreen terminal pop-out: no sidebar/topbar, just the session.
+  const isTermFullscreen = /^\/servers\/[^/]+\/terminal\/full\/?$/.test(pathname);
 
   // Public docs: signed-out readers get a plain top bar instead of the login column.
   if (isDocs && (signedOut || (!meResult.me && !hasSessionCookie))) {
@@ -66,6 +68,10 @@ export async function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     );
+  }
+
+  if (isTermFullscreen) {
+    return <div className="term-fullscreen-shell">{children}</div>;
   }
 
   return (

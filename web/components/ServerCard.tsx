@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Server } from "@/lib/types";
-import { IconServer } from "./icons";
+import { ServerEmojiBadge } from "./ServerEmoji";
+import { serverEmojiOrFallback } from "@/lib/server-emoji";
 
 const tone: Record<Server["status"], string> = {
   online: "ok",
@@ -9,11 +10,14 @@ const tone: Record<Server["status"], string> = {
 };
 
 export function ServerCard({ server }: { server: Server }) {
+  const emoji = serverEmojiOrFallback(server);
+  const otherLabels = Object.entries(server.labels || {}).filter(([k]) => k !== "emoji");
+
   return (
     <Link href={`/servers/${server.id}`} className="panel">
       <div className="row" style={{ alignItems: "flex-start" }}>
         <div className="cluster" style={{ flexWrap: "nowrap" }}>
-          <span className="mini-icon"><IconServer /></span>
+          <ServerEmojiBadge emoji={emoji} size="md" />
           <div>
             <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text)" }}>{server.name}</div>
             <div className="subtle" style={{ fontSize: 12 }}>
@@ -27,8 +31,8 @@ export function ServerCard({ server }: { server: Server }) {
         <p className="subtle" style={{ margin: "12px 0 0", fontSize: 13 }}>{server.description}</p>
       )}
       <div className="faint" style={{ fontSize: 12, marginTop: 12 }}>
-        {Object.keys(server.labels || {}).length > 0
-          ? Object.entries(server.labels).map(([k, v]) => `${k}=${v}`).join(" · ")
+        {otherLabels.length > 0
+          ? otherLabels.map(([k, v]) => `${k}=${v}`).join(" · ")
           : server.agent_version
             ? `agent ${server.agent_version}`
             : "no labels"}

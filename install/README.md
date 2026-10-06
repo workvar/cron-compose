@@ -160,8 +160,10 @@ using afterwards:
 ./croncompose-ctl.sh restart      # restart everything, re-reading .env
 ./croncompose-ctl.sh stop         # stop everything
 ./croncompose-ctl.sh start        # start (or resume) everything
-./croncompose-ctl.sh boot         # pm2 startup + save, so it comes back after a reboot
+./croncompose-ctl.sh boot         # re-install the pm2 boot hook (installer already does this)
 ```
+
+The installer runs `pm2 startup` + `pm2 save` itself so the stack comes back after a reboot.
 
 pm2's own commands work unchanged: `pm2 status`, `pm2 monit`, `pm2 logs croncompose-web`.
 

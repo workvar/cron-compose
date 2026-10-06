@@ -153,3 +153,36 @@
 /* xterm sizes itself to the holder via the fit addon. */
 .term-holder .xterm,
 .term-holder .xterm-viewport { height: 100% !important; background: transparent !important; }
+
+/* Fullscreen pop-out tab: no app chrome, terminal fills the viewport. */
+.term-fullscreen-shell {
+  min-height: 100vh;
+  background: #0b1220;
+}
+.term-fullscreen {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  height: 100vh;
+  background: #0b1220;
+}
+.term-fullscreen .term-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+.term-fullscreen .term-holder {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+.term-fullscreen-ended {
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: #dbe5d8;
+  font: inherit;
+}

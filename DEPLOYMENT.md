@@ -245,9 +245,10 @@ and the UI, applies migrations, and writes a `0600` `.env`. Everything runs unde
 ./croncompose-ctl.sh status     # what's running
 ./croncompose-ctl.sh logs web   # tail a log (control-plane | web | agent)
 ./croncompose-ctl.sh restart    # restart everything, re-reading .env
-./croncompose-ctl.sh boot       # survive reboots (pm2 startup + save)
+./croncompose-ctl.sh boot       # re-install the pm2 boot hook (installer already does this)
 ```
 
+The installer wires `pm2 startup` + `pm2 save` so the stack resurrects on reboot.
 Plain pm2 commands work too: `pm2 status`, `pm2 monit`, `pm2 logs croncompose-web`.
 
 Pull updates and roll forward with `./update.sh` (source mode). Remove the install with

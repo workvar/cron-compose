@@ -236,7 +236,66 @@ a.stat:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); }
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
 }
+.env-redeploy-bar .redeploy-controls { flex: 1; justify-content: flex-end; }
 @media (max-width: 640px) {
   .env-row { grid-template-columns: 1fr; }
   .env-redeploy-bar { flex-direction: column; align-items: stretch; }
 }
+
+/* Green monochrome server emoji identifiers */
+.server-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: 12px;
+  background: var(--green-soft, #e8f5ee);
+  border: 1px solid color-mix(in srgb, var(--green, #1a7f4b) 25%, transparent);
+}
+.server-emoji-sm { width: 32px; height: 32px; border-radius: 8px; }
+.server-emoji-md { width: 40px; height: 40px; }
+.server-emoji-lg { width: 52px; height: 52px; border-radius: 14px; }
+.server-emoji-glyph {
+  line-height: 1;
+  filter: grayscale(1) sepia(1) hue-rotate(70deg) saturate(6) brightness(0.75);
+}
+.server-emoji-sm .server-emoji-glyph { font-size: 16px; }
+.server-emoji-md .server-emoji-glyph { font-size: 20px; }
+.server-emoji-lg .server-emoji-glyph { font-size: 26px; }
+
+.server-emoji-picker { position: relative; }
+.server-emoji-trigger {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.server-emoji-panel {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  padding: 10px;
+  min-width: 280px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+.server-emoji-option {
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 10px;
+  padding: 4px;
+  cursor: pointer;
+}
+.server-emoji-option:hover { background: var(--surface-2); }
+.server-emoji-option.on { border-color: var(--green); background: var(--green-soft); }

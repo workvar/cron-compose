@@ -322,7 +322,14 @@
 /* Page header (title + subtitle + actions) */
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
 .page-head .subtle { margin: 0; }
-.page-head-actions { display: flex; gap: 10px; flex: none; align-items: center; }
+.page-head-actions {
+  display: flex;
+  gap: 10px;
+  flex: none;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 
 .back-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
 .back-link:hover { color: var(--green); }

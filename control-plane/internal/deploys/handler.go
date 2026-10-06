@@ -91,6 +91,24 @@ func (h *handler) listBranches(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"items": items})
 }
 
+// listRefs is GET /git/refs: branches + releases + tags for the redeploy picker.
+func (h *handler) listRefs(c fiber.Ctx) error {
+	provider := c.Query("provider", "github")
+	repo := c.Query("repo")
+	if repo == "" {
+		return jsonError(c, fiber.StatusBadRequest, "missing_repo", errors.New("repo is required"))
+	}
+	token, err := h.conns.Token(c.Context(), auth.CurrentUserID(c), provider)
+	if err != nil && !errors.Is(err, auth.ErrNotFound) {
+		return jsonError(c, fiber.StatusInternalServerError, "token_failed", err)
+	}
+	items, err := h.git.ListRefs(c.Context(), provider, token, repo)
+	if err != nil {
+		return jsonError(c, fiber.StatusBadGateway, "git_api", err)
+	}
+	return c.JSON(fiber.Map{"items": items})
+}
+
 func (h *handler) listDirs(c fiber.Ctx) error {
 	provider := c.Query("provider", "github")
 	repo := c.Query("repo")

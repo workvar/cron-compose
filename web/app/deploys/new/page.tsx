@@ -10,6 +10,8 @@ import { AppEnvEditor } from "@/components/deploys/AppEnvEditor";
 import { ProjectBlockCard } from "@/components/deploys/ProjectBlockCard";
 import { HealthCheckFields } from "@/components/deploys/HealthCheckFields";
 import { DeployReview } from "@/components/deploys/DeployReview";
+import { DeployServerChip } from "@/components/deploys/DeployServerChip";
+import { ServerPickerGrid } from "@/components/deploys/ServerPickerGrid";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import CopyButton from "@/components/CopyButton";
 import {
@@ -37,7 +39,7 @@ import {
   specToDraft,
   type AdvancedSettings,
 } from "@/lib/deploy-spec";
-import { buildDeploySteps } from "@/lib/deploy-steps";
+import { buildDeployPlan } from "@/lib/deploy-steps";
 import { filterGitRepos, listGitRepoOwners, toggleOwnerFilter } from "@/lib/git-repos";
 import { fetchSpecFile, listBranches, listSpecFiles } from "@/lib/git-detect";
 import { githubLanguageIconUrl } from "@/lib/language-icons";
@@ -100,7 +102,7 @@ async function errorText(res: Response): Promise<string> {
 }
 
 export default function NewDeployPage() {
-  const [phase, setPhase] = useState<"import" | "configure" | "review">("import");
+  const [phase, setPhase] = useState<"server" | "import" | "configure" | "review">("server");
   const [conns, setConns] = useState<GitConnection[] | null>(null);
   const [provider, setProvider] = useState("github");
   const [repos, setRepos] = useState<GitRepo[] | null>(null);
@@ -236,7 +238,8 @@ export default function NewDeployPage() {
       const next: Form = {
         ...emptyForm,
         name: repoName,
-        serverId: defaultServer(),
+        // Keep the server chosen on the grid; only fall back if somehow empty.
+        serverId: form.serverId || defaultServer(),
         branch: ins?.default_branch || src.defaultBranch || "main",
         clonePath: ins?.clone_path || "",
         blocks: ins ? [seedBlockFromInspect(ins, src.fullName)] : [emptyBlock()],
@@ -250,7 +253,8 @@ export default function NewDeployPage() {
         next.name = d.name || next.name;
         next.branch = d.branch || next.branch;
         next.clonePath = d.clonePath || next.clonePath;
-        next.serverId = d.serverId || next.serverId;
+        // Spec may name a server; prefer the operator's grid choice when set.
+        next.serverId = form.serverId || d.serverId || next.serverId;
         next.blocks = d.blocks;
         next.appEnv = d.appEnv;
         next.advanced = d.advanced;
@@ -354,9 +358,9 @@ export default function NewDeployPage() {
   }
   const canContinue = problems.length === 0 && !busy;
 
-  const serverOptions = useMemo(
-    () => servers.map((s) => ({ value: s.id, label: `${s.name} · ${s.status}` })),
-    [servers],
+  const selectedServer = useMemo(
+    () => servers.find((s) => s.id === form.serverId) || null,
+    [servers, form.serverId],
   );
 
   const specFileOptions = useMemo<SelectOption[]>(() => {
@@ -369,16 +373,17 @@ export default function NewDeployPage() {
     return opts;
   }, [specFiles, selectedSpecPath]);
 
-  const reviewSteps = useMemo(
+  const reviewPlan = useMemo(
     () =>
       source
-        ? buildDeploySteps({
+        ? buildDeployPlan({
             repo: source.fullName,
             branch: form.branch,
             serverName: servers.find((s) => s.id === form.serverId)?.name || "",
             clonePath: form.clonePath,
             blocks: ensureUniqueBlockNames(form.blocks),
             advanced: form.advanced,
+            appEnv: form.appEnv,
           })
         : [],
     [source, form, servers],
@@ -542,7 +547,7 @@ export default function NewDeployPage() {
   }
 
   if (phase === "review" && source) {
-    const serverName = servers.find((s) => s.id === form.serverId)?.name || "";
+    const serverName = selectedServer?.name || "";
     const reviewSpecPath =
       selectedSpecPath !== SPEC_NONE
         ? selectedSpecPath
@@ -565,12 +570,14 @@ export default function NewDeployPage() {
           </div>
         </div>
 
+        <DeployServerChip server={selectedServer} onChange={() => setPhase("server")} />
+
         <DeployReview
           repo={source.fullName}
           branch={form.branch}
           serverName={serverName}
           specPath={reviewSpecPath}
-          steps={reviewSteps}
+          plan={reviewPlan}
           issues={spec?.issues}
         />
 
@@ -587,6 +594,33 @@ export default function NewDeployPage() {
             </button>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (phase === "server") {
+    return (
+      <div className="deploy-flow wide">
+        <Link href="/deploys" className="back-link"><IconChevronLeft /> Back to deploys</Link>
+        <div className="page-head">
+          <div>
+            <h1>Choose a server</h1>
+            <p className="subtle">
+              Pick where this code will run. You can assign a green emoji on the server page for a
+              quick visual identifier.
+            </p>
+          </div>
+        </div>
+        <ServerPickerGrid
+          servers={servers}
+          value={form.serverId}
+          onChange={(serverId) => setForm((f) => ({ ...f, serverId }))}
+          onContinue={() => {
+            setError(null);
+            setPhase(source ? "configure" : "import");
+            window.scrollTo({ top: 0 });
+          }}
+        />
       </div>
     );
   }
@@ -610,6 +644,8 @@ export default function NewDeployPage() {
             </div>
           </div>
         </div>
+
+        <DeployServerChip server={selectedServer} onChange={() => setPhase("server")} />
 
         {spec && selectedSpecPath !== SPEC_NONE && (
           <div className={`spec-banner${spec.valid ? " ok" : " bad"}`}>
@@ -650,29 +686,9 @@ export default function NewDeployPage() {
         )}
 
         <div className="panel config-card">
-          <div className="grid-2">
-            <div className="field">
-              <label htmlFor="name">Project name</label>
-              <input id="name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-            </div>
-            <div className="field">
-              <label htmlFor="server">Server</label>
-              {servers.length === 0 ? (
-                <p className="field-hint">
-                  No servers yet. <Link href="/servers/new">Add a server</Link>, then come back.
-                </p>
-              ) : (
-                <SearchableSelect
-                  id="server"
-                  value={form.serverId}
-                  onChange={(serverId) => setForm((f) => ({ ...f, serverId }))}
-                  options={serverOptions}
-                  placeholder="Select a server…"
-                  aria-label="Target server"
-                />
-              )}
-              <p className="field-hint">Machine the agent runs this deploy on.</p>
-            </div>
+          <div className="field">
+            <label htmlFor="name">Project name</label>
+            <input id="name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
           </div>
           {(source.provider === "github" || source.provider === "gitlab") && (
             <div className="field">
@@ -877,13 +893,21 @@ export default function NewDeployPage() {
   const providerTabs = (conns || []).map((c) => c.provider);
   return (
     <div className="deploy-flow wide">
-      <Link href="/deploys" className="back-link"><IconChevronLeft /> Back to deploys</Link>
+      <button
+        type="button"
+        className="back-link as-button"
+        onClick={() => setPhase("server")}
+      >
+        <IconChevronLeft /> Back to servers
+      </button>
       <div className="page-head">
         <div>
           <h1>New project</h1>
           <p className="subtle">Pick a repo. CronCompose detects how to build it, and you deploy in one click.</p>
         </div>
       </div>
+
+      <DeployServerChip server={selectedServer} onChange={() => setPhase("server")} />
 
       {error && <p className="form-error">{error}</p>}
 

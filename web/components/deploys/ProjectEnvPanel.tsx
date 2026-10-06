@@ -49,10 +49,16 @@ export function ProjectEnvPanel({ project }: { project: DeployProject }) {
           <div>
             <div style={{ fontWeight: 700, color: "var(--text)" }}>Redeploy to apply env changes</div>
             <p className="subtle" style={{ margin: "4px 0 0", fontSize: 13 }}>
-              Variables are saved on the control plane. Redeploy so the agent picks them up.
+              Variables are saved on the control plane. Changing env or other deploy settings requires a
+              redeploy so the agent picks them up on the server.
             </p>
           </div>
-          <RedeployButton projectId={project.id} />
+          <RedeployButton
+            projectId={project.id}
+            provider={project.provider}
+            repo={project.repo_full_name}
+            defaultBranch={project.default_branch}
+          />
         </div>
       )}
     </div>

@@ -3,8 +3,9 @@
 import { use, useCallback, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { IconChevronLeft, IconTerminal } from "@/components/icons";
+import { IconChevronLeft, IconExpand, IconTerminal } from "@/components/icons";
 import { UserSwitcher } from "@/components/terminal/UserSwitcher";
+import { openTerminalFullscreen } from "@/lib/terminal-href";
 
 // xterm touches the DOM, so load the view client-side only.
 const TerminalView = dynamic(() => import("@/components/terminal/TerminalView"), { ssr: false });
@@ -87,9 +88,24 @@ export default function TerminalPage({ params }: Props) {
             </p>
           </div>
 
-          <div>
+          <div className="cluster">
             <button type="button" className="button" onClick={start} disabled={mode === "command" && !command.trim()}>
               <IconTerminal /> {mode === "shell" ? "Open shell" : "Run command"}
+            </button>
+            <button
+              type="button"
+              className="button secondary"
+              disabled={mode === "command" && !command.trim()}
+              title="Open fullscreen in a new tab"
+              onClick={() =>
+                openTerminalFullscreen(id, {
+                  mode,
+                  command: mode === "command" ? command : undefined,
+                  runAs: runAs.trim() || undefined,
+                })
+              }
+            >
+              <IconExpand /> Open in new tab
             </button>
           </div>
         </div>

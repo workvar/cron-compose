@@ -42,6 +42,8 @@
     "lib/update-progress.test.ts",
     "lib/webauthn.test.ts",
     "lib/terminal-users.test.ts",
+    "lib/terminal-href.test.ts",
+    "lib/server-emoji.test.ts",
     "lib/agent-root.test.ts",
     "lib/parse-dotenv.test.ts",
     "lib/deploy-spec.test.ts",

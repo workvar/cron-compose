@@ -223,6 +223,156 @@ p.small { margin: 4px 0 12px; }
 .deploy-flow > .panel + .panel { margin-top: 16px; }
 .advanced summary .chev svg { width: 16px; height: 16px; }
 
+/* Server picker grid (new deploy) */
+.server-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.server-picker-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.server-picker-card:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.server-picker-card.selected {
+  border-color: var(--green);
+  box-shadow: 0 0 0 1px var(--green);
+  background: var(--green-soft);
+}
+.server-picker-meta { flex: 1; min-width: 0; width: 100%; }
+.server-picker-name {
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deploy-server-chip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.deploy-server-chip.muted { justify-content: space-between; }
+.deploy-server-chip-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.deploy-server-chip-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.deploy-server-chip strong { color: var(--text); font-size: 14px; }
+
+.redeploy-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.page-head-actions .redeploy-controls { max-width: 420px; }
+
+/* Hierarchical deploy plan (review step) */
+.deploy-plan {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+.deploy-plan-block {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.deploy-plan-block-app {
+  background: var(--surface);
+  border-color: var(--border-strong);
+}
+.deploy-plan-block-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+}
+.deploy-plan-block-app .deploy-plan-block-head {
+  background: color-mix(in srgb, var(--green-soft, #e8f5ee) 55%, var(--surface));
+}
+.deploy-plan-block-title {
+  font-weight: 700;
+  color: var(--text);
+  font-size: 14px;
+}
+.deploy-plan-block-sub {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.deploy-substeps {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+.deploy-substep {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 14px;
+}
+.deploy-substep + .deploy-substep {
+  border-top: 1px solid var(--border);
+}
+.deploy-substep-n {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-2);
+  margin-top: 1px;
+}
+.deploy-substep-body { min-width: 0; flex: 1; }
+.deploy-substep-title { font-weight: 650; color: var(--text); font-size: 13.5px; }
+.deploy-substep-detail {
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.45;
+  word-break: break-word;
+}
+.deploy-substep-detail code {
+  display: block;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+.deploy-substep-install .deploy-substep-n,
+.deploy-substep-build .deploy-substep-n { border-color: color-mix(in srgb, var(--green) 35%, var(--border)); }
+.deploy-substep-start .deploy-substep-n { border-color: color-mix(in srgb, var(--info, #3b82f6) 40%, var(--border)); }
+
 .deploy-steps { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 0; }
 .deploy-step { display: flex; gap: 14px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--border); }
 .deploy-step:first-child { border-top: 0; padding-top: 0; }

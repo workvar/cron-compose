@@ -8,6 +8,7 @@ import type { SelectOption } from "@/lib/ui-helpers";
 import { listBranches } from "@/lib/git-detect";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { HealthCheckFields, type HealthCheckValues } from "./HealthCheckFields";
+import { RedeployButton } from "./RedeployButton";
 
 const GIT_PROVIDERS = new Set(["github", "gitlab"]);
 
@@ -24,6 +25,7 @@ export function ProjectActions({ project }: { project: DeployProject }) {
   const [port, setPort] = useState(project.port ? String(project.port) : "");
   const [pm, setPm] = useState(project.process_manager);
   const [autoRollback, setAutoRollback] = useState(project.auto_rollback);
+  const [needsRedeploy, setNeedsRedeploy] = useState(false);
   const [health, setHealth] = useState<HealthCheckValues>({
     path: project.health_path || "",
     port: project.health_port ? String(project.health_port) : "",
@@ -106,7 +108,7 @@ export function ProjectActions({ project }: { project: DeployProject }) {
         }),
       });
       if (!res.ok) throw new Error(await res.text());
-      setOpen(false);
+      setNeedsRedeploy(true);
       router.refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -216,9 +218,31 @@ export function ProjectActions({ project }: { project: DeployProject }) {
           </div>
           <HealthCheckFields value={health} onChange={setHealth} appPort={project.port} />
           {error && <p className="form-error">{error}</p>}
-          <button type="submit" className="button" disabled={busy || !serverId}>
-            {busy ? "Saving…" : "Save"}
-          </button>
+          <div className="cluster" style={{ marginTop: 8 }}>
+            <button type="submit" className="button" disabled={busy || !serverId}>
+              {busy ? "Saving…" : "Save"}
+            </button>
+            <button type="button" className="button secondary" onClick={() => setOpen(false)}>
+              Close
+            </button>
+          </div>
+          {needsRedeploy && (
+            <div className="env-redeploy-bar" style={{ marginTop: 16, position: "relative" }}>
+              <div>
+                <div style={{ fontWeight: 700, color: "var(--text)" }}>Redeploy to apply settings</div>
+                <p className="subtle" style={{ margin: "4px 0 0", fontSize: 13 }}>
+                  Saved. Changing env or other deploy settings requires a redeploy so the agent applies
+                  them on the server.
+                </p>
+              </div>
+              <RedeployButton
+                projectId={project.id}
+                provider={project.provider}
+                repo={project.repo_full_name}
+                defaultBranch={branch || project.default_branch}
+              />
+            </div>
+          )}
         </form>
       )}
     </>

@@ -1,31 +1,39 @@
 "use client";
 
-import type { DeployStep } from "@/lib/deploy-steps";
+import type { DeployPlanBlock, DeployStepKind } from "@/lib/deploy-steps";
 
 type Props = {
   repo: string;
   branch: string;
   serverName: string;
   specPath?: string | null;
-  steps: DeployStep[];
+  plan: DeployPlanBlock[];
   issues?: { level: "error" | "warning"; field?: string; message: string }[];
 };
 
-/** Confirmation screen: what the croncompose.yml (or form) will do on the agent. */
-export function DeployReview({ repo, branch, serverName, specPath, steps, issues }: Props) {
+function kindClass(kind?: DeployStepKind): string {
+  if (!kind) return "";
+  return ` deploy-substep-${kind}`;
+}
+
+/** Confirmation screen: hierarchical plan from croncompose.yml / the form. */
+export function DeployReview({ repo, branch, serverName, specPath, plan, issues }: Props) {
   const warnings = (issues || []).filter((i) => i.level === "warning");
+  let globalIndex = 0;
+
   return (
     <div className="panel config-card">
       <div className="card-title">Review deploy plan</div>
       <p className="subtle" style={{ marginTop: 6 }}>
-        These are the steps the agent will run on <strong>{serverName || "the selected server"}</strong>
+        Steps the agent will run on <strong>{serverName || "the selected server"}</strong>
         {specPath ? (
           <>
             {" "}
             from <code>{specPath}</code>
           </>
         ) : null}
-        .
+        . Each app directory is its own block: install and build first, then after the
+        release is activated, env → start → health.
       </p>
       <div className="cluster" style={{ marginTop: 12, marginBottom: 4 }}>
         <span className="pill">{repo}</span>
@@ -43,19 +51,43 @@ export function DeployReview({ repo, branch, serverName, specPath, steps, issues
         </ul>
       )}
 
-      <ol className="deploy-steps">
-        {steps.map((s, i) => (
-          <li key={s.id} className="deploy-step">
-            <span className="deploy-step-n" aria-hidden>
-              {i + 1}
-            </span>
-            <div>
-              <div className="deploy-step-title">{s.title}</div>
-              {s.detail && <div className="deploy-step-detail">{s.detail}</div>}
-            </div>
-          </li>
+      <div className="deploy-plan">
+        {plan.map((block) => (
+          <section key={block.id} className={`deploy-plan-block deploy-plan-block-${block.kind}`}>
+            <header className="deploy-plan-block-head">
+              <div>
+                <div className="deploy-plan-block-title">{block.title}</div>
+                {block.subtitle && <div className="deploy-plan-block-sub">{block.subtitle}</div>}
+              </div>
+              {block.kind === "app" && <span className="pill">app</span>}
+            </header>
+            <ol className="deploy-substeps">
+              {block.steps.map((s) => {
+                globalIndex += 1;
+                return (
+                  <li key={s.id} className={`deploy-substep${kindClass(s.kind)}`}>
+                    <span className="deploy-substep-n" aria-hidden>
+                      {globalIndex}
+                    </span>
+                    <div className="deploy-substep-body">
+                      <div className="deploy-substep-title">{s.title}</div>
+                      {s.detail && (
+                        <div className="deploy-substep-detail">
+                          {s.kind === "install" || s.kind === "build" || s.kind === "command" ? (
+                            <code>{s.detail}</code>
+                          ) : (
+                            s.detail
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
         ))}
-      </ol>
+      </div>
     </div>
   );
 }

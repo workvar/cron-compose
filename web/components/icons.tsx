@@ -80,6 +80,9 @@ export const IconLayers = (p: P) => (
 export const IconTerminal = (p: P) => (
   <svg {...base(p)}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="m7 9 3 3-3 3M13 15h4" /></svg>
 );
+export const IconExpand = (p: P) => (
+  <svg {...base(p)}><path d="M9 3H3v6M15 3h6v6M9 21H3v-6M21 15v6h-6M21 3l-7 7M3 21l7-7" /></svg>
+);
 export const IconCalendarClock = (p: P) => (
   <svg {...base(p)}><path d="M21 11V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h6M8 2v4M16 2v4M3 10h18" /><circle cx="17.5" cy="17.5" r="3.5" /><path d="M17.5 16.2v1.3l1 .8" /></svg>
 );

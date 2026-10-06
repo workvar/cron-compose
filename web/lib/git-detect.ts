@@ -1,5 +1,5 @@
 import { apiErrorMessage } from "./api-error";
-import type { DeployDetection, DeploySpecResult, GitBranch } from "./types";
+import type { DeployDetection, DeploySpecResult, GitBranch, GitRef } from "./types";
 
 /**
  * Re-runs detection scoped to one subfolder of the repo (see DetectAt on the
@@ -25,6 +25,15 @@ export async function listBranches(provider: string, repo: string): Promise<GitB
   const res = await fetch(`/api/git/branches?${q}`);
   if (!res.ok) throw new Error(await apiErrorMessage(res, "Could not list branches"));
   const data = (await res.json()) as { items?: GitBranch[] };
+  return data.items || [];
+}
+
+/** Lists branches, releases, and tags for the redeploy searchable dropdown. */
+export async function listRefs(provider: string, repo: string): Promise<GitRef[]> {
+  const q = new URLSearchParams({ provider, repo });
+  const res = await fetch(`/api/git/refs?${q}`);
+  if (!res.ok) throw new Error(await apiErrorMessage(res, "Could not list refs"));
+  const data = (await res.json()) as { items?: GitRef[] };
   return data.items || [];
 }
 

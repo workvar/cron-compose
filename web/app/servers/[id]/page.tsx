@@ -6,6 +6,7 @@ import { ReinstallAsRoot } from "@/components/ReinstallAsRoot";
 import { JobRow } from "@/components/JobRow";
 import { UpdateServerButton } from "@/components/UpdateServerButton";
 import { ServerActions } from "@/components/ServerActions";
+import { ServerEmojiPicker } from "@/components/ServerEmoji";
 import { IconChevronLeft, IconPlus, IconTerminal } from "@/components/icons";
 
 const tone: Record<Server["status"], string> = { online: "ok", offline: "danger", pending: "neutral" };
@@ -59,13 +60,16 @@ export default async function ServerDetailPage({ params }: Props) {
     <>
       <Link href="/servers" className="back-link"><IconChevronLeft /> Servers</Link>
       <div className="page-head">
-        <div>
-          <h1>{server.name}</h1>
-          <div className="cluster" style={{ marginTop: 6 }}>
-            <span className={`status ${tone[server.status]}`}>{server.status}</span>
-            <span className="pill">{server.os || "unknown"} / {server.arch || "unknown"}</span>
-            {server.agent_version && <span className="pill">agent {server.agent_version}</span>}
-            {server.last_seen_at && <span className="pill">seen {new Date(server.last_seen_at).toLocaleString()}</span>}
+        <div className="cluster" style={{ alignItems: "flex-start", gap: 14 }}>
+          <ServerEmojiPicker server={server} />
+          <div>
+            <h1 style={{ margin: 0 }}>{server.name}</h1>
+            <div className="cluster" style={{ marginTop: 6 }}>
+              <span className={`status ${tone[server.status]}`}>{server.status}</span>
+              <span className="pill">{server.os || "unknown"} / {server.arch || "unknown"}</span>
+              {server.agent_version && <span className="pill">agent {server.agent_version}</span>}
+              {server.last_seen_at && <span className="pill">seen {new Date(server.last_seen_at).toLocaleString()}</span>}
+            </div>
           </div>
         </div>
         <div className="page-head-actions">

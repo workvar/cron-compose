@@ -129,6 +129,14 @@ type Branch struct {
 	Default bool   `json:"default"`
 }
 
+// Ref is a branch, tag, or release the redeploy picker can target. Kind is one of
+// "branch", "tag", or "release". Name is what git clone --branch checks out.
+type Ref struct {
+	Name    string `json:"name"`
+	Kind    string `json:"kind"`
+	Default bool   `json:"default,omitempty"`
+}
+
 // CreateInput is POST /deploys.
 type CreateInput struct {
 	Name           string            `json:"name"`

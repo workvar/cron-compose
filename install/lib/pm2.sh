@@ -62,7 +62,24 @@ case "${1:-}" in
   status)  cd "$HERE" && $PM2 status ;;
   logs)    svc="${2:-}"; cd "$HERE" && { [ -n "$svc" ] && $PM2 logs "croncompose-$svc" --lines 100 || $PM2 logs --lines 100; } ;;
   save)    cd "$HERE" && $PM2 save ;;
-  boot)    cd "$HERE" && $PM2 startup && $PM2 save ;;   # prints a sudo line to run once
+  boot)
+    # Re-run the OS boot hook (installer does this once already). Needs sudo.
+    user="$(id -un)"; home="${HOME:-}"
+    if command -v systemctl >/dev/null 2>&1; then init=systemd
+    elif [ "$(uname -s)" = Darwin ]; then init=launchd
+    elif [ -d /etc/init.d ]; then init=systemv
+    else init=""; fi
+    if [ -n "$init" ]; then
+      if [ "$(id -u)" -eq 0 ]; then
+        $PM2 startup "$init" -u "$user" --hp "$home"
+      else
+        sudo env PATH="$PATH" $PM2 startup "$init" -u "$user" --hp "$home"
+      fi
+    else
+      $PM2 startup
+    fi
+    $PM2 save
+    ;;
   *) echo "usage: $0 {start|stop|restart|reload|status|logs [control-plane|web|agent]|save|boot|delete}"; exit 1 ;;
 esac
 CTL_EOF
@@ -70,12 +87,59 @@ CTL_EOF
   ok "wrote $CTL (pm2 wrapper)"
 }
 
-# Bring the stack up under pm2 and persist the process list so it survives a reboot
-# once the user has run `pm2 startup`.
+# Register pm2 with the OS init system so `pm2 resurrect` runs on boot. Needs root
+# once to write the unit/plist; always targets the installing user (not root) even
+# when the installer itself was invoked via sudo.
+enable_pm2_boot() {
+  step "Enabling pm2 boot resurrection"
+  local user home init_system
+  if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+    user="$SUDO_USER"
+    home="$(getent passwd "$user" 2>/dev/null | cut -d: -f6 || true)"
+    [ -n "$home" ] || home="$(eval echo "~$user")"
+  else
+    user="$(id -un)"
+    home="${HOME:-$(eval echo "~$user")}"
+  fi
+
+  case "${PLATFORM:-}" in
+    macos) init_system="launchd" ;;
+    linux)
+      if command -v systemctl >/dev/null 2>&1; then init_system="systemd"
+      elif [ -d /etc/init.d ]; then init_system="systemv"
+      else
+        warn "no supported init system; run ./croncompose-ctl.sh boot later"
+        return 0
+      fi
+      ;;
+    *)
+      warn "unsupported platform for pm2 startup; run ./croncompose-ctl.sh boot later"
+      return 0
+      ;;
+  esac
+
+  # Do not redirect: on Linux this runs sudo, and hiding output hides the password prompt.
+  info "configuring pm2 to resurrect on boot (you may be prompted for your sudo password)..."
+  if [ "$(id -u)" -eq 0 ]; then
+    if ! ( cd "$REPO_ROOT" && $PM2_BIN startup "$init_system" -u "$user" --hp "$home" ); then
+      warn "pm2 startup failed; run ./croncompose-ctl.sh boot later"
+      return 0
+    fi
+  else
+    if ! sudo env PATH="$PATH" $PM2_BIN startup "$init_system" -u "$user" --hp "$home"; then
+      warn "pm2 startup failed (sudo denied?); run ./croncompose-ctl.sh boot later"
+      return 0
+    fi
+  fi
+  ok "pm2 will resurrect the stack on reboot"
+}
+
+# Bring the stack up under pm2, register the OS boot hook, and persist the process list.
 start_stack() {
   step "Starting services under pm2"
   mkdir -p "$RUNTIME_DIR/logs" "$RUNTIME_DIR/run" "$RUNTIME_DIR/tls" "$RUNTIME_DIR/agent"
   pm2_run start "$REPO_ROOT/ecosystem.config.js" --update-env >&2 || die "pm2 could not start the stack (see: pm2 logs)"
+  enable_pm2_boot
   pm2_run save >/dev/null 2>&1 || warn "pm2 save failed; the stack will not come back after a reboot"
   wait_for_health || warn "control plane health check timed out (see: ./croncompose-ctl.sh logs control-plane)"
 }
@@ -90,8 +154,11 @@ wait_for_health() {
 }
 
 # The agent process only appears in ecosystem.config.js once an identity exists, so
-# re-run pm2 start after enrollment to pick it up.
-restart_stack() { pm2_run start "$REPO_ROOT/ecosystem.config.js" --update-env >/dev/null 2>&1 || true; }
+# re-run pm2 start after enrollment to pick it up, then re-save the dump for boot.
+restart_stack() {
+  pm2_run start "$REPO_ROOT/ecosystem.config.js" --update-env >/dev/null 2>&1 || true
+  pm2_run save >/dev/null 2>&1 || true
+}
 
 # Stop a previous install's processes before probing for free ports. pm2 owns them
 # now; the pidfile-based script from older installs is handled too.

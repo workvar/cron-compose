@@ -143,6 +143,119 @@ func (g *GitAPI) listBranchesGitLab(ctx context.Context, token, fullName string)
 	return out, nil
 }
 
+// ListRefs returns branches, then releases, then tags (tags already covered by a
+// release are skipped) for the redeploy picker's searchable dropdown.
+func (g *GitAPI) ListRefs(ctx context.Context, provider, token, fullName string) ([]Ref, error) {
+	branches, err := g.ListBranches(ctx, provider, token, fullName)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Ref, 0, len(branches)+32)
+	for _, b := range branches {
+		out = append(out, Ref{Name: b.Name, Kind: "branch", Default: b.Default})
+	}
+	releases, _ := g.listReleases(ctx, provider, token, fullName)
+	seen := map[string]bool{}
+	for _, name := range releases {
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, Ref{Name: name, Kind: "release"})
+	}
+	tags, _ := g.listTags(ctx, provider, token, fullName)
+	for _, name := range tags {
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, Ref{Name: name, Kind: "tag"})
+	}
+	return out, nil
+}
+
+func (g *GitAPI) listTags(ctx context.Context, provider, token, fullName string) ([]string, error) {
+	if provider == "gitlab" {
+		return g.listTagsGitLab(ctx, token, fullName)
+	}
+	return g.listTagsGitHub(ctx, token, fullName)
+}
+
+func (g *GitAPI) listTagsGitHub(ctx context.Context, token, fullName string) ([]string, error) {
+	var raw []struct {
+		Name string `json:"name"`
+	}
+	u := fmt.Sprintf("%s/repos/%s/tags?per_page=50", g.githubAPI(), fullName)
+	if err := g.getJSON(ctx, u, token, &raw); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(raw))
+	for _, t := range raw {
+		out = append(out, t.Name)
+	}
+	return out, nil
+}
+
+func (g *GitAPI) listTagsGitLab(ctx context.Context, token, fullName string) ([]string, error) {
+	enc := url.PathEscape(fullName)
+	var raw []struct {
+		Name string `json:"name"`
+	}
+	u := fmt.Sprintf("%s/projects/%s/repository/tags?per_page=50", g.gitlabAPI(), enc)
+	if err := g.getJSON(ctx, u, token, &raw); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(raw))
+	for _, t := range raw {
+		out = append(out, t.Name)
+	}
+	return out, nil
+}
+
+func (g *GitAPI) listReleases(ctx context.Context, provider, token, fullName string) ([]string, error) {
+	if provider == "gitlab" {
+		return g.listReleasesGitLab(ctx, token, fullName)
+	}
+	return g.listReleasesGitHub(ctx, token, fullName)
+}
+
+func (g *GitAPI) listReleasesGitHub(ctx context.Context, token, fullName string) ([]string, error) {
+	var raw []struct {
+		TagName string `json:"tag_name"`
+		Name    string `json:"name"`
+	}
+	u := fmt.Sprintf("%s/repos/%s/releases?per_page=30", g.githubAPI(), fullName)
+	if err := g.getJSON(ctx, u, token, &raw); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(raw))
+	for _, r := range raw {
+		if r.TagName != "" {
+			out = append(out, r.TagName)
+		}
+	}
+	return out, nil
+}
+
+func (g *GitAPI) listReleasesGitLab(ctx context.Context, token, fullName string) ([]string, error) {
+	enc := url.PathEscape(fullName)
+	var raw []struct {
+		TagName string `json:"tag_name"`
+		Name    string `json:"name"`
+	}
+	u := fmt.Sprintf("%s/projects/%s/releases?per_page=30", g.gitlabAPI(), enc)
+	if err := g.getJSON(ctx, u, token, &raw); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(raw))
+	for _, r := range raw {
+		if r.TagName != "" {
+			out = append(out, r.TagName)
+		}
+	}
+	return out, nil
+}
+
 // FetchFiles downloads a subset of the repo tree for Detect().
 func (g *GitAPI) FetchFiles(ctx context.Context, provider, token, fullName, branch string) (map[string]string, Repo, error) {
 	if provider == "gitlab" {

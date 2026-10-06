@@ -7,6 +7,8 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { IconExpand } from "@/components/icons";
+import { openTerminalFullscreen } from "@/lib/terminal-href";
 import { TerminalFrame } from "./TerminalFrame";
 import { UserSwitcher } from "./UserSwitcher";
 
@@ -19,17 +21,32 @@ type Props = {
   /** OS user to run the session as. Empty or absent means the agent's own user. */
   runAs?: string;
   onClose: () => void;
+  /** When set, "New session" after exit uses this instead of onClose. */
+  onNewSession?: () => void;
   /** Switch this session to another user: reconnects a fresh session as runAs. */
   onSwitchUser: (runAs: string) => void;
+  /** Chrome-less pop-out tab: fills the viewport and hides the "new tab" control. */
+  fullscreen?: boolean;
 };
 
 const dim = (s: string) => `\r\n\x1b[90m${s}\x1b[0m\r\n`;
 const red = (s: string) => `\r\n\x1b[31m${s}\x1b[0m\r\n`;
 
-export default function TerminalView({ serverId, mode, command, runAs, onClose, onSwitchUser }: Props) {
+export default function TerminalView({
+  serverId,
+  mode,
+  command,
+  runAs,
+  onClose,
+  onNewSession,
+  onSwitchUser,
+  fullscreen = false,
+}: Props) {
   const holder = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const newSessionRef = useRef(onNewSession);
+  newSessionRef.current = onNewSession;
   const [status, setStatus] = useState<TermStatus>("connecting");
 
   useEffect(() => {
@@ -132,8 +149,28 @@ export default function TerminalView({ serverId, mode, command, runAs, onClose, 
             compact
           />
           <span className={`status ${statusTone(status)}`}>{statusLabel(status)}</span>
+          {!fullscreen && (
+            <button
+              className="button secondary sm"
+              type="button"
+              title="Open fullscreen in a new tab"
+              onClick={() =>
+                openTerminalFullscreen(serverId, {
+                  mode,
+                  command,
+                  runAs,
+                })
+              }
+            >
+              <IconExpand /> New tab
+            </button>
+          )}
           {ended ? (
-            <button className="button secondary sm" type="button" onClick={() => closeRef.current()}>
+            <button
+              className="button secondary sm"
+              type="button"
+              onClick={() => (newSessionRef.current ?? closeRef.current)()}
+            >
               New session
             </button>
           ) : (

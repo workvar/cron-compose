@@ -7,6 +7,7 @@ import { RedeployButton } from "@/components/deploys/RedeployButton";
 import { HostThisApp } from "@/components/deploys/HostThisApp";
 import { ProjectActions } from "@/components/deploys/ProjectActions";
 import { ProjectEnvPanel } from "@/components/deploys/ProjectEnvPanel";
+import { DeployServerChip } from "@/components/deploys/DeployServerChip";
 import { HealthBadge } from "@/components/deploys/HealthBadge";
 
 type Detail = {
@@ -62,11 +63,24 @@ export default async function DeployDetailPage({ params }: { params: Promise<{ i
             <h1 style={{ margin: 0 }}>{p.name}</h1>
             <HealthBadge state={p.health_state} />
           </div>
-          <p className="subtle">{p.provider}/{p.repo_full_name} · {server?.name || p.server_id.slice(0, 8)}</p>
+          <p className="subtle">{p.provider}/{p.repo_full_name}</p>
+          {server && (
+            <div style={{ marginTop: 10 }}>
+              <DeployServerChip server={server} />
+            </div>
+          )}
+          {!server && (
+            <p className="subtle" style={{ marginTop: 6 }}>{p.server_id.slice(0, 8)}</p>
+          )}
         </div>
         <div className="page-head-actions">
           <ProjectActions project={p} />
-          <RedeployButton projectId={p.id} />
+          <RedeployButton
+            projectId={p.id}
+            provider={p.provider}
+            repo={p.repo_full_name}
+            defaultBranch={p.default_branch}
+          />
         </div>
       </div>
 
@@ -108,7 +122,8 @@ export default async function DeployDetailPage({ params }: { params: Promise<{ i
 
       <h2>Environment</h2>
       <p className="subtle" style={{ marginTop: -6, marginBottom: 0 }}>
-        Per-app variables. Edits autosave; redeploy for the agent to apply them. Mark secrets as sensitive so values stay hidden.
+        Per-app variables. Edits autosave. Changing env or other deploy settings requires a redeploy
+        so the agent applies them on the server. Mark secrets as sensitive so values stay hidden.
       </p>
       <ProjectEnvPanel project={p} />
 
