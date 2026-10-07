@@ -63,10 +63,18 @@ func (h *handler) revealEnv(c fiber.Ctx) error {
 		if err != nil {
 			return jsonError(c, fiber.StatusInternalServerError, "decrypt_failed", err)
 		}
-		apps = append(apps, appEnv{Name: a.Name, Env: m})
+		// Shared project env fills gaps; per-app wins — same merge as startRun.
+		merged := map[string]string{}
+		for k, v := range p.Env {
+			merged[k] = v
+		}
+		for k, v := range m {
+			merged[k] = v
+		}
+		apps = append(apps, appEnv{Name: a.Name, Env: merged})
 	}
 	h.audit.Write(c.Context(), auth.CurrentUserID(c), "deploy.env_reveal", "deploy", p.ID, map[string]any{
 		"app": want,
 	})
-	return c.JSON(fiber.Map{"apps": apps})
+	return c.JSON(fiber.Map{"apps": apps, "env": p.Env})
 }

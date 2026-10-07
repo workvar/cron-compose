@@ -51,8 +51,18 @@ type SpecResult struct {
 }
 
 // Supported values, kept here so the parser and the public docs agree.
+// Framework ids (nextjs, nestjs, …) are first-class; clone paths resolve via RuntimeLanguage.
 var (
-	SpecLanguages       = []string{"node", "python", "go", "rust", "ruby", "php", "elixir", "java", "docker", "unknown"}
+	SpecLanguages = []string{
+		"node", "nextjs", "nestjs", "react", "vue", "nuxt", "remix", "sveltekit", "astro", "express",
+		"typescript", "javascript", "bun", "deno",
+		"python", "fastapi", "django", "flask",
+		"go", "rust",
+		"dotnet", "csharp",
+		"ruby", "rails", "php", "laravel", "elixir",
+		"java", "spring", "kotlin",
+		"docker", "unknown",
+	}
 	SpecProcessManagers = []string{"none", "pm2", "systemd", "docker"}
 )
 
@@ -367,9 +377,14 @@ func decodeAppEnv(n yaml.Node) ([]EnvVar, error) {
 type addIssue func(level, field, format string, args ...any)
 
 func checkLanguage(add addIssue, field, lang string) {
-	if lang != "" && !contains(SpecLanguages, lang) {
-		add("warning", field, "language %q is not one CronCompose detects (%s); it only picks the default clone folder", lang, strings.Join(SpecLanguages, ", "))
+	if lang == "" || contains(SpecLanguages, lang) {
+		return
 	}
+	// Unknown custom ids still work if they map onto a known runtime clone path.
+	if rt := RuntimeLanguage(lang); rt != lang && contains(SpecLanguages, rt) {
+		return
+	}
+	add("warning", field, "language %q is not a known framework/runtime; clone path falls back to /opt/apps", lang)
 }
 
 func checkProcessManager(add addIssue, field, pm string) {

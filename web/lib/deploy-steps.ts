@@ -3,6 +3,7 @@
 // policies) with sub-steps that mirror what the agent will do: install packages,
 // build, stage under the clone path, apply env, start the process manager, health.
 import type { AdvancedSettings } from "./deploy-spec";
+import { runtimeLanguage } from "./frameworks";
 import type { ProjectBlock } from "./project-blocks";
 import type { DeployEnvVar } from "./types";
 
@@ -43,6 +44,8 @@ export type DeployStepsInput = {
   clonePath: string;
   blocks: ProjectBlock[];
   advanced: AdvancedSettings;
+  /** Shared env applied to every process. */
+  globalEnv?: DeployEnvVar[];
   /** Per-app env from the configure form, keyed by app name. */
   appEnv?: Record<string, DeployEnvVar[]>;
 };
@@ -61,24 +64,43 @@ function pmLabel(pm: string): string {
 }
 
 function langInstallLabel(language: string): string {
-  const lang = (language || "").toLowerCase();
-  if (lang.includes("node") || lang.includes("javascript") || lang.includes("typescript")) {
-    return "Install npm packages";
+  switch (runtimeLanguage(language)) {
+    case "node":
+    case "bun":
+    case "deno":
+      return "Install npm packages";
+    case "go":
+      return "Download Go modules";
+    case "python":
+      return "Install Python packages";
+    case "dotnet":
+      return "Restore .NET packages";
+    case "rust":
+      return "Fetch Rust crates";
+    case "ruby":
+      return "Install Ruby gems";
+    case "php":
+      return "Install Composer packages";
+    case "java":
+      return "Install JVM dependencies";
+    default:
+      return "Install dependencies";
   }
-  if (lang.includes("go") || lang === "golang") return "Download Go modules";
-  if (lang.includes("python") || lang.includes("django") || lang.includes("flask")) {
-    return "Install Python packages";
-  }
-  if (lang.includes("rust")) return "Fetch Rust crates";
-  if (lang.includes("ruby")) return "Install Ruby gems";
-  return "Install dependencies";
 }
 
 function langBuildLabel(language: string): string {
-  const lang = (language || "").toLowerCase();
-  if (lang.includes("go") || lang === "golang") return "Build Go binary";
-  if (lang.includes("rust")) return "Build Rust release";
-  return "Build";
+  switch (runtimeLanguage(language)) {
+    case "go":
+      return "Build Go binary";
+    case "rust":
+      return "Build Rust release";
+    case "dotnet":
+      return "Publish .NET app";
+    case "java":
+      return "Build JVM package";
+    default:
+      return "Build";
+  }
 }
 
 /** Split an install script into discrete commands (&&-chained). */
@@ -122,6 +144,23 @@ export function classifyInstallCommand(cmd: string, language: string): Classifie
 
 function envCount(vars: DeployEnvVar[] | undefined): number {
   return (vars || []).filter((v) => v.key.trim()).length;
+}
+
+/** Unique keys after merging shared + process env (process wins on conflict). */
+function mergedEnvCount(
+  globalVars: DeployEnvVar[] | undefined,
+  appVars: DeployEnvVar[] | undefined,
+): number {
+  const keys = new Set<string>();
+  for (const v of globalVars || []) {
+    const k = v.key.trim();
+    if (k) keys.add(k);
+  }
+  for (const v of appVars || []) {
+    const k = v.key.trim();
+    if (k) keys.add(k);
+  }
+  return keys.size;
 }
 
 function rootLabel(root: string): string {
@@ -225,14 +264,17 @@ export function buildDeployPlan(input: DeployStepsInput): DeployPlanBlock[] {
     const name = (b.name || root || "app").trim() || "app";
     const runSteps: DeployStep[] = [];
 
-    const nEnv = envCount(input.appEnv?.[b.name]);
+    const nEnv = mergedEnvCount(input.globalEnv, input.appEnv?.[b.name]);
+    const nShared = envCount(input.globalEnv);
     runSteps.push({
       id: `env-${b.id}`,
       kind: "env",
       title: "Apply environment variables",
       detail:
         nEnv > 0
-          ? `Inject ${nEnv} configured variable${nEnv === 1 ? "" : "s"} (plus PORT when set) when the process starts.`
+          ? `Inject ${nEnv} configured variable${nEnv === 1 ? "" : "s"}${
+              nShared > 0 ? ` (${nShared} shared)` : ""
+            } (plus PORT when set) when the process starts.`
           : Number(b.port) > 0
             ? `No custom env yet — set PORT=${b.port} when starting.`
             : "No custom env configured for this app.",

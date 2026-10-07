@@ -40,6 +40,18 @@ func TestStartCommandNode(t *testing.T) {
 	if bin != "npm" || strings.Join(args, " ") != "start" {
 		t.Errorf("got %s %v", bin, args)
 	}
+	// Framework ids share the node runtime fallback.
+	bin, args = startCommand("nextjs", "", "web")
+	if bin != "npm" || strings.Join(args, " ") != "start" {
+		t.Errorf("nextjs fallback got %s %v", bin, args)
+	}
+}
+
+func TestStartCommandGo(t *testing.T) {
+	bin, args := startCommand("go", "", "api")
+	if bin != "./app" || len(args) != 0 {
+		t.Errorf("got %s %v", bin, args)
+	}
 }
 
 func TestStartCommandRunScript(t *testing.T) {

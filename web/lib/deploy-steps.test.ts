@@ -73,6 +73,18 @@ function assert(cond: unknown, msg: string) {
   assert(runTitles.some((t) => /PM2/i.test(t)), "start substep");
   assert(runTitles.some((t) => /Health/i.test(t)), "health substep");
 
+  const withShared = buildDeployPlan({
+    ...base,
+    blocks: [block({ id: "b1" })],
+    globalEnv: [{ key: "NODE_ENV", value: "production", sensitive: false }],
+    appEnv: { app: [{ key: "API_URL", value: "https://x", sensitive: false }] },
+  });
+  const envDetail = withShared
+    .find((b) => b.id.startsWith("run-"))!
+    .steps.find((s) => s.kind === "env")!.detail!;
+  assert(/2 configured/.test(envDetail), "counts shared + process env");
+  assert(/1 shared/.test(envDetail), "mentions shared count");
+
   const releaseIdx = plan.findIndex((b) => b.kind === "release");
   const runIdx = plan.findIndex((b) => b.id.startsWith("run-"));
   assert(releaseIdx > 0 && runIdx > releaseIdx, "run blocks come after release swap");

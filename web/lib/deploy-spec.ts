@@ -32,10 +32,31 @@ export type SpecDraft = {
   clonePath?: string;
   serverId?: string;
   blocks: ProjectBlock[];
+  /** Top-level env shared by every process; per-app values override on the same key. */
+  globalEnv: DeployEnvVar[];
   appEnv: Record<string, DeployEnvVar[]>;
   advanced: AdvancedSettings;
   redeployOn: RedeployMode[];
 };
+
+/** Plain map for POST/PATCH project.env (shared, non-secret). */
+export function envVarsToRecord(vars: DeployEnvVar[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const v of vars) {
+    const k = v.key.trim();
+    if (!k || v.sensitive) continue;
+    out[k] = v.value ?? "";
+  }
+  return out;
+}
+
+export function recordToEnvVars(m: Record<string, string> | undefined): DeployEnvVar[] {
+  return Object.entries(m || {}).map(([key, value]) => ({
+    key,
+    value,
+    sensitive: false,
+  }));
+}
 
 function normalizeRedeployOn(raw?: string[]): RedeployMode[] {
   const allowed = new Set<RedeployMode>(["branch", "tag", "release"]);
@@ -70,11 +91,7 @@ export function specToDraft(
   servers: Pick<Server, "id" | "name">[],
   detected?: { language?: string; install?: string },
 ): SpecDraft {
-  const topEnv: DeployEnvVar[] = Object.entries(spec.env || {}).map(([key, value]) => ({
-    key,
-    value,
-    sensitive: false,
-  }));
+  const globalEnv = recordToEnvVars(spec.env);
   const repoName = lastSegment(spec.repo || "") || "app";
   const blocks: ProjectBlock[] = [];
   const appEnv: Record<string, DeployEnvVar[]> = {};
@@ -115,10 +132,12 @@ export function specToDraft(
       healthPort: app.health?.port ? String(app.health.port) : "",
       healthTimeout: app.health?.timeout ? String(app.health.timeout) : "",
     });
-    // Top-level env is shared by every app; an app's own value wins.
-    const own = (app.env || []).map((v) => ({ key: v.key, value: v.value ?? "", sensitive: false }));
-    const ownKeys = new Set(own.map((v) => v.key));
-    appEnv[name] = [...topEnv.filter((v) => !ownKeys.has(v.key)), ...own];
+    // Keep top-level env separate; per-app list is only this app's own vars.
+    appEnv[name] = (app.env || []).map((v) => ({
+      key: v.key,
+      value: v.value ?? "",
+      sensitive: false,
+    }));
   }
 
   return {
@@ -127,6 +146,7 @@ export function specToDraft(
     clonePath: spec.clone_path,
     serverId: matchServer(servers, spec.server) || undefined,
     blocks,
+    globalEnv,
     appEnv,
     advanced: {
       healthPath: spec.health?.path || "",
@@ -190,6 +210,7 @@ export type ExportInput = {
   server?: string;
   clonePath?: string;
   blocks: ProjectBlock[];
+  globalEnv?: DeployEnvVar[];
   appEnv: Record<string, DeployEnvVar[]>;
   advanced: AdvancedSettings;
   redeployOn?: RedeployMode[];
@@ -222,6 +243,12 @@ export function draftToYaml(d: ExportInput): string {
   const redeploy = (d.redeployOn || DEFAULT_REDEPLOY_ON).filter(Boolean);
   if (redeploy.length && !(redeploy.length === 1 && redeploy[0] === "branch")) {
     out.push(`redeploy_on: [${redeploy.map((m) => yamlScalar(m)).join(", ")}]`);
+  }
+
+  const shared = (d.globalEnv || []).filter((v) => v.key.trim() && !v.sensitive);
+  if (shared.length) {
+    out.push("env:");
+    for (const v of shared) out.push(`  ${v.key}: ${yamlScalar(v.value ?? "")}`);
   }
 
   let hidden = 0;

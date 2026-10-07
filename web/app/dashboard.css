@@ -211,6 +211,9 @@ a.stat:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); }
   gap: 8px;
   align-items: center;
 }
+.env-row-plain {
+  grid-template-columns: minmax(100px, 1fr) minmax(120px, 1.4fr) auto;
+}
 .env-row input[type="text"],
 .env-row input[type="password"],
 .env-row input:not([type]) {

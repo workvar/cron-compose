@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  applyFramework,
   blocksReady,
   blocksToDeployApps,
   ensureUniqueBlockNames,
@@ -75,6 +76,39 @@ assert.equal(
   assert.equal(block.install, "npm ci");
   assert.equal(block.run, "npm start");
   assert.equal(block.processManager, "pm2");
+  assert.equal(block.port, "3000");
+}
+
+{
+  const next = applyFramework(
+    {
+      id: "1",
+      name: "web",
+      root: ".",
+      language: "node",
+      install: "old",
+      run: "old",
+      port: "",
+      processManager: "none",
+      autoDetect: true,
+      healthPath: "",
+      healthPort: "",
+      healthTimeout: "",
+    },
+    "nextjs",
+  );
+  assert.equal(next.language, "nextjs");
+  assert.equal(next.install, "npm ci && npm run build");
+  assert.equal(next.run, "npm start");
+  assert.equal(next.port, "3000");
+  assert.equal(next.processManager, "pm2");
+  assert.equal(next.autoDetect, false);
+
+  const go = applyFramework(next, "go");
+  assert.equal(go.language, "go");
+  assert.equal(go.install, "go build -o app .");
+  assert.equal(go.run, "./app");
+  assert.equal(go.processManager, "systemd");
 }
 
 {

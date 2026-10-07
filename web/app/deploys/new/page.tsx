@@ -33,6 +33,7 @@ import {
   SPEC_TEMPLATE,
   draftToYaml,
   emptyAdvanced,
+  envVarsToRecord,
   parseRepoUrl,
   specToDraft,
   type AdvancedSettings,
@@ -75,6 +76,7 @@ type Form = {
   branch: string;
   clonePath: string;
   blocks: ProjectBlock[];
+  globalEnv: DeployEnvVar[];
   appEnv: Record<string, DeployEnvVar[]>;
   advanced: AdvancedSettings;
   redeployOn: RedeployMode[];
@@ -86,6 +88,7 @@ const emptyForm: Form = {
   branch: "main",
   clonePath: "",
   blocks: [],
+  globalEnv: [],
   appEnv: {},
   advanced: emptyAdvanced,
   redeployOn: [...DEFAULT_REDEPLOY_ON],
@@ -256,6 +259,7 @@ export default function NewDeployPage() {
         // Spec may name a server; prefer the operator's grid choice when set.
         next.serverId = form.serverId || d.serverId || next.serverId;
         next.blocks = d.blocks;
+        next.globalEnv = d.globalEnv;
         next.appEnv = d.appEnv;
         next.advanced = d.advanced;
         next.redeployOn = d.redeployOn;
@@ -384,6 +388,7 @@ export default function NewDeployPage() {
             clonePath: form.clonePath,
             blocks: ensureUniqueBlockNames(form.blocks),
             advanced: form.advanced,
+            globalEnv: form.globalEnv,
             appEnv: form.appEnv,
           })
         : [],
@@ -416,6 +421,7 @@ export default function NewDeployPage() {
     next.clonePath = d.clonePath || next.clonePath;
     next.serverId = d.serverId || next.serverId;
     next.blocks = d.blocks;
+    next.globalEnv = d.globalEnv;
     next.appEnv = d.appEnv;
     next.advanced = d.advanced;
     next.redeployOn = d.redeployOn;
@@ -457,6 +463,7 @@ export default function NewDeployPage() {
         server: servers.find((s) => s.id === form.serverId)?.name,
         clonePath: form.clonePath,
         blocks: ensureUniqueBlockNames(form.blocks),
+        globalEnv: form.globalEnv,
         appEnv: form.appEnv,
         advanced: form.advanced,
         redeployOn: form.redeployOn,
@@ -485,6 +492,7 @@ export default function NewDeployPage() {
         clone_path: form.clonePath.trim(),
         port: first?.port || 0,
         process_manager: first?.process_manager || "none",
+        env: envVarsToRecord(form.globalEnv),
         apps: submitApps,
         // A repo croncompose.yml (auto-detected or picked) must not be overwritten.
         spec_from_repo: selectedSpecPath !== SPEC_NONE || !!inspect?.spec,
@@ -706,6 +714,8 @@ export default function NewDeployPage() {
           blocks={form.blocks}
           onBlocks={(blocks) => setForm((f) => ({ ...f, blocks }))}
           apps={apps}
+          globalEnv={form.globalEnv}
+          onGlobalEnv={(globalEnv) => setForm((f) => ({ ...f, globalEnv }))}
           appEnv={form.appEnv}
           onAppEnv={(appEnv) => setForm((f) => ({ ...f, appEnv }))}
           advanced={form.advanced}

@@ -17,8 +17,45 @@ func TestDetectFromFiles(t *testing.T) {
 			files: map[string]string{
 				"package.json": `{"name":"web","dependencies":{"next":"16.0.0"}}`,
 			},
-			language: "node",
+			language: "nextjs",
 			install:  "npm install && npm run build",
+			portOK:   true,
+		},
+		{
+			name: "nestjs",
+			files: map[string]string{
+				"package.json": `{"name":"api","dependencies":{"@nestjs/core":"11.0.0"},"scripts":{"build":"nest build"}}`,
+			},
+			language: "nestjs",
+			install:  "npm install && npm run build",
+			portOK:   true,
+		},
+		{
+			name: "react vite",
+			files: map[string]string{
+				"package.json":    `{"name":"web","dependencies":{"react":"19.0.0"},"devDependencies":{"vite":"6.0.0"}}`,
+				"vite.config.ts": "export default {}",
+			},
+			language: "react",
+			install:  "npm install && npm run build",
+			portOK:   true,
+		},
+		{
+			name: "dotnet",
+			files: map[string]string{
+				"MyApp.csproj": `<Project Sdk="Microsoft.NET.Sdk.Web"></Project>`,
+			},
+			language: "dotnet",
+			install:  "dotnet restore && dotnet publish -c Release -o out",
+			portOK:   true,
+		},
+		{
+			name: "fastapi",
+			files: map[string]string{
+				"requirements.txt": "fastapi==0.115.0\nuvicorn==0.30.0\n",
+			},
+			language: "fastapi",
+			install:  "python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt",
 			portOK:   true,
 		},
 		{
@@ -37,10 +74,19 @@ func TestDetectFromFiles(t *testing.T) {
 			name: "python",
 			files: map[string]string{
 				"pyproject.toml":   "[project]\nname = 'svc'\n",
-				"requirements.txt": "flask==3.0.0\n",
+				"requirements.txt": "requests==2.32.0\n",
 			},
 			language: "python",
 			install:  "python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt",
+		},
+		{
+			name: "flask",
+			files: map[string]string{
+				"requirements.txt": "flask==3.0.0\n",
+			},
+			language: "flask",
+			install:  "python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt",
+			portOK:   true,
 		},
 		{
 			name:     "go",
@@ -102,9 +148,31 @@ func TestClonePath(t *testing.T) {
 	if got != want {
 		t.Errorf("ClonePath = %q, want %q", got, want)
 	}
+	if got := ClonePath(paths, "nextjs", "acme/shop"); got != "/opt/apps/node/shop" {
+		t.Errorf("framework ClonePath = %q", got)
+	}
+	if got := ClonePath(paths, "csharp", "acme/api"); got != "/opt/apps/dotnet/api" {
+		t.Errorf("csharp ClonePath = %q", got)
+	}
 	custom := map[string]string{"node": "/home/pi/src"}
 	if got := ClonePath(custom, "node", "foo/bar"); got != "/home/pi/src/bar" {
 		t.Errorf("custom path = %q", got)
+	}
+}
+
+func TestRuntimeLanguage(t *testing.T) {
+	cases := map[string]string{
+		"nextjs": "node",
+		"nestjs": "node",
+		"go":     "go",
+		"csharp": "dotnet",
+		"fastapi": "python",
+		"spring": "java",
+	}
+	for in, want := range cases {
+		if got := RuntimeLanguage(in); got != want {
+			t.Errorf("RuntimeLanguage(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

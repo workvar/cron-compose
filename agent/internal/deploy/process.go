@@ -19,17 +19,49 @@ func findCompose(dir string) string {
 	return ""
 }
 
+// runtimeLanguage maps framework ids (nextjs, csharp, …) to a start-command bucket.
+// Keep in sync with control-plane RuntimeLanguage — agent cannot import that package.
+func runtimeLanguage(language string) string {
+	switch strings.ToLower(strings.TrimSpace(language)) {
+	case "nextjs", "nestjs", "react", "vue", "nuxt", "remix", "sveltekit", "astro",
+		"express", "typescript", "javascript", "nodejs":
+		return "node"
+	case "fastapi", "django", "flask":
+		return "python"
+	case "csharp", "aspnet", "aspnetcore":
+		return "dotnet"
+	case "rails":
+		return "ruby"
+	case "laravel":
+		return "php"
+	case "spring", "kotlin":
+		return "java"
+	case "golang":
+		return "go"
+	default:
+		lang := strings.ToLower(strings.TrimSpace(language))
+		if lang == "" {
+			return ""
+		}
+		return lang
+	}
+}
+
 func startCommand(language, runScript, _ string) (string, []string) {
 	if bin, args, ok := parseRunScript(runScript); ok {
 		return bin, args
 	}
-	switch language {
-	case "node":
+	// Prefer an explicit run script from the framework preset; these are last-resort
+	// fallbacks when language is set but run is empty.
+	switch runtimeLanguage(language) {
+	case "node", "bun":
 		return "npm", []string{"start"}
 	case "go":
 		return "./app", nil
 	case "python":
 		return "python3", []string{"-m", "app"}
+	case "dotnet":
+		return "bash", []string{"-lc", "dotnet out/*.dll --urls http://0.0.0.0:8080"}
 	default:
 		return "", nil
 	}

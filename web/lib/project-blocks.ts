@@ -1,4 +1,5 @@
 import type { DeployApp, DeployEnvVar, DeployInspect } from "./types";
+import { defaultRunForFramework, fieldsForFramework, frameworkPreset } from "./frameworks";
 
 export type ProjectBlock = {
   id: string;
@@ -60,15 +61,21 @@ export function nameFromRoot(root: string, repoFullName: string): string {
 
 export function seedBlockFromInspect(inspect: DeployInspect, repoFullName: string): ProjectBlock {
   const root = inspect.root_directory || ".";
+  const language = inspect.language || "unknown";
+  const preset = frameworkPreset(language);
+  const pm =
+    inspect.process_manager === "pm2"
+      ? "pm2"
+      : preset?.processManager || "none";
   return {
     id: newBlockId(),
     name: nameFromRoot(root, repoFullName),
     root,
-    language: inspect.language || "unknown",
-    install: inspect.install_script,
-    run: defaultRunForLanguage(inspect.language || ""),
-    port: "",
-    processManager: inspect.process_manager === "pm2" ? "pm2" : "none",
+    language,
+    install: inspect.install_script || preset?.install || "",
+    run: defaultRunForLanguage(language),
+    port: preset?.port || "",
+    processManager: pm,
     autoDetect: true,
     healthPath: "",
     healthPort: "",
@@ -78,31 +85,54 @@ export function seedBlockFromInspect(inspect: DeployInspect, repoFullName: strin
 
 /** Sensible start command when the process manager has nothing else to go on. */
 export function defaultRunForLanguage(language: string): string {
-  switch ((language || "").toLowerCase()) {
-    case "go":
-    case "golang":
-      return "./app";
-    case "node":
-    case "javascript":
-    case "typescript":
-      return "npm start";
-    case "python":
-      return "python3 -m app";
-    default:
-      return "";
+  return defaultRunForFramework(language);
+}
+
+/** Apply a curated framework preset onto a block (install / run / port / pm). */
+export function applyFramework(block: ProjectBlock, frameworkId: string): ProjectBlock {
+  const fields = fieldsForFramework(frameworkId);
+  if (!fields) {
+    return {
+      ...block,
+      language: frameworkId,
+      autoDetect: false,
+      run: block.run || defaultRunForFramework(frameworkId),
+    };
   }
+  return { ...block, ...fields };
+}
+
+/** Merge repo detection into a block (language / install / run / port / pm). */
+export function applyDetection(
+  block: ProjectBlock,
+  det: { language?: string; install_script?: string; has_pm2_ecosystem?: boolean },
+): ProjectBlock {
+  const lang = det.language || "unknown";
+  const preset = frameworkPreset(lang);
+  return {
+    ...block,
+    language: lang,
+    install: det.install_script || preset?.install || block.install,
+    run: defaultRunForLanguage(lang) || block.run,
+    port: block.port || preset?.port || "",
+    processManager:
+      block.processManager !== "none"
+        ? block.processManager
+        : preset?.processManager || (det.has_pm2_ecosystem ? "pm2" : block.processManager),
+  };
 }
 
 export function emptyBlock(): ProjectBlock {
+  const preset = frameworkPreset("node")!;
   return {
     id: newBlockId(),
     name: "",
     root: "",
-    language: "node",
-    install: "",
-    run: "npm start",
-    port: "",
-    processManager: "none",
+    language: preset.id,
+    install: preset.install,
+    run: preset.run,
+    port: preset.port,
+    processManager: preset.processManager,
     autoDetect: true,
     healthPath: "",
     healthPort: "",

@@ -2,7 +2,8 @@
 
 import { useState, type ReactNode } from "react";
 import {
-  defaultRunForLanguage,
+  applyDetection,
+  applyFramework,
   emptyBlock,
   nameFromRoot,
   normalizeBlockRoot,
@@ -46,6 +47,8 @@ type Props = {
   blocks: ProjectBlock[];
   onBlocks: (blocks: ProjectBlock[]) => void;
   apps: DeployApp[];
+  globalEnv: DeployEnvVar[];
+  onGlobalEnv: (env: DeployEnvVar[]) => void;
   appEnv: Record<string, DeployEnvVar[]>;
   onAppEnv: (appEnv: Record<string, DeployEnvVar[]>) => void;
   advanced: AdvancedSettings;
@@ -91,12 +94,15 @@ export function DeployConfigTabs(props: Props) {
     env: (
       <div className="config-tab-panel">
         <p className="field-hint" style={{ marginTop: 0 }}>
-          Variables are injected when each process starts. Mark secrets as sensitive so they stay
-          encrypted and never go into <code>croncompose.yml</code>.
+          Shared variables apply to every process. Process-level values override the same key.
+          Mark secrets as sensitive on a process so they stay encrypted and never go into{" "}
+          <code>croncompose.yml</code>.
         </p>
         <AppEnvEditor
           apps={props.apps}
           title=""
+          globalEnv={props.globalEnv}
+          onGlobalEnv={props.onGlobalEnv}
           onChange={(next) => {
             const appEnv: Record<string, DeployEnvVar[]> = {};
             for (const a of next) appEnv[a.name] = a.env ?? [];
@@ -258,12 +264,7 @@ function ProcessCard({
     setDetecting(true);
     try {
       const det = await detectAt(provider, repo, branch, root);
-      onChange({
-        ...next,
-        language: det.language || "unknown",
-        install: det.install_script || next.install,
-        run: next.run || defaultRunForLanguage(det.language || next.language),
-      });
+      onChange(applyDetection(next, det));
     } catch {
       // Detection is a convenience; leave previous values on failure.
     } finally {
@@ -338,15 +339,12 @@ function ProcessCard({
             allowCustom
             placeholder={detecting ? "Detecting…" : "Select a framework…"}
             disabled={detecting}
-            onChange={(language) =>
-              patch({
-                language,
-                autoDetect: false,
-                run: block.run || defaultRunForLanguage(language),
-              })
-            }
+            onChange={(language) => onChange(applyFramework(block, language))}
             aria-label="Framework or language"
           />
+          <p className="field-hint">
+            Fills build script, run command, port, and process manager for the selected stack.
+          </p>
         </div>
         <div className="field">
           <label htmlFor={`block-port-${block.id}`}>PORT (optional)</label>

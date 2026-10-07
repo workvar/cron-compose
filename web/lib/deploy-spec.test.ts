@@ -43,13 +43,14 @@ assert.equal(matchServer(servers, undefined), "");
   assert.equal(d.blocks[0].root, ".");
   assert.equal(d.blocks[0].port, "3000");
   assert.equal(d.blocks[0].processManager, "pm2");
-  assert.deepEqual(d.appEnv.shop, [{ key: "NODE_ENV", value: "production", sensitive: false }]);
+  assert.deepEqual(d.globalEnv, [{ key: "NODE_ENV", value: "production", sensitive: false }]);
+  assert.deepEqual(d.appEnv.shop, []);
   assert.equal(d.advanced.healthPath, "/healthz");
   assert.equal(d.advanced.healthTimeout, "30");
   assert.equal(d.advanced.autoRollback, true);
 }
 
-// Multi-app: per-app values override top-level defaults, app env wins.
+// Multi-app: top-level env stays shared; per-app list is only that app's own vars.
 {
   const d = specToDraft(
     {
@@ -66,8 +67,9 @@ assert.equal(matchServer(servers, undefined), "");
   );
   assert.equal(d.serverId, undefined);
   assert.deepEqual(d.blocks.map((b) => [b.name, b.processManager]), [["web", "systemd"], ["api", "pm2"]]);
-  assert.deepEqual(d.appEnv.web.map((v) => `${v.key}=${v.value}`), ["SHARED=1", "LOG=debug"]);
-  assert.deepEqual(d.appEnv.api.map((v) => v.key), ["LOG", "SHARED"]);
+  assert.deepEqual(d.globalEnv.map((v) => `${v.key}=${v.value}`), ["LOG=info", "SHARED=1"]);
+  assert.deepEqual(d.appEnv.web.map((v) => `${v.key}=${v.value}`), ["LOG=debug"]);
+  assert.deepEqual(d.appEnv.api, []);
 }
 
 assert.deepEqual(parseRepoUrl("acme/web"), { provider: "github", fullName: "acme/web" });
@@ -111,9 +113,10 @@ assert.equal(yamlScalar(""), '""');
       healthPort: "",
       healthTimeout: "",
     }],
+    globalEnv: [{ key: "NODE_ENV", value: "production", sensitive: false }],
     appEnv: {
       shop: [
-        { key: "NODE_ENV", value: "production", sensitive: false },
+        { key: "PORT_HINT", value: "3000", sensitive: false },
         { key: "DB_PASSWORD", value: "", sensitive: true },
       ],
     },
@@ -123,9 +126,10 @@ assert.equal(yamlScalar(""), '""');
   assert.match(yml, /\nversion: 1\n/);
   assert.match(yml, /\nhealth:\n  path: \/healthz\n/);
   assert.match(yml, /\nauto_rollback: true\n/);
+  assert.match(yml, /\nenv:\n  NODE_ENV: production\n/);
   assert.match(yml, /\n    install: npm ci\n/);
   assert.match(yml, /\n    port: 3000\n/);
-  assert.match(yml, /\n      NODE_ENV: production\n/);
+  assert.match(yml, /\n      PORT_HINT: "3000"\n/);
   assert.doesNotMatch(yml, /DB_PASSWORD/);
   assert.match(yml, /1 sensitive variable left out/);
 }

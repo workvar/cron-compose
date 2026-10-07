@@ -61,7 +61,7 @@ const TOP_KEYS: Row[] = [
   { key: "install", type: "shell command", def: "detected", desc: "Build script. Runs in the app root after every clone. Install deps, compile, migrate. Left out, CronCompose uses what it detects." },
   { key: "run", type: "shell command", def: "from language", desc: <>Start command after the release is live. Working directory is the activated app folder under the deploy path — for a Go binary that is often just <code>./app</code>.</> },
   { key: "root", type: "relative path", def: ".", desc: "App folder inside the repo, for single-app repos. Use apps for more than one." },
-  { key: "language", type: "string", def: "detected", desc: <>One of <code>node python go rust ruby php elixir java docker</code>. Picks the default clone folder and the default run command when <code>run</code> is omitted.</> },
+  { key: "language", type: "string", def: "detected", desc: <>Framework or language id — e.g. <code>nextjs nestjs react go csharp dotnet python fastapi</code>, or a base runtime like <code>node</code>. Picks clone-path defaults and seeds install/run when those fields are omitted.</> },
   { key: "port", type: "1–65535", desc: <>Exported as <code>PORT</code> and used as the default health-check port. Leave unset to let the agent detect the listening port and show it in the web UI.</> },
   { key: "process_manager", type: "none | pm2 | systemd | docker", def: "none", desc: "What keeps the app running after install. See Process managers." },
   { key: "redeploy_on", type: "list", def: '["branch"]', desc: <>Git events that redeploy: <code>branch</code> (push to branch), <code>tag</code> (tag push), <code>release</code> (published release). Requires a connected GitHub or GitLab account.</> },

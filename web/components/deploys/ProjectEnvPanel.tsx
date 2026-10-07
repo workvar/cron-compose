@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { DeployApp, DeployProject } from "@/lib/types";
+import type { DeployApp, DeployEnvVar, DeployProject } from "@/lib/types";
+import { envVarsToRecord, recordToEnvVars } from "@/lib/deploy-spec";
 import { AppEnvEditor } from "./AppEnvEditor";
 import { RedeployButton } from "./RedeployButton";
 
@@ -17,33 +18,39 @@ export function ProjectEnvPanel({ project }: { project: DeployProject }) {
             install: project.install_script,
             port: project.port,
             process_manager: project.process_manager,
-            env: Object.entries(project.env || {}).map(([key, value]) => ({
-              key,
-              value,
-              sensitive: false,
-              has_value: true,
-            })),
+            env: [],
           },
         ];
 
   const [apps, setApps] = useState(initialApps);
+  const [globalEnv, setGlobalEnv] = useState<DeployEnvVar[]>(() =>
+    recordToEnvVars(project.env),
+  );
   const [needsRedeploy, setNeedsRedeploy] = useState(false);
 
-  async function autosave(next: DeployApp[]) {
+  async function autosave(next: DeployApp[], nextGlobal?: DeployEnvVar[]) {
+    const shared = nextGlobal ?? globalEnv;
     const res = await fetch(`/api/deploys/${project.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ apps: next }),
+      body: JSON.stringify({ apps: next, env: envVarsToRecord(shared) }),
     });
     if (!res.ok) throw new Error(await res.text());
     const data = (await res.json()) as { project: DeployProject };
     if (data.project.apps?.length) setApps(data.project.apps);
+    setGlobalEnv(recordToEnvVars(data.project.env));
     setNeedsRedeploy(true);
   }
 
   return (
     <div style={{ marginTop: 18 }}>
-      <AppEnvEditor apps={apps} onChange={setApps} onAutosave={autosave} />
+      <AppEnvEditor
+        apps={apps}
+        onChange={setApps}
+        globalEnv={globalEnv}
+        onGlobalEnv={setGlobalEnv}
+        onAutosave={autosave}
+      />
       {needsRedeploy && (
         <div className="env-redeploy-bar">
           <div>
