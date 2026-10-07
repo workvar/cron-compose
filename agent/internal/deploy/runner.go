@@ -506,7 +506,9 @@ func isGitDir(dir string) bool {
 }
 
 func (m *Manager) runPTY(ctx context.Context, runID, token, dir, script string, env map[string]string, cred *osuser.Credential, tmpDir string) error {
-	cmd := exec.CommandContext(ctx, "/bin/bash", "-lc", script)
+	// Wrap so nvm/fnm under the deploy user are on PATH (non-interactive bash -lc
+	// otherwise skips ~/.bashrc and npm "disappears").
+	cmd := exec.CommandContext(ctx, "/bin/bash", "-lc", osuser.WrapScript(script))
 	cmd.Dir = dir
 	cmd.Env = credEnv(cred, tmpDir, env)
 	applyCredential(cmd, cred)

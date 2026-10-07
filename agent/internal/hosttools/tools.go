@@ -78,7 +78,7 @@ func Install(ctx context.Context, runAs, tool string) (tools []*agentv1.ToolStat
 	ctx, cancel := context.WithTimeout(ctx, installTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "/bin/bash", "-lc", script)
+	cmd := exec.CommandContext(ctx, "/bin/bash", "-lc", osuser.WrapScript(script))
 	cmd.Env = buildEnv(cred)
 	applyCred(cmd, cred)
 	var buf bytes.Buffer
@@ -105,9 +105,9 @@ func Install(ctx context.Context, runAs, tool string) (tools []*agentv1.ToolStat
 }
 
 func probe(ctx context.Context, cred *osuser.Credential, bin string) (path, version string, ok bool) {
-	cmd := exec.CommandContext(ctx, "/bin/bash", "-lc",
-		fmt.Sprintf(`bin=$(command -v %s) || exit 1; echo "PATH:$bin"; ("%s" --version || "%s" -V || "%s" version) 2>/dev/null | head -n1`,
-			shellQuote(bin), shellQuote(bin), shellQuote(bin), shellQuote(bin)))
+	inner := fmt.Sprintf(`bin=$(command -v %s) || exit 1; echo "PATH:$bin"; ("%s" --version || "%s" -V || "%s" version) 2>/dev/null | head -n1`,
+		shellQuote(bin), shellQuote(bin), shellQuote(bin), shellQuote(bin))
+	cmd := exec.CommandContext(ctx, "/bin/bash", "-lc", osuser.WrapScript(inner))
 	cmd.Env = buildEnv(cred)
 	applyCred(cmd, cred)
 	out, err := cmd.Output()

@@ -44,12 +44,13 @@ func credEnv(cred *osuser.Credential, tmpDir string, extra map[string]string) []
 
 // lookPathAs asks a login shell of the target user whether bin is on PATH. This is
 // what makes nvm/fnm installs under ~pi visible to preflight even though the agent
-// process itself has a minimal systemd PATH.
+// process itself has a minimal systemd PATH. Uses osuser.WrapScript because plain
+// `bash -lc` is non-interactive and skips the nvm block in ~/.bashrc.
 func lookPathAs(cred *osuser.Credential, bin string) (string, error) {
 	if bin == "" || strings.ContainsAny(bin, " \t\n`$\\\"'") {
 		return "", fmt.Errorf("invalid binary name")
 	}
-	script := "command -v " + bin
+	script := osuser.WrapScript("command -v " + bin)
 	cmd := exec.Command("/bin/bash", "-lc", script)
 	cmd.Env = credEnv(cred, "", nil)
 	applyCredential(cmd, cred)

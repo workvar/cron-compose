@@ -60,10 +60,11 @@ func (m *Manager) preflight(runID, token, base, installScript, processManager st
 	m.phaseLine(runID, token, phasePreflight, "git: ok")
 
 	for _, bin := range requiredBinaries(installScript) {
-		if _, err := lookPathAs(cred, bin); err != nil {
-			return fmt.Errorf("%s is not installed for user %s, but the install script needs it", bin, who)
+		path, err := lookPathAs(cred, bin)
+		if err != nil {
+			return fmt.Errorf("%s is not installed for user %s (not on their login PATH / nvm); install it under Tools as %s, or pick a different deploy user", bin, who, who)
 		}
-		m.phaseLine(runID, token, phasePreflight, bin+": ok")
+		m.phaseLine(runID, token, phasePreflight, bin+": ok ("+path+")")
 	}
 
 	if bin := processManagerBinary(processManager); bin != "" {
