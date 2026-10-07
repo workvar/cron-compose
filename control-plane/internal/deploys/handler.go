@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 
@@ -514,6 +515,14 @@ func (h *handler) getRun(c fiber.Ctx) error {
 	return c.JSON(r)
 }
 
+func (h *handler) logs(c fiber.Ctx) error {
+	lines, err := h.store.Logs(c.Context(), c.Params("runId"))
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "list_failed", err)
+	}
+	return c.JSON(fiber.Map{"items": lines})
+}
+
 func (h *handler) stdin(c fiber.Ctx) error {
 	run, err := h.store.GetRun(c.Context(), c.Params("runId"))
 	if errors.Is(err, ErrNotFound) {
@@ -554,6 +563,11 @@ func (h *handler) stream(c fiber.Ctx) error {
 	done := run.Status != "pending" && run.Status != "running"
 	c.Response().SetBodyStreamWriter(func(w *bufio.Writer) {
 		defer h.gateway.Broker().Unsubscribe(runID, sub)
+		// Flush immediately even when the snapshot is empty. Otherwise proxies and
+		// EventSource see no body bytes until the first live chunk, and the UI stays
+		// on "(no output yet)" for the whole run.
+		_, _ = w.WriteString(": connected\n\n")
+		_ = w.Flush()
 		for _, l := range snapshot {
 			writeEvent(w, "log", fmt.Sprintf(`{"stream":%q,"seq":%d,"chunk":%q}`, l.Stream, l.Seq, l.Chunk))
 		}
@@ -561,15 +575,28 @@ func (h *handler) stream(c fiber.Ctx) error {
 			writeEvent(w, "done", fmt.Sprintf(`{"status":%q}`, run.Status))
 			return
 		}
-		for ev := range sub {
-			if ev.Chunk != nil {
-				writeEvent(w, "log", fmt.Sprintf(`{"stream":%q,"seq":%d,"chunk":%q}`,
-					ev.Chunk.GetStream(), ev.Chunk.GetSeq(), string(ev.Chunk.GetData())))
-			}
-			if ev.Finished != nil {
-				writeEvent(w, "done", fmt.Sprintf(`{"status":%q,"exit_code":%d}`,
-					ev.Finished.GetStatus(), ev.Finished.GetExitCode()))
-				return
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case ev, ok := <-sub:
+				if !ok {
+					return
+				}
+				if ev.Chunk != nil {
+					writeEvent(w, "log", fmt.Sprintf(`{"stream":%q,"seq":%d,"chunk":%q}`,
+						ev.Chunk.GetStream(), ev.Chunk.GetSeq(), string(ev.Chunk.GetData())))
+				}
+				if ev.Finished != nil {
+					writeEvent(w, "done", fmt.Sprintf(`{"status":%q,"exit_code":%d}`,
+						ev.Finished.GetStatus(), ev.Finished.GetExitCode()))
+					return
+				}
+			case <-ticker.C:
+				_, _ = w.WriteString(": keepalive\n\n")
+				if err := w.Flush(); err != nil {
+					return
+				}
 			}
 		}
 	})

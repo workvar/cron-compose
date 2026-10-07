@@ -54,6 +54,7 @@ func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, gw *agentgw.
 	r.Post("/servers/:id/deploys/import-process", auth.RequireRole("operator"), h.importProcess)
 
 	r.Get("/deploy-runs/:runId", h.getRun)
+	r.Get("/deploy-runs/:runId/logs", h.logs)
 	r.Get("/deploy-runs/:runId/logs/stream", h.stream)
 	r.Post("/deploy-runs/:runId/stdin", auth.RequireRole("operator"), h.stdin)
 	return h

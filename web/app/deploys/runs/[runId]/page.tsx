@@ -18,6 +18,21 @@ const tone: Record<DeployRun["status"], string> = {
   agent_offline: "danger",
 };
 
+const terminalStatus = new Set<DeployRun["status"]>([
+  "succeeded",
+  "failed",
+  "canceled",
+  "agent_offline",
+]);
+
+function mergeLogs(prev: LogLine[], next: LogLine[]): LogLine[] {
+  if (next.length === 0) return prev;
+  const seen = new Set(prev.map((l) => `${l.stream}:${l.seq}`));
+  const extra = next.filter((l) => !seen.has(`${l.stream}:${l.seq}`));
+  if (extra.length === 0) return prev;
+  return [...prev, ...extra].sort((a, b) => a.seq - b.seq);
+}
+
 export default function DeployRunPage({ params }: Props) {
   const { runId } = use(params);
   const [run, setRun] = useState<DeployRun | null>(null);
@@ -45,12 +60,35 @@ export default function DeployRunPage({ params }: Props) {
     return () => { cancelled = true; };
   }, [run?.project_id]);
 
+  // Snapshot fetch: works even when EventSource fails (proxy buffering, brief blip).
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      fetch(`/api/deploy-runs/${runId}/logs`)
+        .then((r) => r.json() as Promise<{ items: LogLine[] }>)
+        .then((d) => {
+          if (!cancelled && Array.isArray(d.items)) {
+            setLogs((prev) => mergeLogs(prev, d.items));
+          }
+        })
+        .catch(() => { /* ignore */ });
+    };
+    load();
+    const live = !run || run.status === "pending" || run.status === "running";
+    if (!live) return () => { cancelled = true; };
+    const id = window.setInterval(load, 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [runId, run?.status]);
+
   useEffect(() => {
     const es = new EventSource(`/api/deploy-runs/${runId}/logs/stream`);
     es.addEventListener("log", (ev) => {
       try {
         const line = JSON.parse((ev as MessageEvent).data) as LogLine;
-        setLogs((prev) => [...prev, line]);
+        setLogs((prev) => mergeLogs(prev, [line]));
       } catch { /* ignore */ }
     });
     es.addEventListener("done", (ev) => {
@@ -60,7 +98,9 @@ export default function DeployRunPage({ params }: Props) {
       } catch { /* ignore */ }
       es.close();
     });
-    es.onerror = () => es.close();
+    // Do not close permanently on the first error — EventSource reconnects by default
+    // unless we close it. Closing here left the page stuck on "(no output yet)".
+    es.onerror = () => { /* allow browser reconnect */ };
     return () => es.close();
   }, [runId]);
 
@@ -81,6 +121,7 @@ export default function DeployRunPage({ params }: Props) {
   if (!run) return <p className="subtle">Loading…</p>;
 
   const live = run.status === "pending" || run.status === "running";
+  const showExit = run.exit_code !== undefined && terminalStatus.has(run.status);
 
   return (
     <>
@@ -92,7 +133,7 @@ export default function DeployRunPage({ params }: Props) {
             <span className={`status ${tone[run.status]}`}>{run.status}</span>
             <span className="pill">{run.trigger}</span>
             <span className="pill">{run.branch}</span>
-            {run.exit_code !== undefined && <span className="pill">exit {run.exit_code}</span>}
+            {showExit && <span className="pill">exit {run.exit_code}</span>}
           </div>
         </div>
       </div>
@@ -103,7 +144,9 @@ export default function DeployRunPage({ params }: Props) {
       <TerminalFrame title={`${run.trigger} ${run.id.slice(0, 8)} · ${run.status}`}>
         <pre className="term-log">
           {logs.length === 0 ? (
-            <span className="term-log-empty">(no output yet)</span>
+            <span className="term-log-empty">
+              {live ? "(waiting for agent output…)" : "(no output)"}
+            </span>
           ) : (
             logs.map((l, i) => <span key={`${l.seq}-${i}`}>{l.chunk}</span>)
           )}

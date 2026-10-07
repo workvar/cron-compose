@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -251,7 +252,9 @@ func (s *service) onDeployEvent(ctx context.Context, serverID string, ev *agentv
 			update deploy_runs set commit_sha = $2 where id = $1 and commit_sha = ''
 		`, runID, sha)
 	}
-	if kind == "log" || len(ev.GetData()) > 0 {
+	// Persist/broadcast log payloads and lifecycle messages (e.g. started:"starting")
+	// so the UI is never blank while a run is in flight with no PTY output yet.
+	if kind == "log" || len(ev.GetData()) > 0 || (kind == "started" && ev.GetMessage() != "") {
 		chunk := &agentv1.LogChunk{
 			RunId:  runID,
 			Stream: "stdout",
@@ -259,7 +262,11 @@ func (s *service) onDeployEvent(ctx context.Context, serverID string, ev *agentv
 			Data:   ev.GetData(),
 		}
 		if len(ev.GetData()) == 0 && ev.GetMessage() != "" {
-			chunk.Data = []byte(ev.GetMessage())
+			msg := ev.GetMessage()
+			if kind == "started" && !strings.HasSuffix(msg, "\n") {
+				msg += "\n"
+			}
+			chunk.Data = []byte(msg)
 		}
 		s.broker.Publish(runID, chunk)
 		_, _ = s.pool.Exec(ctx, `

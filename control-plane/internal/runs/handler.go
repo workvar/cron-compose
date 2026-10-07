@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 
@@ -74,6 +75,11 @@ func (h *handler) stream(c fiber.Ctx) error {
 	c.Response().SetBodyStreamWriter(func(w *bufio.Writer) {
 		defer h.broker.Unsubscribe(runID, sub)
 
+		// Flush immediately even when the snapshot is empty so EventSource/proxies
+		// see an open stream before the first live chunk arrives.
+		_, _ = w.WriteString(": connected\n\n")
+		_ = w.Flush()
+
 		for _, l := range snapshot {
 			writeEvent(w, "log",
 				fmt.Sprintf(`{"stream":%q,"seq":%d,"chunk":%q}`, l.Stream, l.Seq, l.Chunk))
@@ -82,17 +88,30 @@ func (h *handler) stream(c fiber.Ctx) error {
 			writeEvent(w, "done", fmt.Sprintf(`{"status":%q}`, run.Status))
 			return
 		}
-		for ev := range sub {
-			if ev.Chunk != nil {
-				writeEvent(w, "log",
-					fmt.Sprintf(`{"stream":%q,"seq":%d,"chunk":%q}`,
-						ev.Chunk.GetStream(), ev.Chunk.GetSeq(), string(ev.Chunk.GetData())))
-			}
-			if ev.Finished != nil {
-				writeEvent(w, "done",
-					fmt.Sprintf(`{"status":%q,"exit_code":%d}`,
-						ev.Finished.GetStatus(), ev.Finished.GetExitCode()))
-				return
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case ev, ok := <-sub:
+				if !ok {
+					return
+				}
+				if ev.Chunk != nil {
+					writeEvent(w, "log",
+						fmt.Sprintf(`{"stream":%q,"seq":%d,"chunk":%q}`,
+							ev.Chunk.GetStream(), ev.Chunk.GetSeq(), string(ev.Chunk.GetData())))
+				}
+				if ev.Finished != nil {
+					writeEvent(w, "done",
+						fmt.Sprintf(`{"status":%q,"exit_code":%d}`,
+							ev.Finished.GetStatus(), ev.Finished.GetExitCode()))
+					return
+				}
+			case <-ticker.C:
+				_, _ = w.WriteString(": keepalive\n\n")
+				if err := w.Flush(); err != nil {
+					return
+				}
 			}
 		}
 	})

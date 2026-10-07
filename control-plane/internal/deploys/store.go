@@ -330,12 +330,18 @@ func (s *Store) LastSucceededRun(ctx context.Context, projectID string) (Run, er
 	return r, err
 }
 
-// MarkRun updates status fields.
+// MarkRun updates status fields. exit_code is only written for terminal statuses —
+// marking a run "running" used to stamp exit_code=0, which the UI showed as "exit 0"
+// alongside a still-live deploy.
 func (s *Store) MarkRun(ctx context.Context, id, status string, exit int32, errMsg string) error {
 	_, err := s.pool.Exec(ctx, `
 		update deploy_runs set
 		  status = $2,
-		  exit_code = $3,
+		  exit_code = case
+		    when $2 in ('succeeded','failed','canceled','agent_offline') then $3::int
+		    when $2 in ('pending','running') then null
+		    else exit_code
+		  end,
 		  error = nullif($4,''),
 		  started_at = coalesce(started_at, now()),
 		  finished_at = case when $2 in ('succeeded','failed','canceled') then now() else finished_at end

@@ -58,7 +58,8 @@ func failedPhase(err error) string {
 	return ""
 }
 
-// Sender ships one DeployEvent back to the control plane (ephemeral, never outbox).
+// Sender ships one DeployEvent back to the control plane. Callers should use the
+// durable outbox path so progress survives reconnects (unlike terminal I/O).
 type Sender func(*agentv1.DeployEvent)
 
 // Manager owns in-flight deploys, keyed by run id, so stdin can be forwarded into the
