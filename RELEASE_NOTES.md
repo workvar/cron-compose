@@ -1,30 +1,32 @@
-# CronCompose v0.0.35
+# CronCompose v0.0.36
 
-Shared environment variables apply to every process, and the framework picker
-now covers Next.js, NestJS, React, Go, .NET/C#, and more — selecting one fills
-build script, run command, port, and process manager. Repo detection recognizes
-those stacks too, and framework ids map to the right clone-path runtime.
+Deploy and install toolchains as a chosen OS account (for example `pi` instead of
+the agent service user), so login PATH tools like nvm’s `npm` work without
+hand-editing systemd. A new Tools sidebar page detects and installs Node, Go,
+Python, pm2, and friends per account. Updates apply migrations on control-plane
+boot and refresh pm2 startup so the stack comes back after a reboot.
 
 ## Highlights
 
-- **Shared env** — Environment tab has a “Shared (all processes)” section.
-  Values are stored as project-level `env` (same as top-level `env:` in
-  `croncompose.yml`). Process-level vars override the same key. Secrets stay
-  on individual processes.
-- **Framework presets** — Next.js, NestJS, React, Vue, Nuxt, Remix, SvelteKit,
-  Astro, Express, Go, Rust, C# / ASP.NET, .NET, FastAPI, Django, Flask, Spring
-  Boot, Rails, Laravel, and base runtimes. Picking one seeds install, run,
-  port, and process manager.
-- **Smarter detection** — control-plane Detect returns framework ids (e.g.
-  `nextjs`, `nestjs`, `dotnet`, `fastapi`) from `package.json`, `.csproj`,
-  requirements, and similar markers.
-- **Runtime mapping** — framework ids resolve to clone paths and agent
-  fallbacks (`nextjs` → `/opt/apps/node/…`, `csharp` → `/opt/apps/dotnet/…`).
-- **Cleanup** — removed unused `ProjectBlockCard`; deploy-steps and agent
-  start fallbacks use the shared runtime map instead of long switch lists.
+- **Deploy as** — Projects can set `run_as_user` (Advanced tab / Edit). The agent
+  clones, installs, and starts as that account, checking binaries via its login
+  shell PATH. Non-root accounts use `~/opt/…` and `~/tmp` instead of system
+  `/opt` and `/tmp`.
+- **Tools** — Sidebar → Tools: pick a server and OS account, scan what is
+  installed, and install node (nvm), go, python, pm2, git, yarn, pnpm, or bun
+  for that user.
+- **Auto-migrate on boot** — When Postgres is reachable, the control plane
+  applies pending SQL on startup (in addition to `update.sh`). No manual
+  `make migrate` for a normal upgrade.
+- **pm2 boot on update** — `update.sh` re-runs `pm2 save` and `pm2 startup`
+  (passwordless sudo / root) after restart so agents and the stack resurrect
+  after a reboot. `croncompose-ctl.sh` restart/start/reload also save the dump.
+- **Migration `0022_deploy_run_as_user.sql`** — Adds `deploy_projects.run_as_user`
+  (empty = previous agent-user behavior).
 
 ## Upgrade
 
-Rebuild and restart the **control plane**, **web UI**, and **agent**. No new
-migration. Existing projects keep per-app env; add shared vars from the project
-Environment panel or a top-level `env:` in `croncompose.yml`.
+Update the **control plane** (Updates UI or `./update.sh`), then update
+**agents** from the UI. Migration `0022` applies automatically. Afterward, use
+Tools to install Node for `pi` if needed, and set Deploy as → `pi` on projects
+that should use that account’s toolchain.
