@@ -13,6 +13,7 @@ function block(partial: Partial<ProjectBlock> & { id: string }): ProjectBlock {
     root: ".",
     language: "node",
     install: "npm ci && npm run build",
+    run: "npm start",
     port: "3000",
     processManager: "pm2",
     autoDetect: false,

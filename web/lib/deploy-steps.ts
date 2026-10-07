@@ -240,6 +240,7 @@ export function buildDeployPlan(input: DeployStepsInput): DeployPlanBlock[] {
 
     const pm = b.processManager || "none";
     const port = Number(b.port) || 0;
+    const runCmd = (b.run || "").trim();
     runSteps.push({
       id: `start-${b.id}`,
       kind: "start",
@@ -247,9 +248,11 @@ export function buildDeployPlan(input: DeployStepsInput): DeployPlanBlock[] {
       detail:
         pm === "none"
           ? "No process manager — the install output is the deploy result."
-          : port > 0
-            ? `Start via ${pmLabel(pm)} on port ${port}.`
-            : `Start via ${pmLabel(pm)}.`,
+          : runCmd
+            ? `Run \`${runCmd}\` via ${pmLabel(pm)}${port > 0 ? ` (PORT=${port})` : ""} in the activated deploy folder.`
+            : port > 0
+              ? `Start via ${pmLabel(pm)} on port ${port}.`
+              : `Start via ${pmLabel(pm)}.`,
     });
 
     const healthPath = b.healthPath.trim() || (blocks.length === 1 ? input.advanced.healthPath.trim() : "");

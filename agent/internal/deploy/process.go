@@ -19,7 +19,10 @@ func findCompose(dir string) string {
 	return ""
 }
 
-func startCommand(language, _, _ string) (string, []string) {
+func startCommand(language, runScript, _ string) (string, []string) {
+	if bin, args, ok := parseRunScript(runScript); ok {
+		return bin, args
+	}
 	switch language {
 	case "node":
 		return "npm", []string{"start"}
@@ -32,14 +35,28 @@ func startCommand(language, _, _ string) (string, []string) {
 	}
 }
 
-func pm2StartArgs(name, language, eco string) []string {
+// parseRunScript turns a freeform run script into an executable + args.
+// Shell operators (&&, |, ;, redirects) go through bash -lc.
+func parseRunScript(runScript string) (string, []string, bool) {
+	script := strings.TrimSpace(runScript)
+	if script == "" {
+		return "", nil, false
+	}
+	if strings.ContainsAny(script, "|&;<>") || strings.Contains(script, "&&") || strings.Contains(script, "||") {
+		return "bash", []string{"-lc", script}, true
+	}
+	fields := strings.Fields(script)
+	if len(fields) == 0 {
+		return "", nil, false
+	}
+	return fields[0], fields[1:], true
+}
+
+func pm2StartArgs(name, language, eco, runScript string) []string {
 	if eco != "" {
 		return []string{"start", eco, "--update-env"}
 	}
-	if language == "node" {
-		return []string{"start", "npm", "--name", name, "--", "start"}
-	}
-	bin, extra := startCommand(language, "", name)
+	bin, extra := startCommand(language, runScript, name)
 	if bin == "" {
 		return nil
 	}
@@ -74,7 +91,7 @@ func systemdUnit(name, work, execStart string, env map[string]string) string {
 	return b.String()
 }
 
-func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, language string, env map[string]string) error {
+func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, language, runScript string, env map[string]string) error {
 	name := filepath.Base(work)
 	if language == "" {
 		language = detectLangHint(work)
@@ -85,9 +102,9 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, lang
 		return nil
 	case "pm2":
 		eco := findEcosystem(work)
-		args := pm2StartArgs(name, language, eco)
+		args := pm2StartArgs(name, language, eco, runScript)
 		if len(args) == 0 {
-			m.logLine(runID, token, "pm2: no start command; add an ecosystem file or set language to node")
+			m.logLine(runID, token, "pm2: no start command; add a run script, ecosystem file, or set language to node")
 			return nil
 		}
 		m.logLine(runID, token, "pm2 "+strings.Join(args, " "))
@@ -101,9 +118,9 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, lang
 		m.logLine(runID, token, "docker compose -f "+filepath.Base(compose)+" up -d")
 		return runCmd(ctx, work, env, "docker", "compose", "-f", compose, "up", "-d")
 	case "systemd":
-		bin, args := startCommand(language, work, name)
+		bin, args := startCommand(language, runScript, name)
 		if bin == "" {
-			m.logLine(runID, token, "systemd: no ExecStart guessed; attach the unit from Connectors")
+			m.logLine(runID, token, "systemd: no ExecStart guessed; set a run script or attach the unit from Connectors")
 			return nil
 		}
 		execStart := bin

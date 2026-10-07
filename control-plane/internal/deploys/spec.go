@@ -22,6 +22,8 @@ type Spec struct {
 	Server         string            `yaml:"server,omitempty" json:"server,omitempty"`
 	Language       string            `yaml:"language,omitempty" json:"language,omitempty"`
 	Install        string            `yaml:"install,omitempty" json:"install,omitempty"`
+	// Run is the start command after the release is activated (cwd = app folder).
+	Run            string            `yaml:"run,omitempty" json:"run,omitempty"`
 	Root           string            `yaml:"root,omitempty" json:"root,omitempty"`
 	Port           int               `yaml:"port,omitempty" json:"port,omitempty"`
 	ProcessManager string            `yaml:"process_manager,omitempty" json:"process_manager,omitempty"`
@@ -31,6 +33,8 @@ type Spec struct {
 	Health         *SpecHealth       `yaml:"health,omitempty" json:"health,omitempty"`
 	DeployTimeout  int               `yaml:"deploy_timeout,omitempty" json:"deploy_timeout,omitempty"`
 	AutoRollback   bool              `yaml:"auto_rollback,omitempty" json:"auto_rollback,omitempty"`
+	// RedeployOn lists Git events that should start a new deploy: branch, tag, release.
+	RedeployOn []string `yaml:"redeploy_on,omitempty" json:"redeploy_on,omitempty"`
 }
 
 // SpecHealth is the optional post-deploy HTTP probe.
@@ -46,6 +50,8 @@ type SpecApp struct {
 	Root           string   `yaml:"root" json:"root"`
 	Language       string   `yaml:"language,omitempty" json:"language,omitempty"`
 	Install        string   `yaml:"install,omitempty" json:"install,omitempty"`
+	// Run is the start command after the release is activated (cwd = app folder).
+	Run            string   `yaml:"run,omitempty" json:"run,omitempty"`
 	Port           int      `yaml:"port,omitempty" json:"port,omitempty"`
 	ProcessManager string   `yaml:"process_manager,omitempty" json:"process_manager,omitempty"`
 	Env            []EnvVar `yaml:"env,omitempty" json:"env,omitempty"`
@@ -117,6 +123,7 @@ func SpecForProject(p Project) Spec {
 		Port: p.Port, ProcessManager: p.ProcessManager, ClonePath: p.ClonePath,
 		Apps: appsForSpec(p.Apps), Env: p.Env,
 		DeployTimeout: p.DeployTimeoutSeconds, AutoRollback: p.AutoRollback,
+		RedeployOn: NormalizeRedeployOn(p.RedeployOn),
 	}
 	if p.HealthPath != "" {
 		s.Health = &SpecHealth{Path: p.HealthPath, Port: p.HealthPort, Timeout: p.HealthTimeoutSeconds}

@@ -16,10 +16,11 @@ type UpdateInput struct {
 	WriteSpec      *bool              `json:"write_spec"`
 	AutoRollback   *bool              `json:"auto_rollback"`
 	// Health check and run budget. An empty HealthPath turns the probe off again.
-	HealthPath           *string `json:"health_path"`
-	HealthPort           *int    `json:"health_port"`
-	HealthTimeoutSeconds *int    `json:"health_timeout_seconds"`
-	DeployTimeoutSeconds *int    `json:"deploy_timeout_seconds"`
+	HealthPath           *string  `json:"health_path"`
+	HealthPort           *int     `json:"health_port"`
+	HealthTimeoutSeconds *int     `json:"health_timeout_seconds"`
+	DeployTimeoutSeconds *int     `json:"deploy_timeout_seconds"`
+	RedeployOn           *[]string `json:"redeploy_on"`
 }
 
 func applyUpdate(p Project, in UpdateInput) Project {
@@ -73,6 +74,9 @@ func applyUpdate(p Project, in UpdateInput) Project {
 	}
 	if in.DeployTimeoutSeconds != nil {
 		p.DeployTimeoutSeconds = *in.DeployTimeoutSeconds
+	}
+	if in.RedeployOn != nil {
+		p.RedeployOn = NormalizeRedeployOn(*in.RedeployOn)
 	}
 	return p
 }

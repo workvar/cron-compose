@@ -358,6 +358,8 @@ export type DeploySpecApp = {
   root: string;
   language?: string;
   install?: string;
+  /** Start command after the release is live (cwd = app folder under the deploy path). */
+  run?: string;
   port?: number;
   process_manager?: string;
   env?: DeployEnvVar[];
@@ -374,6 +376,7 @@ export type DeploySpec = {
   server?: string;
   language?: string;
   install?: string;
+  run?: string;
   root?: string;
   port?: number;
   process_manager?: string;
@@ -383,6 +386,8 @@ export type DeploySpec = {
   health?: { path: string; port?: number; timeout?: number };
   deploy_timeout?: number;
   auto_rollback?: boolean;
+  /** Auto-redeploy modes: branch push, tag push, and/or GitHub release. */
+  redeploy_on?: Array<"branch" | "tag" | "release" | string>;
 };
 
 export type DeploySpecIssue = { level: "error" | "warning"; field?: string; message: string };
@@ -417,6 +422,8 @@ export type DeployApp = {
   root: string;
   language?: string;
   install?: string;
+  /** Start command after the release is live (cwd = app folder under the deploy path). */
+  run?: string;
   port?: number;
   process_manager?: string;
   env?: DeployEnvVar[];
@@ -443,6 +450,8 @@ export type DeployProject = {
   process_manager: string;
   env: Record<string, string>;
   apps: DeployApp[];
+  /** Which Git events should redeploy: branch, tag, and/or release. */
+  redeploy_on: Array<"branch" | "tag" | "release" | string>;
   write_spec: boolean;
   /** Redeploy the last successful commit automatically after a failed run. */
   auto_rollback: boolean;

@@ -583,19 +583,20 @@ func writeEvent(w *bufio.Writer, event, data string) {
 
 func (h *handler) githubWebhook(c fiber.Ctx) error {
 	body := c.Body()
+	event := c.Get("X-GitHub-Event")
 	var payload struct {
 		Ref        string `json:"ref"`
 		After      string `json:"after"`
+		Action     string `json:"action"`
 		Repository struct {
 			FullName string `json:"full_name"`
 		} `json:"repository"`
+		Release struct {
+			TagName string `json:"tag_name"`
+		} `json:"release"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return jsonError(c, fiber.StatusBadRequest, "bad_json", err)
-	}
-	branch := BranchFromRef(payload.Ref)
-	if branch == "" {
-		return c.SendStatus(fiber.StatusNoContent)
 	}
 	p, secret, err := h.store.GetByRepo(c.Context(), "github", payload.Repository.FullName)
 	if errors.Is(err, ErrNotFound) {
@@ -607,27 +608,47 @@ func (h *handler) githubWebhook(c fiber.Ctx) error {
 	if !ValidGitHubSignature(secret, c.Get("X-Hub-Signature-256"), body) {
 		return jsonError(c, fiber.StatusUnauthorized, "bad_signature", errors.New("bad signature"))
 	}
-	if branch != p.DefaultBranch {
+
+	ref := ""
+	switch {
+	case event == "release" && (payload.Action == "published" || payload.Action == "released"):
+		if !WantsRedeploy(p, "release") {
+			return c.SendStatus(fiber.StatusNoContent)
+		}
+		ref = payload.Release.TagName
+	case event == "push" || event == "":
+		if branch := BranchFromRef(payload.Ref); branch != "" {
+			if !WantsRedeploy(p, "branch") || branch != p.DefaultBranch {
+				return c.SendStatus(fiber.StatusNoContent)
+			}
+			ref = branch
+		} else if tag := TagFromRef(payload.Ref); tag != "" {
+			if !WantsRedeploy(p, "tag") {
+				return c.SendStatus(fiber.StatusNoContent)
+			}
+			ref = tag
+		}
+	}
+	if ref == "" {
 		return c.SendStatus(fiber.StatusNoContent)
 	}
-	return h.triggerFromWebhook(c, p, branch, c.Get("X-GitHub-Delivery"), payload.After)
+	return h.triggerFromWebhook(c, p, ref, c.Get("X-GitHub-Delivery"), payload.After)
 }
 
 func (h *handler) gitlabWebhook(c fiber.Ctx) error {
 	body := c.Body()
+	event := c.Get("X-Gitlab-Event")
 	var payload struct {
 		Ref         string `json:"ref"`
 		CheckoutSHA string `json:"checkout_sha"`
+		ObjectKind  string `json:"object_kind"`
 		Project     struct {
 			Path string `json:"path_with_namespace"`
 		} `json:"project"`
+		Tag string `json:"tag"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return jsonError(c, fiber.StatusBadRequest, "bad_json", err)
-	}
-	branch := BranchFromRef(payload.Ref)
-	if branch == "" {
-		return c.SendStatus(fiber.StatusNoContent)
 	}
 	p, secret, err := h.store.GetByRepo(c.Context(), "gitlab", payload.Project.Path)
 	if errors.Is(err, ErrNotFound) {
@@ -639,10 +660,38 @@ func (h *handler) gitlabWebhook(c fiber.Ctx) error {
 	if !ValidGitLabToken(secret, c.Get("X-Gitlab-Token")) {
 		return jsonError(c, fiber.StatusUnauthorized, "bad_token", errors.New("bad token"))
 	}
-	if branch != p.DefaultBranch {
+
+	ref := ""
+	kind := payload.ObjectKind
+	if kind == "" {
+		kind = strings.ToLower(event)
+	}
+	switch {
+	case kind == "release" || strings.Contains(strings.ToLower(event), "release"):
+		if !WantsRedeploy(p, "release") {
+			return c.SendStatus(fiber.StatusNoContent)
+		}
+		ref = payload.Tag
+		if ref == "" {
+			ref = TagFromRef(payload.Ref)
+		}
+	default:
+		if branch := BranchFromRef(payload.Ref); branch != "" {
+			if !WantsRedeploy(p, "branch") || branch != p.DefaultBranch {
+				return c.SendStatus(fiber.StatusNoContent)
+			}
+			ref = branch
+		} else if tag := TagFromRef(payload.Ref); tag != "" {
+			if !WantsRedeploy(p, "tag") {
+				return c.SendStatus(fiber.StatusNoContent)
+			}
+			ref = tag
+		}
+	}
+	if ref == "" {
 		return c.SendStatus(fiber.StatusNoContent)
 	}
-	return h.triggerFromWebhook(c, p, branch, c.Get("X-Gitlab-Event-UUID"), payload.CheckoutSHA)
+	return h.triggerFromWebhook(c, p, ref, c.Get("X-Gitlab-Event-UUID"), payload.CheckoutSHA)
 }
 
 // startRun starts a deploy. pinSHA is empty for every normal deploy (branch tip); an
@@ -695,7 +744,7 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 		}
 		cmd.Apps = append(cmd.Apps, &agentv1.DeployApp{
 			Name: a.Name, RootDirectory: a.Root, InstallScript: a.Install,
-			Language: lang, Port: int32(a.Port), ProcessManager: pm, Env: merged,
+			RunScript: a.Run, Language: lang, Port: int32(a.Port), ProcessManager: pm, Env: merged,
 			Health: healthCheckForApp(a),
 		})
 	}

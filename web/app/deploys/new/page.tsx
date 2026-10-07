@@ -6,18 +6,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { GitConnections } from "@/components/deploys/GitConnections";
-import { AppEnvEditor } from "@/components/deploys/AppEnvEditor";
-import { ProjectBlockCard } from "@/components/deploys/ProjectBlockCard";
-import { HealthCheckFields } from "@/components/deploys/HealthCheckFields";
+import { DeployConfigTabs } from "@/components/deploys/DeployConfigTabs";
 import { DeployReview } from "@/components/deploys/DeployReview";
 import { DeployServerChip } from "@/components/deploys/DeployServerChip";
 import { ServerPickerGrid } from "@/components/deploys/ServerPickerGrid";
-import { SearchableSelect } from "@/components/SearchableSelect";
 import CopyButton from "@/components/CopyButton";
 import {
   IconCheck,
   IconChevronLeft,
-  IconChevronRight,
   IconDownload,
   IconGit,
   IconSearch,
@@ -29,7 +25,9 @@ import {
   ensureUniqueBlockNames,
   hasDuplicateRoots,
   seedBlockFromInspect,
+  DEFAULT_REDEPLOY_ON,
   type ProjectBlock,
+  type RedeployMode,
 } from "@/lib/project-blocks";
 import {
   SPEC_TEMPLATE,
@@ -79,6 +77,7 @@ type Form = {
   blocks: ProjectBlock[];
   appEnv: Record<string, DeployEnvVar[]>;
   advanced: AdvancedSettings;
+  redeployOn: RedeployMode[];
 };
 
 const emptyForm: Form = {
@@ -89,6 +88,7 @@ const emptyForm: Form = {
   blocks: [],
   appEnv: {},
   advanced: emptyAdvanced,
+  redeployOn: [...DEFAULT_REDEPLOY_ON],
 };
 
 async function errorText(res: Response): Promise<string> {
@@ -258,6 +258,7 @@ export default function NewDeployPage() {
         next.blocks = d.blocks;
         next.appEnv = d.appEnv;
         next.advanced = d.advanced;
+        next.redeployOn = d.redeployOn;
       }
       setSource({
         ...src,
@@ -417,6 +418,7 @@ export default function NewDeployPage() {
     next.blocks = d.blocks;
     next.appEnv = d.appEnv;
     next.advanced = d.advanced;
+    next.redeployOn = d.redeployOn;
     return next;
   }
 
@@ -457,6 +459,7 @@ export default function NewDeployPage() {
         blocks: ensureUniqueBlockNames(form.blocks),
         appEnv: form.appEnv,
         advanced: form.advanced,
+        redeployOn: form.redeployOn,
       })
     : "";
 
@@ -490,6 +493,7 @@ export default function NewDeployPage() {
         health_port: Number(a.healthPort) || 0,
         health_timeout_seconds: Number(a.healthTimeout) || 0,
         deploy_timeout_seconds: Number(a.deployTimeout) || 0,
+        redeploy_on: form.redeployOn,
       };
       const res = await fetch("/api/deploys", {
         method: "POST",
@@ -626,10 +630,10 @@ export default function NewDeployPage() {
   }
 
   if (phase === "configure" && source) {
-    const fromFile = !!spec && spec.valid;
     const showSpecPicker = source.via !== "yaml";
+    const gitConnected = (conns || []).some((c) => c.provider === source.provider);
     return (
-      <div className="deploy-flow">
+      <div className="deploy-flow wide">
         <button type="button" className="back-link as-button" onClick={() => setPhase("import")}>
           <IconChevronLeft /> Back
         </button>
@@ -685,203 +689,75 @@ export default function NewDeployPage() {
           </div>
         )}
 
-        <div className="panel config-card">
-          <div className="field">
-            <label htmlFor="name">Project name</label>
-            <input id="name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-          </div>
-          {(source.provider === "github" || source.provider === "gitlab") && (
-            <div className="field">
-              <label htmlFor="branch">Branch</label>
-              <SearchableSelect
-                id="branch"
-                value={form.branch}
-                options={branches}
-                allowCustom
-                placeholder="main"
-                onChange={(branch) => setForm((f) => ({ ...f, branch }))}
-                aria-label="Branch"
-              />
-              <p className="field-hint">Pushes to this branch redeploy automatically.</p>
-            </div>
-          )}
-          {showSpecPicker && (
-            <div className="field">
-              <label htmlFor="specFile">croncompose.yml</label>
-              <SearchableSelect
-                id="specFile"
-                value={selectedSpecPath}
-                options={specFileOptions}
-                onChange={(path) => void onSelectSpecPath(path)}
-                placeholder="Select a file…"
-                aria-label="croncompose.yml from repo"
-                disabled={busy === "spec"}
-              />
-              <p className="field-hint">
-                {specFiles.length === 0
-                  ? "No croncompose.yml found in this branch yet — pick None to detect, or add a file to the repo."
-                  : "Pick which file in the repo drives this deploy. Next shows the steps it will run."}
-              </p>
-            </div>
-          )}
+        <DeployConfigTabs
+          projectName={form.name}
+          onProjectName={(name) => setForm((f) => ({ ...f, name }))}
+          branch={form.branch}
+          onBranch={(branch) => setForm((f) => ({ ...f, branch }))}
+          branches={branches}
+          provider={source.provider}
+          repo={source.fullName}
+          showBranch={source.provider === "github" || source.provider === "gitlab"}
+          showSpecPicker={showSpecPicker}
+          specFileOptions={specFileOptions}
+          selectedSpecPath={selectedSpecPath}
+          onSelectSpecPath={(path) => void onSelectSpecPath(path)}
+          specBusy={busy === "spec"}
+          blocks={form.blocks}
+          onBlocks={(blocks) => setForm((f) => ({ ...f, blocks }))}
+          apps={apps}
+          appEnv={form.appEnv}
+          onAppEnv={(appEnv) => setForm((f) => ({ ...f, appEnv }))}
+          advanced={form.advanced}
+          onAdvanced={(advanced) => setForm((f) => ({ ...f, advanced }))}
+          clonePath={form.clonePath}
+          onClonePath={(clonePath) => setForm((f) => ({ ...f, clonePath }))}
+          inspect={inspect}
+          redeployOn={form.redeployOn}
+          onRedeployOn={(redeployOn) => setForm((f) => ({ ...f, redeployOn }))}
+          gitConnected={gitConnected}
+        />
 
-          <div className="config-section-h">Build &amp; run</div>
-          <div className="stack">
-            {form.blocks.map((block) => (
-              <ProjectBlockCard
-                key={block.id}
-                block={block}
-                workspaces={inspect?.workspaces || []}
-                provider={source.provider}
-                repo={source.fullName}
-                branch={form.branch}
-                canRemove={form.blocks.length > 1}
-                onChange={(next) =>
-                  setForm((f) => ({ ...f, blocks: f.blocks.map((b) => (b.id === next.id ? next : b)) }))
-                }
-                onRemove={() => setForm((f) => ({ ...f, blocks: f.blocks.filter((b) => b.id !== block.id) }))}
-              />
-            ))}
+        {showYaml && (
+          <div className="panel config-card spec-export" style={{ marginTop: 16 }}>
+            <div className="row">
+              <div className="card-title">croncompose.yml</div>
+              <div className="cluster">
+                <CopyButton value={exportYaml} className="light" />
+                <a
+                  className="button secondary sm"
+                  download="croncompose.yml"
+                  href={`data:text/yaml;charset=utf-8,${encodeURIComponent(exportYaml)}`}
+                >
+                  <IconDownload /> Download
+                </a>
+              </div>
+            </div>
+            <p className="field-hint">Commit this to the repo root and the next import fills itself in.</p>
+            <pre className="spec-code">{exportYaml}</pre>
           </div>
-          <button
-            type="button"
-            className="button ghost sm"
-            style={{ marginTop: 10 }}
-            onClick={() => setForm((f) => ({ ...f, blocks: [...f.blocks, emptyBlock()] }))}
-          >
-            + Add another app from this repo
+        )}
+
+        {error && <p className="form-error">{error}</p>}
+
+        <div className="deploy-bar">
+          <button type="button" className="button ghost sm" onClick={() => setShowYaml((v) => !v)}>
+            {showYaml ? "Hide" : "Export as"} croncompose.yml
           </button>
-
-          <details className="advanced" open={Object.values(form.appEnv).some((v) => v.length > 0)}>
-            <summary>
-              <span className="chev"><IconChevronRight /></span> Environment variables
-            </summary>
-            <div style={{ marginTop: 14 }}>
-              <AppEnvEditor
-                apps={apps}
-                title=""
-                onChange={(next) => {
-                  const appEnv: Record<string, DeployEnvVar[]> = {};
-                  for (const a of next) appEnv[a.name] = a.env ?? [];
-                  setForm((f) => ({ ...f, appEnv }));
-                }}
-              />
-            </div>
-          </details>
-
-          <details className="advanced" open={fromFile && !!(form.advanced.healthPath || form.advanced.autoRollback)}>
-            <summary>
-              <span className="chev"><IconChevronRight /></span> Advanced
-            </summary>
-            <div style={{ marginTop: 14 }}>
-              {source.provider !== "github" && source.provider !== "gitlab" && (
-                <div className="field">
-                  <label htmlFor="branch">Branch</label>
-                  <SearchableSelect
-                    id="branch"
-                    value={form.branch}
-                    options={branches}
-                    allowCustom
-                    placeholder="main"
-                    onChange={(branch) => setForm((f) => ({ ...f, branch }))}
-                    aria-label="Branch"
-                  />
-                  <p className="field-hint">Pushes to this branch redeploy automatically.</p>
-                </div>
-              )}
-              <div className="field">
-                <label htmlFor="clonePath">Folder on the server</label>
-                <input
-                  id="clonePath"
-                  placeholder="/opt/apps/…"
-                  value={form.clonePath}
-                  onChange={(e) => setForm((f) => ({ ...f, clonePath: e.target.value }))}
-                />
-              </div>
-              {form.blocks.length > 1 && (
-                <p className="field-hint">
-                  This is the shared default health check. Give an individual app its own on that app&apos;s card, above.
-                </p>
-              )}
-              <HealthCheckFields
-                idPrefix="project-"
-                appPort={Number(form.blocks[0]?.port) || 0}
-                value={{
-                  path: form.advanced.healthPath,
-                  port: form.advanced.healthPort,
-                  timeout: form.advanced.healthTimeout,
-                  deployTimeout: form.advanced.deployTimeout,
-                }}
-                onChange={(v) =>
-                  setForm((f) => ({
-                    ...f,
-                    advanced: {
-                      ...f.advanced,
-                      healthPath: v.path,
-                      healthPort: v.port,
-                      healthTimeout: v.timeout,
-                      deployTimeout: v.deployTimeout,
-                    },
-                  }))
-                }
-              />
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={form.advanced.autoRollback}
-                  onChange={(e) => setForm((f) => ({ ...f, advanced: { ...f.advanced, autoRollback: e.target.checked } }))}
-                />
-                <span>
-                  <strong>Auto-rollback</strong>
-                  <span className="field-hint" style={{ display: "block", marginTop: 2 }}>
-                    If a deploy fails, go back to the last commit that worked.
-                  </span>
-                </span>
-              </label>
-            </div>
-          </details>
-
-          {showYaml && (
-            <div className="spec-export">
-              <div className="row">
-                <div className="card-title">croncompose.yml</div>
-                <div className="cluster">
-                  <CopyButton value={exportYaml} className="light" />
-                  <a
-                    className="button secondary sm"
-                    download="croncompose.yml"
-                    href={`data:text/yaml;charset=utf-8,${encodeURIComponent(exportYaml)}`}
-                  >
-                    <IconDownload /> Download
-                  </a>
-                </div>
-              </div>
-              <p className="field-hint">Commit this to the repo root and the next import fills itself in.</p>
-              <pre className="spec-code">{exportYaml}</pre>
-            </div>
-          )}
-
-          {error && <p className="form-error">{error}</p>}
-
-          <div className="deploy-bar">
-            <button type="button" className="button ghost sm" onClick={() => setShowYaml((v) => !v)}>
-              {showYaml ? "Hide" : "Export as"} croncompose.yml
+          <div className="deploy-bar-right">
+            {problems.length > 0 && <span className="subtle deploy-bar-hint">{problems[0]}</span>}
+            <button
+              type="button"
+              className="button deploy-button"
+              disabled={!canContinue}
+              onClick={() => {
+                setError(null);
+                setPhase("review");
+                window.scrollTo({ top: 0 });
+              }}
+            >
+              {busy === "spec" ? "Loading…" : "Next"}
             </button>
-            <div className="deploy-bar-right">
-              {problems.length > 0 && <span className="subtle deploy-bar-hint">{problems[0]}</span>}
-              <button
-                type="button"
-                className="button deploy-button"
-                disabled={!canContinue}
-                onClick={() => {
-                  setError(null);
-                  setPhase("review");
-                  window.scrollTo({ top: 0 });
-                }}
-              >
-                {busy === "spec" ? "Loading…" : "Next"}
-              </button>
-            </div>
           </div>
         </div>
       </div>

@@ -331,7 +331,7 @@ func (m *Manager) startApps(ctx context.Context, cmd *agentv1.DeployCommand, lay
 		if pm == "" {
 			pm = cmd.GetProcessManager()
 		}
-		if err := m.startProcess(ctx, runID, token, work, pm, app.GetLanguage(), appEnv(cmd, app)); err != nil {
+		if err := m.startProcess(ctx, runID, token, work, pm, app.GetLanguage(), app.GetRunScript(), appEnv(cmd, app)); err != nil {
 			return err
 		}
 	}

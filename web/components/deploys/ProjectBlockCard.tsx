@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  defaultRunForLanguage,
   nameFromRoot,
   normalizeBlockRoot,
   type ProjectBlock,
@@ -60,6 +61,7 @@ export function ProjectBlockCard({
         ...next,
         language: det.language || "unknown",
         install: det.install_script || next.install,
+        run: next.run || defaultRunForLanguage(det.language || next.language),
       });
     } catch {
       // Detection is a convenience; leave the previous values on failure.
@@ -153,13 +155,26 @@ export function ProjectBlockCard({
       </div>
 
       <div className="field" style={{ marginTop: 12 }}>
-        <label htmlFor={`block-install-${block.id}`}>Install script</label>
+        <label htmlFor={`block-install-${block.id}`}>Build script</label>
         <textarea
           id={`block-install-${block.id}`}
           rows={3}
           value={block.install}
           onChange={(e) => patch({ install: e.target.value })}
         />
+        <p className="field-hint">Runs after clone; artifacts stay in the release under the deploy path (usually /opt/…).</p>
+      </div>
+
+      <div className="field">
+        <label htmlFor={`block-run-${block.id}`}>Run script</label>
+        <input
+          id={`block-run-${block.id}`}
+          value={block.run}
+          onChange={(e) => patch({ run: e.target.value })}
+          placeholder="./app"
+          spellCheck={false}
+        />
+        <p className="field-hint">Start command with cwd set to the activated app folder.</p>
       </div>
 
       <div className="field">

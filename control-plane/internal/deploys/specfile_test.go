@@ -175,8 +175,10 @@ branch: main
 server: my-server            # server name or id in CronCompose
 
 install: npm ci && npm run build
+run: npm start               # cwd = activated folder under /opt/…
 port: 3000
 process_manager: pm2         # none | pm2 | systemd | docker
+redeploy_on: [branch]        # branch | tag | release
 
 env:
   NODE_ENV: production
@@ -193,5 +195,11 @@ func TestParseSpecFileTemplate(t *testing.T) {
 	}
 	if res.Spec.Install != "npm ci && npm run build" || res.Spec.Server != "my-server" {
 		t.Errorf("template = %+v", res.Spec)
+	}
+	if res.Spec.Run != "npm start" {
+		t.Errorf("run = %q", res.Spec.Run)
+	}
+	if len(res.Spec.RedeployOn) != 1 || res.Spec.RedeployOn[0] != "branch" {
+		t.Errorf("redeploy_on = %v", res.Spec.RedeployOn)
 	}
 }

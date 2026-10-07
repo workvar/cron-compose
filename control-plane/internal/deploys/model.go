@@ -20,7 +20,9 @@ type Project struct {
 	ProcessManager string            `json:"process_manager"`
 	Env            map[string]string `json:"env"`
 	Apps           []SpecApp         `json:"apps"`
-	WriteSpec      bool              `json:"write_spec"`
+	// RedeployOn lists which Git events auto-redeploy: "branch", "tag", "release".
+	RedeployOn []string `json:"redeploy_on"`
+	WriteSpec  bool     `json:"write_spec"`
 	// AutoRollback, when true, redeploys the project's last successful commit
 	// automatically after a failed run, and restarts the process manager on it.
 	AutoRollback bool `json:"auto_rollback"`
@@ -159,11 +161,12 @@ type CreateInput struct {
 	// provisioning does not overwrite that file.
 	SpecFromRepo bool `json:"spec_from_repo,omitempty"`
 	// Settings that otherwise need a PATCH after create; croncompose.yml sets them.
-	AutoRollback         bool   `json:"auto_rollback,omitempty"`
-	HealthPath           string `json:"health_path,omitempty"`
-	HealthPort           int    `json:"health_port,omitempty"`
-	HealthTimeoutSeconds int    `json:"health_timeout_seconds,omitempty"`
-	DeployTimeoutSeconds int    `json:"deploy_timeout_seconds,omitempty"`
+	AutoRollback         bool     `json:"auto_rollback,omitempty"`
+	HealthPath           string   `json:"health_path,omitempty"`
+	HealthPort           int      `json:"health_port,omitempty"`
+	HealthTimeoutSeconds int      `json:"health_timeout_seconds,omitempty"`
+	DeployTimeoutSeconds int      `json:"deploy_timeout_seconds,omitempty"`
+	RedeployOn           []string `json:"redeploy_on,omitempty"`
 }
 
 // extras returns the post-insert update for the create-time settings that the
@@ -179,6 +182,10 @@ func (in CreateInput) extras() (UpdateInput, bool) {
 	}
 	if in.DeployTimeoutSeconds > 0 {
 		up.DeployTimeoutSeconds, ok = &in.DeployTimeoutSeconds, true
+	}
+	if len(in.RedeployOn) > 0 {
+		modes := NormalizeRedeployOn(in.RedeployOn)
+		up.RedeployOn, ok = &modes, true
 	}
 	return up, ok
 }

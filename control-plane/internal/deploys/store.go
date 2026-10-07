@@ -29,17 +29,19 @@ const projectCols = `
   language, install_script, root_directory, clone_path, port, process_manager,
   coalesce(env::text,'{}'), coalesce(apps::text,'[]'), write_spec, auto_rollback,
   health_path, health_port, health_timeout_seconds, deploy_timeout_seconds, health_state,
+  coalesce(redeploy_on::text,'["branch"]'),
   created_by, created_at, updated_at
 `
 
 func scanProject(row pgx.Row) (Project, error) {
 	var p Project
-	var envJSON, appsJSON string
+	var envJSON, appsJSON, redeployJSON string
 	err := row.Scan(
 		&p.ID, &p.Name, &p.Provider, &p.RepoFullName, &p.RepoID, &p.CloneURL, &p.DefaultBranch, &p.ServerID,
 		&p.Language, &p.InstallScript, &p.RootDirectory, &p.ClonePath, &p.Port, &p.ProcessManager,
 		&envJSON, &appsJSON, &p.WriteSpec, &p.AutoRollback,
 		&p.HealthPath, &p.HealthPort, &p.HealthTimeoutSeconds, &p.DeployTimeoutSeconds, &p.HealthState,
+		&redeployJSON,
 		&p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {
@@ -49,6 +51,9 @@ func scanProject(row pgx.Row) (Project, error) {
 	_ = json.Unmarshal([]byte(envJSON), &p.Env)
 	p.Apps = []SpecApp{}
 	_ = json.Unmarshal([]byte(appsJSON), &p.Apps)
+	p.RedeployOn = []string{}
+	_ = json.Unmarshal([]byte(redeployJSON), &p.RedeployOn)
+	p.RedeployOn = NormalizeRedeployOn(p.RedeployOn)
 	return p, nil
 }
 
@@ -144,19 +149,21 @@ func (s *Store) Insert(ctx context.Context, in CreateInput, actor string) (Proje
 	if in.Apps == nil {
 		in.Apps = []SpecApp{}
 	}
+	in.RedeployOn = NormalizeRedeployOn(in.RedeployOn)
 	writeSpec := true
 	if in.WriteSpec != nil {
 		writeSpec = *in.WriteSpec
 	}
 	envJSON, _ := json.Marshal(in.Env)
 	appsJSON, _ := json.Marshal(in.Apps)
+	redeployJSON, _ := json.Marshal(in.RedeployOn)
 	token := "ccdep_" + ids.New()
 	wh := ids.New()
 	id := ids.New()
-	return s.insertRow(ctx, id, in, actor, token, wh, writeSpec, envJSON, appsJSON)
+	return s.insertRow(ctx, id, in, actor, token, wh, writeSpec, envJSON, appsJSON, redeployJSON)
 }
 
-func (s *Store) insertRow(ctx context.Context, id string, in CreateInput, actor, token, wh string, writeSpec bool, envJSON, appsJSON []byte) (Project, error) {
+func (s *Store) insertRow(ctx context.Context, id string, in CreateInput, actor, token, wh string, writeSpec bool, envJSON, appsJSON, redeployJSON []byte) (Project, error) {
 	var createdBy any
 	if actor != "" {
 		createdBy = actor
@@ -168,11 +175,11 @@ func (s *Store) insertRow(ctx context.Context, id string, in CreateInput, actor,
 		insert into deploy_projects (
 		  id, name, provider, repo_full_name, repo_id, clone_url, default_branch, server_id,
 		  language, install_script, root_directory, clone_path, port, process_manager,
-		  env, apps, webhook_secret, deploy_token_hash, write_spec, created_by
-		) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+		  env, apps, webhook_secret, deploy_token_hash, write_spec, redeploy_on, created_by
+		) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
 	`, id, in.Name, in.Provider, in.RepoFullName, in.RepoID, in.CloneURL, in.DefaultBranch, in.ServerID,
 		in.Language, in.InstallScript, in.RootDirectory, in.ClonePath, in.Port, in.ProcessManager,
-		envJSON, appsJSON, wh, hashToken(token), writeSpec, createdBy)
+		envJSON, appsJSON, wh, hashToken(token), writeSpec, redeployJSON, createdBy)
 	if err != nil {
 		return Project{}, err
 	}
@@ -199,17 +206,19 @@ func (s *Store) Update(ctx context.Context, id string, in UpdateInput) (Project,
 	}
 	envJSON, _ := json.Marshal(p.Env)
 	appsJSON, _ := json.Marshal(p.Apps)
+	p.RedeployOn = NormalizeRedeployOn(p.RedeployOn)
+	redeployJSON, _ := json.Marshal(p.RedeployOn)
 	_, err = s.pool.Exec(ctx, `
 		update deploy_projects set
 		  name=$2, default_branch=$3, server_id=$4, language=$5, install_script=$6,
 		  root_directory=$7, clone_path=$8, port=$9, process_manager=$10,
 		  env=$11, apps=$12, write_spec=$13, auto_rollback=$14,
 		  health_path=$15, health_port=$16, health_timeout_seconds=$17,
-		  deploy_timeout_seconds=$18, updated_at=now()
+		  deploy_timeout_seconds=$18, redeploy_on=$19, updated_at=now()
 		where id=$1
 	`, p.ID, p.Name, p.DefaultBranch, p.ServerID, p.Language, p.InstallScript,
 		p.RootDirectory, p.ClonePath, p.Port, p.ProcessManager, envJSON, appsJSON, p.WriteSpec, p.AutoRollback,
-		p.HealthPath, p.HealthPort, p.HealthTimeoutSeconds, p.DeployTimeoutSeconds)
+		p.HealthPath, p.HealthPort, p.HealthTimeoutSeconds, p.DeployTimeoutSeconds, redeployJSON)
 	if err != nil {
 		return Project{}, err
 	}

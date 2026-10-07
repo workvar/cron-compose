@@ -55,14 +55,16 @@ const TOP_KEYS: Row[] = [
   { key: "name", type: "string", def: "repo name", desc: "Project name shown in CronCompose." },
   { key: "repo", type: "string", desc: <>What to clone: <code>owner/name</code>, an https URL, or a <code>git@</code> URL. Required when you paste the file. Can be left out when the file lives in the repo you import.</> },
   { key: "provider", type: "github | gitlab", def: "from repo URL, else github", desc: "Only needed with a bare owner/name on GitLab." },
-  { key: "branch", type: "string", def: "repo default", desc: "Branch to deploy. Pushes to it redeploy automatically." },
+  { key: "branch", type: "string", def: "repo default", desc: "Branch to deploy on the first run, and the branch watched when redeploy_on includes branch." },
   { key: "server", type: "string", desc: "Server name or id to deploy to. Pre-selected in the importer when it matches; you can still change it." },
-  { key: "clone_path", type: "absolute path", def: "/opt/apps/<language>/<repo>", desc: "Folder on the server the repo is cloned into." },
-  { key: "install", type: "shell command", def: "detected", desc: "Runs in the app root after every clone or pull. Build here: install deps, compile, migrate. Left out, CronCompose uses what it detects (npm/pnpm/yarn/bun, pip, go build, cargo…)." },
+  { key: "clone_path", type: "absolute path", def: "/opt/apps/<language>/<repo>", desc: "Folder on the server releases land in (usually under /opt). Each process runs from its app folder under current/ after activation." },
+  { key: "install", type: "shell command", def: "detected", desc: "Build script. Runs in the app root after every clone. Install deps, compile, migrate. Left out, CronCompose uses what it detects." },
+  { key: "run", type: "shell command", def: "from language", desc: <>Start command after the release is live. Working directory is the activated app folder under the deploy path — for a Go binary that is often just <code>./app</code>.</> },
   { key: "root", type: "relative path", def: ".", desc: "App folder inside the repo, for single-app repos. Use apps for more than one." },
-  { key: "language", type: "string", def: "detected", desc: <>One of <code>node python go rust ruby php elixir java docker</code>. Picks the default clone folder and the start command (below).</> },
-  { key: "port", type: "1–65535", desc: <>Exported to the app as <code>PORT</code> and used as the default health-check port. With several <code>apps</code>, set it on each app instead.</> },
+  { key: "language", type: "string", def: "detected", desc: <>One of <code>node python go rust ruby php elixir java docker</code>. Picks the default clone folder and the default run command when <code>run</code> is omitted.</> },
+  { key: "port", type: "1–65535", desc: <>Exported as <code>PORT</code> and used as the default health-check port. Leave unset to let the agent detect the listening port and show it in the web UI.</> },
   { key: "process_manager", type: "none | pm2 | systemd | docker", def: "none", desc: "What keeps the app running after install. See Process managers." },
+  { key: "redeploy_on", type: "list", def: '["branch"]', desc: <>Git events that redeploy: <code>branch</code> (push to branch), <code>tag</code> (tag push), <code>release</code> (published release). Requires a connected GitHub or GitLab account.</> },
   { key: "env", type: "map", desc: "Non-secret environment variables, shared by every app." },
   { key: "health", type: "object", desc: "Optional HTTP probe that must pass before a deploy counts as successful." },
   { key: "deploy_timeout", type: "seconds", def: "900", desc: "Budget for a whole deploy. The agent caps it at 2 hours." },
@@ -71,9 +73,10 @@ const TOP_KEYS: Row[] = [
 ];
 
 const APP_KEYS: Row[] = [
-  { key: "name", type: "string", def: "folder name", desc: "Unique per project. Used for pm2 and systemd unit names." },
+  { key: "name", type: "string", def: "folder name", desc: "Unique per project. Used for pm2 and systemd unit names and the deploy folder label." },
   { key: "root", type: "relative path", def: ".", desc: <>Folder inside the repo. No leading <code>/</code>, no <code>..</code>. Unique per project.</> },
-  { key: "install", type: "shell command", def: "top-level, else detected", desc: "Build command for this app." },
+  { key: "install", type: "shell command", def: "top-level, else detected", desc: "Build script for this app." },
+  { key: "run", type: "shell command", def: "top-level, else from language", desc: "Start command for this app (cwd = activated deploy folder)." },
   { key: "language", type: "string", def: "top-level language", desc: "Overrides the top-level value." },
   { key: "port", type: "1–65535", def: "top-level if only one app", desc: <>This app&apos;s <code>PORT</code>.</> },
   { key: "process_manager", type: "string", def: "top-level value", desc: "Overrides the top-level value." },
@@ -93,8 +96,10 @@ const EXAMPLES: { id: string; title: string; lead: React.ReactNode; yaml: string
     lead: <>pm2 runs <code>npm start</code>, or your <code>ecosystem.config.js</code> when the repo has one.</>,
     yaml: `version: 1
 install: npm ci && npm run build
+run: npm start
 port: 3000
 process_manager: pm2
+redeploy_on: [branch]
 env:
   NODE_ENV: production
 health:
@@ -105,9 +110,10 @@ auto_rollback: true
   {
     id: "python",
     title: "Python service with systemd",
-    lead: "systemd runs python3 -m app from the app folder, as a user unit that restarts on failure.",
+    lead: "systemd runs the run script from the activated app folder, as a user unit that restarts on failure.",
     yaml: `version: 1
 install: python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+run: python3 -m app
 port: 8000
 process_manager: systemd
 env:
@@ -117,11 +123,13 @@ env:
   {
     id: "go",
     title: "Go binary",
-    lead: "systemd and pm2 start ./app, so build to that name.",
+    lead: "Build writes the binary into the release; run is just ./app because the process starts with that folder as cwd.",
     yaml: `version: 1
 install: go build -o app ./cmd/server
+run: ./app
 port: 8080
 process_manager: systemd
+redeploy_on: [branch, tag, release]
 health:
   path: /healthz
 `,
@@ -257,11 +265,21 @@ export default function DocsPage() {
         <p>Every key is optional. Unknown keys are reported as warnings and ignored, so a typo never blocks a deploy silently.</p>
         <KeyTable rows={TOP_KEYS} />
 
+        <h2 id="build-run">Build &amp; run</h2>
+        <p>
+          <code>install</code> is the build script: it runs after clone inside the app&apos;s repo folder (deps, compile,
+          migrate). Artifacts stay in that release under the target path — usually something like{" "}
+          <code>/opt/apps/&lt;language&gt;/&lt;project&gt;</code>. When the release is activated, the process manager starts
+          with the app folder as the working directory, so <code>run</code> is typically just the binary or start command
+          relative to that folder (for example <code>./app</code> for Go). Leave <code>port</code> blank and the agent
+          detects the listening port and exposes it in the web interface.
+        </p>
+
         <h2 id="apps">apps</h2>
         <p>
           Use <code>apps</code> when one repo holds more than one thing to run. Each app is built in its own folder and
-          started on its own. Any top-level <code>install</code>, <code>language</code>, <code>process_manager</code> and{" "}
-          <code>env</code> act as defaults.
+          started on its own. Any top-level <code>install</code>, <code>run</code>, <code>language</code>,{" "}
+          <code>process_manager</code> and <code>env</code> act as defaults.
         </p>
         <KeyTable rows={APP_KEYS} />
 
@@ -335,9 +353,10 @@ apps:
 
         <h2 id="ci">Deploy from CI</h2>
         <p>
-          With a GitHub or GitLab connection, pushes to <code>branch</code> redeploy through a webhook, and CronCompose
-          also commits a small CI job. To trigger a deploy yourself from any CI, call the project&apos;s run endpoint with
-          the deploy token shown once after the first deploy:
+          With a GitHub or GitLab connection, CronCompose installs a webhook for the events in{" "}
+          <code>redeploy_on</code> (branch push, tag push, and/or published release) and also commits a small CI job.
+          To trigger a deploy yourself from any CI, call the project&apos;s run endpoint with the deploy token shown once
+          after the first deploy:
         </p>
         <Code title="shell">{`curl -fsS -X POST "$CRONCOMPOSE_URL/api/deploys/$PROJECT_ID/runs" \\
   -H "Authorization: Bearer $CRONCOMPOSE_TOKEN" \\

@@ -97,7 +97,20 @@ assert.equal(yamlScalar(""), '""');
     repo: "acme/shop",
     branch: "main",
     server: "ec2",
-    blocks: [{ id: "b1", name: "shop", root: ".", language: "node", install: "npm ci", port: "3000", processManager: "pm2" }],
+    blocks: [{
+      id: "b1",
+      name: "shop",
+      root: ".",
+      language: "node",
+      install: "npm ci",
+      run: "npm start",
+      port: "3000",
+      processManager: "pm2",
+      autoDetect: false,
+      healthPath: "",
+      healthPort: "",
+      healthTimeout: "",
+    }],
     appEnv: {
       shop: [
         { key: "NODE_ENV", value: "production", sensitive: false },

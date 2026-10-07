@@ -30,7 +30,8 @@ func (g *GitAPI) ensureGitHubHook(ctx context.Context, token, fullName, hookURL,
 	payload := map[string]any{
 		"name":   "web",
 		"active": true,
-		"events": []string{"push"},
+		// push covers branch + tag; release covers published GitHub releases.
+		"events": []string{"push", "release"},
 		"config": map[string]string{
 			"url":          hookURL,
 			"content_type": "json",
@@ -60,6 +61,8 @@ func (g *GitAPI) ensureGitLabHook(ctx context.Context, token, fullName, repoID, 
 		"url":                     hookURL,
 		"token":                   secret,
 		"push_events":             true,
+		"tag_push_events":         true,
+		"releases_events":         true,
 		"enable_ssl_verification": true,
 	}
 	code, raw, err := g.doJSON(ctx, http.MethodPost, g.gitlabAPI()+"/projects/"+id+"/hooks", token, payload, nil)

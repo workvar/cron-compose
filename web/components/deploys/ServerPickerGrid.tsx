@@ -44,7 +44,7 @@ export function ServerPickerGrid({ servers, value, onChange, onContinue }: Props
 
   return (
     <div className="server-picker">
-      <div className="search" style={{ marginBottom: 16, maxWidth: 420 }}>
+      <div className="search server-picker-search">
         <IconSearch />
         <input
           type="search"

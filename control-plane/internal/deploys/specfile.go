@@ -75,6 +75,7 @@ type specFile struct {
 	Server         string            `yaml:"server"`
 	Language       string            `yaml:"language"`
 	Install        string            `yaml:"install"`
+	Run            string            `yaml:"run"`
 	Root           string            `yaml:"root"`
 	Port           int               `yaml:"port"`
 	ProcessManager string            `yaml:"process_manager"`
@@ -83,6 +84,7 @@ type specFile struct {
 	Health         *SpecHealth       `yaml:"health"`
 	DeployTimeout  int               `yaml:"deploy_timeout"`
 	AutoRollback   bool              `yaml:"auto_rollback"`
+	RedeployOn     []string          `yaml:"redeploy_on"`
 	Apps           []specFileApp     `yaml:"apps"`
 }
 
@@ -91,6 +93,7 @@ type specFileApp struct {
 	Root           string    `yaml:"root"`
 	Language       string    `yaml:"language"`
 	Install        string    `yaml:"install"`
+	Run            string    `yaml:"run"`
 	Port           int       `yaml:"port"`
 	ProcessManager string    `yaml:"process_manager"`
 	Env            yaml.Node `yaml:"env"`
@@ -132,9 +135,11 @@ func ParseSpecFile(raw []byte) SpecResult {
 		Version: f.Version, Name: strings.TrimSpace(f.Name), Provider: strings.ToLower(strings.TrimSpace(f.Provider)),
 		Repo: strings.TrimSpace(f.Repo), Branch: strings.TrimSpace(f.Branch), Server: strings.TrimSpace(f.Server),
 		Language: strings.ToLower(strings.TrimSpace(f.Language)), Install: strings.TrimSpace(f.Install),
+		Run: strings.TrimSpace(f.Run),
 		Root: f.Root, Port: f.Port, ProcessManager: strings.ToLower(strings.TrimSpace(f.ProcessManager)),
 		ClonePath: strings.TrimSpace(f.ClonePath), Env: f.Env, Health: f.Health,
 		DeployTimeout: f.DeployTimeout, AutoRollback: f.AutoRollback,
+		RedeployOn: NormalizeRedeployOn(f.RedeployOn),
 	}
 
 	switch {
@@ -203,7 +208,7 @@ func ParseSpecFile(raw []byte) SpecResult {
 		field := fmt.Sprintf("apps[%d]", i)
 		app := SpecApp{
 			Name: strings.TrimSpace(a.Name), Language: strings.ToLower(strings.TrimSpace(a.Language)),
-			Install: strings.TrimSpace(a.Install), Port: a.Port,
+			Install: strings.TrimSpace(a.Install), Run: strings.TrimSpace(a.Run), Port: a.Port,
 			ProcessManager: strings.ToLower(strings.TrimSpace(a.ProcessManager)),
 		}
 		root, err := cleanSpecRoot(a.Root)

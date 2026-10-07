@@ -5,7 +5,14 @@ export type ProjectBlock = {
   name: string;
   root: string;
   language: string;
+  /** Build / install script run after clone (deps, compile, migrate). */
   install: string;
+  /**
+   * Command that starts the process after the release is activated. Runs with
+   * cwd set to the app folder under the deploy path (usually under /opt/…).
+   * Example for a Go binary: `./server`.
+   */
+  run: string;
   port: string;
   processManager: string;
   /**
@@ -21,6 +28,11 @@ export type ProjectBlock = {
   healthPort: string;
   healthTimeout: string;
 };
+
+/** Modes that can auto-redeploy a project when the Git provider fires a webhook. */
+export type RedeployMode = "branch" | "tag" | "release";
+
+export const DEFAULT_REDEPLOY_ON: RedeployMode[] = ["branch"];
 
 export function newBlockId(): string {
   return `b-${Math.random().toString(36).slice(2, 10)}`;
@@ -54,6 +66,7 @@ export function seedBlockFromInspect(inspect: DeployInspect, repoFullName: strin
     root,
     language: inspect.language || "unknown",
     install: inspect.install_script,
+    run: defaultRunForLanguage(inspect.language || ""),
     port: "",
     processManager: inspect.process_manager === "pm2" ? "pm2" : "none",
     autoDetect: true,
@@ -63,6 +76,23 @@ export function seedBlockFromInspect(inspect: DeployInspect, repoFullName: strin
   };
 }
 
+/** Sensible start command when the process manager has nothing else to go on. */
+export function defaultRunForLanguage(language: string): string {
+  switch ((language || "").toLowerCase()) {
+    case "go":
+    case "golang":
+      return "./app";
+    case "node":
+    case "javascript":
+    case "typescript":
+      return "npm start";
+    case "python":
+      return "python3 -m app";
+    default:
+      return "";
+  }
+}
+
 export function emptyBlock(): ProjectBlock {
   return {
     id: newBlockId(),
@@ -70,6 +100,7 @@ export function emptyBlock(): ProjectBlock {
     root: "",
     language: "node",
     install: "",
+    run: "npm start",
     port: "",
     processManager: "none",
     autoDetect: true,
@@ -114,6 +145,7 @@ export function blocksToDeployApps(
     root: normalizeBlockRoot(block.root),
     language: block.language,
     install: block.install,
+    run: block.run.trim() || undefined,
     process_manager: block.processManager,
     port: block.port ? Number(block.port) : undefined,
     env: appEnv[block.name] ?? [],

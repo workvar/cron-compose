@@ -2,7 +2,12 @@
 // file (POST /deploys/spec/validate, GET /git/inspect); this module only maps the
 // parsed result onto the form, and renders the form back out as YAML for "Export".
 import type { DeployEnvVar, DeploySpec, Server } from "./types";
-import type { ProjectBlock } from "./project-blocks";
+import {
+  defaultRunForLanguage,
+  type ProjectBlock,
+  type RedeployMode,
+  DEFAULT_REDEPLOY_ON,
+} from "./project-blocks";
 
 export type AdvancedSettings = {
   healthPath: string;
@@ -29,7 +34,14 @@ export type SpecDraft = {
   blocks: ProjectBlock[];
   appEnv: Record<string, DeployEnvVar[]>;
   advanced: AdvancedSettings;
+  redeployOn: RedeployMode[];
 };
+
+function normalizeRedeployOn(raw?: string[]): RedeployMode[] {
+  const allowed = new Set<RedeployMode>(["branch", "tag", "release"]);
+  const out = (raw || []).filter((m): m is RedeployMode => allowed.has(m as RedeployMode));
+  return out.length ? out : [...DEFAULT_REDEPLOY_ON];
+}
 
 function blockId(): string {
   return `b-${Math.random().toString(36).slice(2, 10)}`;
@@ -74,6 +86,7 @@ export function specToDraft(
         root: spec.root || ".",
         language: spec.language,
         install: spec.install,
+        run: spec.run,
         port: spec.port,
         process_manager: spec.process_manager,
         env: [] as DeployEnvVar[],
@@ -85,12 +98,14 @@ export function specToDraft(
     const root = app.root || ".";
     const port = app.port || sharedPort;
     const name = app.name || (root === "." ? spec.name || repoName : lastSegment(root)) || "app";
+    const language = app.language || spec.language || detected?.language || "unknown";
     blocks.push({
       id: blockId(),
       name,
       root,
-      language: app.language || spec.language || detected?.language || "unknown",
+      language,
       install: app.install || spec.install || detected?.install || "",
+      run: app.run || spec.run || defaultRunForLanguage(language),
       port: port ? String(port) : "",
       processManager: app.process_manager || spec.process_manager || "none",
       // Came from an explicit croncompose.yml (or a pasted one): never let a later
@@ -120,6 +135,7 @@ export function specToDraft(
       deployTimeout: spec.deploy_timeout ? String(spec.deploy_timeout) : "",
       autoRollback: !!spec.auto_rollback,
     },
+    redeployOn: normalizeRedeployOn(spec.redeploy_on),
   };
 }
 
@@ -176,6 +192,7 @@ export type ExportInput = {
   blocks: ProjectBlock[];
   appEnv: Record<string, DeployEnvVar[]>;
   advanced: AdvancedSettings;
+  redeployOn?: RedeployMode[];
 };
 
 /** Renders the form as a croncompose.yml. Sensitive values are never written. */
@@ -202,6 +219,10 @@ export function draftToYaml(d: ExportInput): string {
   }
   line("deploy_timeout", Number(a.deployTimeout) || 0);
   if (a.autoRollback) line("auto_rollback", true);
+  const redeploy = (d.redeployOn || DEFAULT_REDEPLOY_ON).filter(Boolean);
+  if (redeploy.length && !(redeploy.length === 1 && redeploy[0] === "branch")) {
+    out.push(`redeploy_on: [${redeploy.map((m) => yamlScalar(m)).join(", ")}]`);
+  }
 
   let hidden = 0;
   out.push("apps:");
@@ -210,6 +231,7 @@ export function draftToYaml(d: ExportInput): string {
     line("root", b.root || ".", "    ");
     line("language", b.language === "unknown" ? "" : b.language, "    ");
     line("install", b.install, "    ");
+    line("run", b.run, "    ");
     line("port", Number(b.port) || 0, "    ");
     line("process_manager", b.processManager === "none" ? "" : b.processManager, "    ");
     if (b.healthPath.trim()) {
@@ -240,8 +262,10 @@ branch: main
 server: my-server            # server name or id in CronCompose
 
 install: npm ci && npm run build
+run: npm start               # cwd = activated folder under /opt/…
 port: 3000
 process_manager: pm2         # none | pm2 | systemd | docker
+redeploy_on: [branch]        # branch | tag | release
 
 env:
   NODE_ENV: production

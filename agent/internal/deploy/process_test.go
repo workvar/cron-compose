@@ -36,14 +36,21 @@ func TestSystemdUnit(t *testing.T) {
 }
 
 func TestStartCommandNode(t *testing.T) {
-	bin, args := startCommand("node", "/tmp/app", "web")
+	bin, args := startCommand("node", "", "web")
 	if bin != "npm" || strings.Join(args, " ") != "start" {
 		t.Errorf("got %s %v", bin, args)
 	}
 }
 
+func TestStartCommandRunScript(t *testing.T) {
+	bin, args := startCommand("go", "./server", "api")
+	if bin != "./server" || len(args) != 0 {
+		t.Errorf("got %s %v", bin, args)
+	}
+}
+
 func TestPm2ArgsWithoutEcosystem(t *testing.T) {
-	args := pm2StartArgs("web", "node", "")
+	args := pm2StartArgs("web", "node", "", "")
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "--name") || !strings.Contains(joined, "web") {
 		t.Errorf("got %v", args)
