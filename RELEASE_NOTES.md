@@ -1,17 +1,23 @@
-# CronCompose v0.0.37
+# CronCompose v0.0.38
 
-Fixes deploy-as-user preflight failing to see `npm` (and similar) when the account
-installs Node via nvm. Non-interactive `bash -lc` skips most of `~/.bashrc`, so
-nvm never loaded even though an interactive SSH session as `pi` found `npm`.
+Fixes deploy run pages stuck on **(no output yet)** while the run showed
+**Running** (and a misleading **exit 0**). Live deploy logs could vanish or never
+open in the browser even when the agent was working.
 
 ## Highlights
 
-- **nvm / fnm / asdf on deploy PATH** — Agent preflight, install scripts, and the
-  Tools detector now source a toolchain prelude (nvm.sh, latest nvm node bin,
-  fnm, asdf, `~/.local/bin`, bun, local go) before `command -v` and installs.
-- Clearer preflight error when a binary is still missing for the chosen user.
+- **Durable deploy log stream** — Deploy progress events now go through the
+  agent's durable outbox (same path as job run logs) instead of a droppable
+  direct buffer, so install output survives brief stream blips.
+- **SSE that actually opens** — Log streams flush a `: connected` comment and
+  periodic keepalives when the snapshot is empty, so EventSource/proxies see an
+  open body before the first chunk.
+- **No fake exit 0** — Marking a run `running` no longer stamps `exit_code=0`.
+  The UI only shows the exit pill after the run finishes.
+- **REST log fallback** — `GET /deploy-runs/:id/logs` plus a short poll on the
+  run page, so a flaky EventSource still fills the terminal.
 
 ## Upgrade
 
-Update the **agent** (and control plane if you want matching notes). No new
-migration. Redeploy with Deploy as → `pi` after the agent is on v0.0.37.
+Update the **control plane** and **agent**. No new migration. Open a new deploy
+(or re-open a live run page) after both are on v0.0.38 to see live output.
