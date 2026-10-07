@@ -54,16 +54,26 @@ ECO="$HERE/ecosystem.config.js"
 # --update-env makes pm2 re-read .env through ecosystem.config.js; without it a
 # restart would silently keep the values from the last start.
 case "${1:-}" in
-  start)   cd "$HERE" && $PM2 start   "$ECO" --update-env ;;
+  start)
+    cd "$HERE" && $PM2 start "$ECO" --update-env
+    cd "$HERE" && $PM2 save >/dev/null 2>&1 || true
+    ;;
   stop)    cd "$HERE" && $PM2 stop    "$ECO" ;;
-  restart) cd "$HERE" && $PM2 restart "$ECO" --update-env ;;
-  reload)  cd "$HERE" && $PM2 reload  "$ECO" --update-env ;;
+  restart)
+    # Persist after restart so a rebuilt agent is in the dump resurrected on boot.
+    cd "$HERE" && $PM2 restart "$ECO" --update-env
+    cd "$HERE" && $PM2 save >/dev/null 2>&1 || true
+    ;;
+  reload)
+    cd "$HERE" && $PM2 reload "$ECO" --update-env
+    cd "$HERE" && $PM2 save >/dev/null 2>&1 || true
+    ;;
   delete)  cd "$HERE" && $PM2 delete  "$ECO" ;;
   status)  cd "$HERE" && $PM2 status ;;
   logs)    svc="${2:-}"; cd "$HERE" && { [ -n "$svc" ] && $PM2 logs "croncompose-$svc" --lines 100 || $PM2 logs --lines 100; } ;;
   save)    cd "$HERE" && $PM2 save ;;
   boot)
-    # Re-run the OS boot hook (installer does this once already). Needs sudo.
+    # Re-run the OS boot hook (installer / update.sh do this already). Needs sudo.
     user="$(id -un)"; home="${HOME:-}"
     if command -v systemctl >/dev/null 2>&1; then init=systemd
     elif [ "$(uname -s)" = Darwin ]; then init=launchd

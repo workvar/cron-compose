@@ -11,6 +11,7 @@ type UpdateInput struct {
 	ClonePath      *string            `json:"clone_path"`
 	Port           *int               `json:"port"`
 	ProcessManager *string            `json:"process_manager"`
+	RunAsUser      *string            `json:"run_as_user"`
 	Env            *map[string]string `json:"env"`
 	Apps           *[]SpecApp         `json:"apps"`
 	WriteSpec      *bool              `json:"write_spec"`
@@ -50,6 +51,9 @@ func applyUpdate(p Project, in UpdateInput) Project {
 	}
 	if in.ProcessManager != nil {
 		p.ProcessManager = *in.ProcessManager
+	}
+	if in.RunAsUser != nil {
+		p.RunAsUser = *in.RunAsUser
 	}
 	if in.Env != nil {
 		p.Env = *in.Env

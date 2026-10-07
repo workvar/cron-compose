@@ -75,7 +75,7 @@ func (l Layout) NeedsMigration() bool {
 // The move is done through a sibling path rather than in place, because a directory
 // cannot be moved inside itself.
 func (l Layout) Migrate(ctx context.Context) (string, error) {
-	sha := headCommit(ctx, l.Base)
+	sha := headCommit(ctx, l.Base, nil, "")
 	staging := l.Base + ".migrating"
 	if err := os.RemoveAll(staging); err != nil {
 		return "", err

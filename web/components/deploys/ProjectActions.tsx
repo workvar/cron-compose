@@ -7,6 +7,7 @@ import type { DeployProject, ListResponse, Server } from "@/lib/types";
 import type { SelectOption } from "@/lib/ui-helpers";
 import { listBranches } from "@/lib/git-detect";
 import { SearchableSelect } from "@/components/SearchableSelect";
+import { UserSwitcher } from "@/components/terminal/UserSwitcher";
 import { HealthCheckFields, type HealthCheckValues } from "./HealthCheckFields";
 import { RedeployButton } from "./RedeployButton";
 
@@ -22,6 +23,7 @@ export function ProjectActions({ project }: { project: DeployProject }) {
   const [branch, setBranch] = useState(project.default_branch);
   const [install, setInstall] = useState(project.install_script);
   const [clonePath, setClonePath] = useState(project.clone_path);
+  const [runAsUser, setRunAsUser] = useState(project.run_as_user || "");
   const [port, setPort] = useState(project.port ? String(project.port) : "");
   const [pm, setPm] = useState(project.process_manager);
   const [autoRollback, setAutoRollback] = useState(project.auto_rollback);
@@ -98,6 +100,7 @@ export function ProjectActions({ project }: { project: DeployProject }) {
           default_branch: branch,
           install_script: install,
           clone_path: clonePath,
+          run_as_user: runAsUser,
           port: port ? Number(port) : 0,
           process_manager: pm,
           auto_rollback: autoRollback,
@@ -187,6 +190,11 @@ export function ProjectActions({ project }: { project: DeployProject }) {
           <div className="field">
             <label htmlFor="install">Install script</label>
             <textarea id="install" rows={3} value={install} onChange={(e) => setInstall(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="run-as">Deploy as</label>
+            <UserSwitcher id="run-as" serverId={serverId} value={runAsUser} onChange={setRunAsUser} />
+            <p className="field-hint">OS account for clone/install/start. Non-root uses ~/opt and ~/tmp.</p>
           </div>
           <div className="field">
             <label htmlFor="clone">Clone path</label>

@@ -23,6 +23,7 @@ type stepMatch struct {
 // "Restarting services", and "Building images" wins over a generic "Building".
 var updateSteps = []stepMatch{
 	{"Starting / restarting services", "restarting", "Starting updated containers", 88},
+	{"Ensuring pm2 resurrects on reboot", "restarting", "Configuring pm2 to restart agents on reboot", 90},
 	{"Restarting services", "stopping", "Stopping the server so it can restart", 85},
 	{"Applying database migrations", "migrating", "Applying database migrations", 72},
 	{"Building web UI", "downloading", "Downloading packages and building the web UI", 55},

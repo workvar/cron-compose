@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/croncompose/croncompose/agent/internal/osuser"
 	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
 )
 
@@ -207,11 +208,17 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 		branch = "main"
 	}
 
-	if err := m.preflight(runID, token, base, cmd.GetInstallScript(), cmd.GetProcessManager()); err != nil {
+	cred, err := osuser.Resolve(cmd.GetRunAsUser())
+	if err != nil {
+		return phaseError{phasePreflight, err}
+	}
+	tmpDir := userTmpDir(cred)
+
+	if err := m.preflight(runID, token, base, cmd.GetInstallScript(), cmd.GetProcessManager(), cred); err != nil {
 		return phaseError{phasePreflight, err}
 	}
 
-	release, sha, reused, err := m.checkout(ctx, cmd, base, branch)
+	release, sha, reused, err := m.checkout(ctx, cmd, base, branch, cred, tmpDir)
 	if err != nil {
 		return phaseError{phaseClone, err}
 	}
@@ -222,9 +229,10 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 		Data: []byte("commit: " + sha + "\n"),
 	})
 	_ = writeSpec(release, cmd)
+	_ = chownTree(release, cred)
 
 	if !reused {
-		if err := m.installApps(ctx, cmd, release); err != nil {
+		if err := m.installApps(ctx, cmd, release, cred, tmpDir); err != nil {
 			return phaseError{phaseInstall, err}
 		}
 	}
@@ -235,9 +243,10 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 	if err := layout.Swap(release); err != nil {
 		return phaseError{phaseRelease, fmt.Errorf("activate release: %w", err)}
 	}
+	_ = chownTree(base, cred)
 	m.phaseLine(runID, token, phaseRelease, "current -> "+filepath.Base(release))
 
-	if err := m.startApps(ctx, cmd, layout); err != nil {
+	if err := m.startApps(ctx, cmd, layout, cred, tmpDir); err != nil {
 		return phaseError{phaseStart, err}
 	}
 	if err := m.checkHealth(ctx, cmd); err != nil {
@@ -252,7 +261,7 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 // checkout produces the release directory this run will serve from. A rollback whose
 // commit is still on disk skips the network entirely and simply reuses that release,
 // which is the whole point of keeping them: the commit may be gone from the remote.
-func (m *Manager) checkout(ctx context.Context, cmd *agentv1.DeployCommand, base, branch string) (release, sha string, reused bool, err error) {
+func (m *Manager) checkout(ctx context.Context, cmd *agentv1.DeployCommand, base, branch string, cred *osuser.Credential, tmpDir string) (release, sha string, reused bool, err error) {
 	runID := cmd.GetRunId()
 	token := cmd.GetCloneToken()
 	layout := NewLayout(base)
@@ -263,6 +272,7 @@ func (m *Manager) checkout(ctx context.Context, cmd *agentv1.DeployCommand, base
 		if err != nil {
 			return "", "", false, fmt.Errorf("migrate to release layout: %w", err)
 		}
+		_ = chownTree(moved, cred)
 		m.phaseLine(runID, token, phaseRelease, "existing checkout is now "+filepath.Base(moved))
 	}
 
@@ -278,6 +288,7 @@ func (m *Manager) checkout(ctx context.Context, cmd *agentv1.DeployCommand, base
 	if err != nil {
 		return "", "", false, err
 	}
+	_ = chownTree(tmp, cred)
 	defer func() {
 		if err != nil {
 			_ = os.RemoveAll(tmp)
@@ -286,20 +297,21 @@ func (m *Manager) checkout(ctx context.Context, cmd *agentv1.DeployCommand, base
 
 	provider := providerFromURL(cmd.GetCloneUrl())
 	m.phaseLine(runID, token, phaseClone, "cloning "+PublicCloneURL(cmd.GetCloneUrl())+" ("+branch+")")
-	if err = cloneInto(ctx, tmp, cmd.GetCloneUrl(), provider, token, branch, cmd.GetRollbackSha()); err != nil {
+	if err = cloneInto(ctx, tmp, cmd.GetCloneUrl(), provider, token, branch, cmd.GetRollbackSha(), cred, tmpDir); err != nil {
 		return "", "", false, err
 	}
-	sha = headCommit(ctx, tmp)
+	sha = headCommit(ctx, tmp, cred, tmpDir)
 	release, err = layout.Promote(tmp, sha)
 	if err != nil {
 		return "", "", false, err
 	}
+	_ = chownTree(release, cred)
 	m.phaseLine(runID, token, phaseClone, "release "+filepath.Base(release))
 	return release, sha, false, nil
 }
 
 // installApps runs each app's install script inside the new release directory.
-func (m *Manager) installApps(ctx context.Context, cmd *agentv1.DeployCommand, release string) error {
+func (m *Manager) installApps(ctx context.Context, cmd *agentv1.DeployCommand, release string, cred *osuser.Credential, tmpDir string) error {
 	runID := cmd.GetRunId()
 	token := cmd.GetCloneToken()
 	for _, app := range appsOf(cmd, release) {
@@ -312,7 +324,7 @@ func (m *Manager) installApps(ctx context.Context, cmd *agentv1.DeployCommand, r
 			continue
 		}
 		m.phaseLine(runID, token, phaseInstall, script+" (in "+work+")")
-		if err := m.runPTY(ctx, runID, token, work, script, appEnv(cmd, app)); err != nil {
+		if err := m.runPTY(ctx, runID, token, work, script, appEnv(cmd, app), cred, tmpDir); err != nil {
 			return err
 		}
 	}
@@ -322,7 +334,7 @@ func (m *Manager) installApps(ctx context.Context, cmd *agentv1.DeployCommand, r
 // startApps hands each app to its process manager. Working directories go through the
 // current symlink, never a release directory, so a pm2 or systemd entry written today
 // still points at live code after the next deploy.
-func (m *Manager) startApps(ctx context.Context, cmd *agentv1.DeployCommand, layout Layout) error {
+func (m *Manager) startApps(ctx context.Context, cmd *agentv1.DeployCommand, layout Layout, cred *osuser.Credential, tmpDir string) error {
 	runID := cmd.GetRunId()
 	token := cmd.GetCloneToken()
 	for _, app := range appsOf(cmd, layout.Current) {
@@ -331,7 +343,7 @@ func (m *Manager) startApps(ctx context.Context, cmd *agentv1.DeployCommand, lay
 		if pm == "" {
 			pm = cmd.GetProcessManager()
 		}
-		if err := m.startProcess(ctx, runID, token, work, pm, app.GetLanguage(), app.GetRunScript(), appEnv(cmd, app)); err != nil {
+		if err := m.startProcess(ctx, runID, token, work, pm, app.GetLanguage(), app.GetRunScript(), appEnv(cmd, app), cred, tmpDir); err != nil {
 			return err
 		}
 	}
@@ -441,37 +453,39 @@ func findEcosystem(dir string) string {
 // commit that is no longer on disk asks the remote for that sha specifically (a sha
 // reachable from an advertised ref, which GitHub, GitLab and a stock git server all
 // allow).
-func cloneInto(ctx context.Context, dest, cloneURL, provider, token, branch, pinSHA string) error {
+func cloneInto(ctx context.Context, dest, cloneURL, provider, token, branch, pinSHA string, cred *osuser.Credential, tmpDir string) error {
 	authURL := AuthenticatedCloneURL(cloneURL, provider, token)
 	public := PublicCloneURL(cloneURL)
-	if err := runCmd(ctx, "", nil, "git", "clone", "--branch", branch, "--single-branch", "--depth", "1", authURL, dest); err != nil {
+	if err := runCmdAs(ctx, "", nil, cred, tmpDir, "git", "clone", "--branch", branch, "--single-branch", "--depth", "1", authURL, dest); err != nil {
 		return err
 	}
 	if pinSHA != "" {
-		if err := checkoutPinned(ctx, dest, pinSHA); err != nil {
+		if err := checkoutPinned(ctx, dest, pinSHA, cred, tmpDir); err != nil {
 			return err
 		}
 	}
 	// Drop the credentialed remote: the release directory outlives the run, and the
 	// token must not sit in .git/config afterwards.
-	return runCmd(ctx, dest, nil, "git", "remote", "set-url", "origin", public)
+	return runCmdAs(ctx, dest, nil, cred, tmpDir, "git", "remote", "set-url", "origin", public)
 }
 
 // checkoutPinned fetches one commit by sha (unshallowing first, best-effort, so the
 // fetch has real history to walk) and checks it out.
-func checkoutPinned(ctx context.Context, dest, sha string) error {
-	_ = runCmd(ctx, dest, nil, "git", "fetch", "--unshallow", "origin") // no-op if already full
-	if err := runCmd(ctx, dest, nil, "git", "fetch", "origin", sha); err != nil {
+func checkoutPinned(ctx context.Context, dest, sha string, cred *osuser.Credential, tmpDir string) error {
+	_ = runCmdAs(ctx, dest, nil, cred, tmpDir, "git", "fetch", "--unshallow", "origin") // no-op if already full
+	if err := runCmdAs(ctx, dest, nil, cred, tmpDir, "git", "fetch", "origin", sha); err != nil {
 		return err
 	}
-	return runCmd(ctx, dest, nil, "git", "checkout", "--force", sha)
+	return runCmdAs(ctx, dest, nil, cred, tmpDir, "git", "checkout", "--force", sha)
 }
 
 // headCommit returns the checked-out commit sha, or "" if that can't be determined
 // (not fatal: the run just won't be a rollback candidate later).
-func headCommit(ctx context.Context, dir string) string {
+func headCommit(ctx context.Context, dir string, cred *osuser.Credential, tmpDir string) string {
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
 	cmd.Dir = dir
+	cmd.Env = credEnv(cred, tmpDir, nil)
+	applyCredential(cmd, cred)
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -491,10 +505,11 @@ func isGitDir(dir string) bool {
 	return err == nil && st.IsDir()
 }
 
-func (m *Manager) runPTY(ctx context.Context, runID, token, dir, script string, env map[string]string) error {
+func (m *Manager) runPTY(ctx context.Context, runID, token, dir, script string, env map[string]string, cred *osuser.Credential, tmpDir string) error {
 	cmd := exec.CommandContext(ctx, "/bin/bash", "-lc", script)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), envPairs(env)...)
+	cmd.Env = credEnv(cred, tmpDir, env)
+	applyCredential(cmd, cred)
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		return err
@@ -534,13 +549,18 @@ func (m *Manager) runPTY(ctx context.Context, runID, token, dir, script string, 
 }
 
 func runCmd(ctx context.Context, dir string, env map[string]string, name string, args ...string) error {
+	return runCmdAs(ctx, dir, env, nil, "", name, args...)
+}
+
+func runCmdAs(ctx context.Context, dir string, env map[string]string, cred *osuser.Credential, tmpDir, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	if env != nil {
-		cmd.Env = append(os.Environ(), envPairs(env)...)
+	if env != nil || cred != nil || tmpDir != "" {
+		cmd.Env = credEnv(cred, tmpDir, env)
 	}
+	applyCredential(cmd, cred)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))

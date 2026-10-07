@@ -32,6 +32,9 @@ func (r *Runtime) handleServerMessage(ctx context.Context, msg *agentv1.ServerMe
 		// Reads /etc/passwd (or shells out on macOS); fast, but keep it off the
 		// receive loop so a slow directory-service lookup can never stall it.
 		go r.handleListUsersRequest(body.ListUsersRequest)
+	case *agentv1.ServerMessage_HostToolsRequest:
+		// Installs can take minutes (nvm, go tarball); keep them off the receive loop.
+		go r.handleHostToolsRequest(body.HostToolsRequest)
 	case *agentv1.ServerMessage_AgentRootCommand:
 		// Helper restarts the unit; keep it off the receive loop.
 		go r.handleAgentRootCommand(body.AgentRootCommand.GetEnabled())

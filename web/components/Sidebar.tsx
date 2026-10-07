@@ -9,7 +9,7 @@ import { shouldShowServerPromo } from "@/lib/ui-helpers";
 import {
   IconDashboard, IconServer, IconJobs, IconKey, IconShield,
   IconSettings, IconZap, IconPlus, IconPlug, IconPorts, IconGit,
-  IconChevronLeft, IconChevronRight, IconClipboard,
+  IconTools, IconChevronLeft, IconChevronRight, IconClipboard,
 } from "./icons";
 
 export function Sidebar({ me, serverCount }: { me: Me; serverCount: number }) {
@@ -38,6 +38,7 @@ export function Sidebar({ me, serverCount }: { me: Me; serverCount: number }) {
         <NavLink href="/servers" icon={<IconServer />}>Servers</NavLink>
         <NavLink href="/jobs" icon={<IconJobs />}>Jobs</NavLink>
         <NavLink href="/deploys" icon={<IconGit />}>Deploy</NavLink>
+        <NavLink href="/tools" icon={<IconTools />}>Tools</NavLink>
         <NavLink href="/connectors" icon={<IconPlug />}>Connectors</NavLink>
         <NavLink href="/ports" icon={<IconPorts />}>Ports</NavLink>
         {isAdmin && <NavLink href="/secrets" icon={<IconKey />}>Secrets</NavLink>}

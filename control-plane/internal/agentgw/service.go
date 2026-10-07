@@ -24,6 +24,7 @@ type service struct {
 	terminals   *TerminalBus
 	pending     *PendingRequests
 	users       *PendingUserRequests
+	tools       *PendingToolRequests
 	logCap      *logCap
 	update      UpdatePolicy
 	resolver    SecretResolver
@@ -33,6 +34,6 @@ type service struct {
 	rootSent    *rootDelivery
 }
 
-func newService(log *slog.Logger, pool *pgxpool.Pool, reg *Registry, broker *LogBroker, terminals *TerminalBus, pending *PendingRequests, users *PendingUserRequests, logMaxBytes int, update UpdatePolicy, resolver SecretResolver, onFailed FailedRunHook, onDeployFin DeployFinishedHook, progress *UpdateProgressTracker) *service {
-	return &service{log: log, pool: pool, registry: reg, broker: broker, terminals: terminals, pending: pending, users: users, logCap: newLogCap(logMaxBytes), update: update, resolver: resolver, onFailed: onFailed, onDeployFin: onDeployFin, progress: progress}
+func newService(log *slog.Logger, pool *pgxpool.Pool, reg *Registry, broker *LogBroker, terminals *TerminalBus, pending *PendingRequests, users *PendingUserRequests, tools *PendingToolRequests, logMaxBytes int, update UpdatePolicy, resolver SecretResolver, onFailed FailedRunHook, onDeployFin DeployFinishedHook, progress *UpdateProgressTracker) *service {
+	return &service{log: log, pool: pool, registry: reg, broker: broker, terminals: terminals, pending: pending, users: users, tools: tools, logCap: newLogCap(logMaxBytes), update: update, resolver: resolver, onFailed: onFailed, onDeployFin: onDeployFin, progress: progress}
 }

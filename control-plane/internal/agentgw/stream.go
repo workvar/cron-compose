@@ -133,6 +133,9 @@ func (s *service) handleAgentMessage(ctx context.Context, serverID string, msg *
 	case *agentv1.AgentMessage_ListUsersResult:
 		s.users.Resolve(body.ListUsersResult)
 		return nil
+	case *agentv1.AgentMessage_HostToolsResult:
+		s.tools.Resolve(body.HostToolsResult)
+		return nil
 	case *agentv1.AgentMessage_UpdateProgress:
 		s.progress.Record(serverID, AgentUpdateProgress{
 			TargetVersion: body.UpdateProgress.GetTargetVersion(),

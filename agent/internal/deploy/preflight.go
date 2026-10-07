@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/croncompose/croncompose/agent/internal/osuser"
 	"golang.org/x/sys/unix"
 )
 
@@ -18,13 +19,26 @@ const minFreeBytes = 512 << 20 // 512MB, enough for a node_modules tree plus git
 
 // preflight returns a fatal error only for conditions that guarantee failure.
 // Anything it is unsure about is logged as a warning and the deploy continues.
-func (m *Manager) preflight(runID, token, base, installScript, processManager string) error {
-	m.phaseLine(runID, token, phasePreflight, "checking "+base)
+// When cred is set, binary checks use that account's login PATH (nvm under ~pi,
+// etc.) rather than the agent process PATH.
+func (m *Manager) preflight(runID, token, base, installScript, processManager string, cred *osuser.Credential) error {
+	who := "agent"
+	if cred != nil && cred.Username != "" {
+		who = cred.Username
+	}
+	m.phaseLine(runID, token, phasePreflight, "checking "+base+" (as "+who+")")
 
+	tmpDir := userTmpDir(cred)
+	if err := ensureUserDirs(base, tmpDir, cred); err != nil {
+		return fmt.Errorf("clone path not usable: %w", err)
+	}
 	if err := ensureWritableDir(base); err != nil {
 		return fmt.Errorf("clone path not usable: %w", err)
 	}
 	m.phaseLine(runID, token, phasePreflight, "clone path writable: ok")
+	if tmpDir != "" && tmpDir != "/tmp" {
+		m.phaseLine(runID, token, phasePreflight, "tmp: "+tmpDir)
+	}
 
 	free, err := freeBytes(base)
 	switch {
@@ -36,21 +50,25 @@ func (m *Manager) preflight(runID, token, base, installScript, processManager st
 		m.phaseLine(runID, token, phasePreflight, "disk space: "+humanBytes(free)+" free")
 	}
 
-	if _, err := exec.LookPath("git"); err != nil {
-		return fmt.Errorf("git is not installed on this server")
+	if _, err := lookPathAs(cred, "git"); err != nil {
+		// Fall back to the agent PATH so a system git still counts when the
+		// target user's login shell forgot to put /usr/bin on PATH.
+		if _, err2 := exec.LookPath("git"); err2 != nil {
+			return fmt.Errorf("git is not installed on this server")
+		}
 	}
 	m.phaseLine(runID, token, phasePreflight, "git: ok")
 
 	for _, bin := range requiredBinaries(installScript) {
-		if _, err := exec.LookPath(bin); err != nil {
-			return fmt.Errorf("%s is not installed on this server, but the install script needs it", bin)
+		if _, err := lookPathAs(cred, bin); err != nil {
+			return fmt.Errorf("%s is not installed for user %s, but the install script needs it", bin, who)
 		}
 		m.phaseLine(runID, token, phasePreflight, bin+": ok")
 	}
 
 	if bin := processManagerBinary(processManager); bin != "" {
-		if _, err := exec.LookPath(bin); err != nil {
-			return fmt.Errorf("process manager %q needs %s, which is not installed on this server", processManager, bin)
+		if _, err := lookPathAs(cred, bin); err != nil {
+			return fmt.Errorf("process manager %q needs %s, which is not installed for user %s", processManager, bin, who)
 		}
 		m.phaseLine(runID, token, phasePreflight, bin+": ok")
 	}

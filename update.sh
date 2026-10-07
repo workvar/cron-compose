@@ -93,6 +93,62 @@ pull_source() {
   else ok "updated ${before:0:9} -> ${after:0:9}"; fi
 }
 
+# Persist the pm2 dump and (re)install the OS boot hook when we can do it without
+# an interactive sudo password. Always saves; startup needs root once.
+ensure_pm2_boot_on_update() {
+  local pm2 init user home
+  if command -v pm2 >/dev/null 2>&1; then pm2="pm2"
+  elif command -v npx >/dev/null 2>&1; then pm2="npx --yes pm2"
+  else
+    warn "pm2 not found; skip boot persistence"
+    return 0
+  fi
+
+  ( cd "$REPO_ROOT" && $pm2 save ) >/dev/null 2>&1 \
+    || warn "pm2 save failed; the stack may not return after a reboot"
+
+  user="$(id -un)"
+  home="${HOME:-$(eval echo "~$user")}"
+  if command -v systemctl >/dev/null 2>&1; then init=systemd
+  elif [ "$(uname -s)" = Darwin ]; then init=launchd
+  elif [ -d /etc/init.d ]; then init=systemv
+  else init=""; fi
+
+  run_startup() {
+    if [ -n "$init" ]; then
+      ( cd "$REPO_ROOT" && "$@" $pm2 startup "$init" -u "$user" --hp "$home" )
+    else
+      ( cd "$REPO_ROOT" && "$@" $pm2 startup )
+    fi
+  }
+
+  if [ "$(id -u)" -eq 0 ]; then
+    if run_startup; then
+      ok "pm2 startup + save complete (agents come back after reboot)"
+    else
+      warn "pm2 startup failed; run: ./croncompose-ctl.sh boot"
+    fi
+    return 0
+  fi
+
+  if sudo -n true >/dev/null 2>&1; then
+    if run_startup sudo -n env "PATH=$PATH"; then
+      ok "pm2 startup + save complete (agents come back after reboot)"
+    else
+      warn "pm2 startup failed; run: ./croncompose-ctl.sh boot"
+    fi
+    return 0
+  fi
+
+  # Already configured from a previous install/update — save above is enough.
+  if command -v systemctl >/dev/null 2>&1 \
+    && systemctl list-unit-files 'pm2-*.service' 2>/dev/null | grep -q '\.service'; then
+    ok "pm2 dump saved; existing boot unit left in place"
+    return 0
+  fi
+  warn "pm2 startup needs sudo once; run: ./croncompose-ctl.sh boot"
+}
+
 # Load .env the same way croncompose-ctl.sh does: first '=' splits key/value,
 # values kept verbatim (sourcing would choke on spaces / special characters).
 load_env() {
@@ -204,6 +260,20 @@ restart_source() {
   step "Restarting services (croncompose-ctl.sh restart)"
   [ -x "$REPO_ROOT/croncompose-ctl.sh" ] || die "croncompose-ctl.sh not found or not executable"
   "$REPO_ROOT/croncompose-ctl.sh" restart || die "croncompose-ctl.sh restart failed"
+
+  # Refresh the generated ctl (so restart keeps calling pm2 save), then refresh
+  # the OS boot hook + dump. Installer does this once; update must redo it so a
+  # rebuilt agent survives reboot. Passwordless sudo only — no TTY on agent updates.
+  if [ -f "$REPO_ROOT/install/lib/pm2.sh" ]; then
+    # shellcheck source=install/lib/pm2.sh
+    . "$REPO_ROOT/install/lib/pm2.sh"
+    case "$(uname -s)" in Darwin) PLATFORM=macos ;; *) PLATFORM=linux ;; esac
+    ensure_pm2 >/dev/null 2>&1 || true
+    write_ctl_script >/dev/null 2>&1 || true
+  fi
+  step "Ensuring pm2 resurrects on reboot"
+  ensure_pm2_boot_on_update
+
   if [ "${CC_ENABLE_AGENT:-0}" = 1 ] && [ "$(uname -s)" = "Linux" ]; then
     # shellcheck source=install/lib/agent_sudoers.sh
     . "$REPO_ROOT/install/lib/agent_sudoers.sh"

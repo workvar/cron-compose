@@ -18,8 +18,11 @@ type Project struct {
 	ClonePath      string            `json:"clone_path"`
 	Port           int               `json:"port"`
 	ProcessManager string            `json:"process_manager"`
-	Env            map[string]string `json:"env"`
-	Apps           []SpecApp         `json:"apps"`
+	// RunAsUser is the OS account clone/install/start run as on the server.
+	// Empty = the agent's own user. Non-root accounts use ~/opt and ~/tmp.
+	RunAsUser string            `json:"run_as_user,omitempty"`
+	Env       map[string]string `json:"env"`
+	Apps      []SpecApp         `json:"apps"`
 	// RedeployOn lists which Git events auto-redeploy: "branch", "tag", "release".
 	RedeployOn []string `json:"redeploy_on"`
 	WriteSpec  bool     `json:"write_spec"`
@@ -154,6 +157,7 @@ type CreateInput struct {
 	ClonePath      string            `json:"clone_path,omitempty"`
 	Port           int               `json:"port,omitempty"`
 	ProcessManager string            `json:"process_manager,omitempty"`
+	RunAsUser      string            `json:"run_as_user,omitempty"`
 	Env            map[string]string `json:"env,omitempty"`
 	Apps           []SpecApp         `json:"apps,omitempty"`
 	WriteSpec      *bool             `json:"write_spec,omitempty"`

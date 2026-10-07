@@ -19,6 +19,7 @@ func TestParseUpdateStep(t *testing.T) {
 		{"==> Building web UI (npm install + next build)", "downloading", "Downloading packages and building the web UI", 55, true},
 		{"==> Applying database migrations", "migrating", "Applying database migrations", 72, true},
 		{"==> Restarting services (croncompose-ctl.sh restart)", "stopping", "Stopping the server so it can restart", 85, true},
+		{"==> Ensuring pm2 resurrects on reboot", "restarting", "Configuring pm2 to restart agents on reboot", 90, true},
 		{"==> Starting / restarting services (docker compose up -d)", "restarting", "Starting updated containers", 88, true},
 		{"==> Done", "restarting", "Restarting so the new version can come up", 92, true},
 		{"  ok control-plane", "", "", 0, false},

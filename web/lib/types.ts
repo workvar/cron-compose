@@ -448,6 +448,8 @@ export type DeployProject = {
   clone_path: string;
   port: number;
   process_manager: string;
+  /** OS account on the server to clone/install/start as. Empty = agent user. */
+  run_as_user?: string;
   env: Record<string, string>;
   apps: DeployApp[];
   /** Which Git events should redeploy: branch, tag, and/or release. */

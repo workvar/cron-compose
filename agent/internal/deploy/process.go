@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/croncompose/croncompose/agent/internal/osuser"
 )
 
 func findCompose(dir string) string {
@@ -123,7 +125,7 @@ func systemdUnit(name, work, execStart string, env map[string]string) string {
 	return b.String()
 }
 
-func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, language, runScript string, env map[string]string) error {
+func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, language, runScript string, env map[string]string, cred *osuser.Credential, tmpDir string) error {
 	name := filepath.Base(work)
 	if language == "" {
 		language = detectLangHint(work)
@@ -140,7 +142,7 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, lang
 			return nil
 		}
 		m.logLine(runID, token, "pm2 "+strings.Join(args, " "))
-		return runCmd(ctx, work, env, "pm2", args...)
+		return runCmdAs(ctx, work, env, cred, tmpDir, "pm2", args...)
 	case "docker":
 		compose := findCompose(work)
 		if compose == "" {
@@ -148,7 +150,7 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, lang
 			return nil
 		}
 		m.logLine(runID, token, "docker compose -f "+filepath.Base(compose)+" up -d")
-		return runCmd(ctx, work, env, "docker", "compose", "-f", compose, "up", "-d")
+		return runCmdAs(ctx, work, env, cred, tmpDir, "docker", "compose", "-f", compose, "up", "-d")
 	case "systemd":
 		bin, args := startCommand(language, runScript, name)
 		if bin == "" {
@@ -161,19 +163,25 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, lang
 		}
 		unit := systemdUnitName(name)
 		body := systemdUnit(name, work, execStart, env)
-		dir := filepath.Join(os.Getenv("HOME"), ".config/systemd/user")
+		home := os.Getenv("HOME")
+		if cred != nil && cred.Home != "" {
+			home = cred.Home
+		}
+		dir := filepath.Join(home, ".config/systemd/user")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
+		_ = chownTree(filepath.Join(home, ".config"), cred)
 		path := filepath.Join(dir, unit+".service")
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			return err
 		}
+		_ = chownTree(path, cred)
 		m.logLine(runID, token, "systemd --user enable --now "+unit+".service")
-		if err := runCmd(ctx, work, env, "systemctl", "--user", "daemon-reload"); err != nil {
+		if err := runCmdAs(ctx, work, env, cred, tmpDir, "systemctl", "--user", "daemon-reload"); err != nil {
 			return fmt.Errorf("systemd reload: %w", err)
 		}
-		return runCmd(ctx, work, env, "systemctl", "--user", "enable", "--now", unit+".service")
+		return runCmdAs(ctx, work, env, cred, tmpDir, "systemctl", "--user", "enable", "--now", unit+".service")
 	default:
 		m.logLine(runID, token, "unknown process_manager="+pm)
 		return nil

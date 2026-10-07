@@ -38,6 +38,27 @@ type Result struct {
 	Migrations      int
 }
 
+// Migrate applies pending SQL files under migrations/. Safe to call on every
+// control-plane boot: dbmigrate records versions so re-runs are no-ops. This is
+// what lets an in-app / update.sh upgrade roll schema forward without a manual
+// `make migrate` on the server.
+func Migrate(ctx context.Context, pool *pgxpool.Pool, opts Options) (int, error) {
+	root, err := resolveProjectRoot(opts.ProjectRoot)
+	if err != nil {
+		// Fall back to an explicit migrations dir alone (packaged installs set
+		// MIGRATIONS_DIR). Without either we cannot find the SQL files.
+		if opts.MigrationsDir == "" {
+			return 0, err
+		}
+		return dbmigrate.Apply(ctx, pool, opts.MigrationsDir)
+	}
+	migrationsDir := opts.MigrationsDir
+	if migrationsDir == "" {
+		migrationsDir = filepath.Join(root, "migrations")
+	}
+	return dbmigrate.Apply(ctx, pool, migrationsDir)
+}
+
 // Bootstrap ensures Postgres is reachable and migrations are applied.
 func Bootstrap(ctx context.Context, pool *pgxpool.Pool, opts Options) (Result, error) {
 	var res Result
@@ -92,7 +113,10 @@ func Bootstrap(ctx context.Context, pool *pgxpool.Pool, opts Options) (Result, e
 		}
 	}
 
-	n, err := dbmigrate.Apply(ctx, pool, migrationsDir)
+	n, err := Migrate(ctx, pool, Options{
+		ProjectRoot:   root,
+		MigrationsDir: migrationsDir,
+	})
 	if err != nil {
 		return res, fmt.Errorf("apply migrations: %w", err)
 	}

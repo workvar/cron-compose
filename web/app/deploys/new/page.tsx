@@ -39,6 +39,7 @@ import {
   type AdvancedSettings,
 } from "@/lib/deploy-spec";
 import { buildDeployPlan } from "@/lib/deploy-steps";
+import { clonePathForUser } from "@/lib/deploy-user-path";
 import { filterGitRepos, listGitRepoOwners, toggleOwnerFilter } from "@/lib/git-repos";
 import { fetchSpecFile, listBranches, listSpecFiles } from "@/lib/git-detect";
 import { githubLanguageIconUrl } from "@/lib/language-icons";
@@ -55,6 +56,7 @@ import type {
   GitRepo,
   ListResponse,
   Server,
+  SystemUser,
 } from "@/lib/types";
 
 /** Sentinel for "don't use a croncompose.yml; detect from the repo". */
@@ -75,6 +77,7 @@ type Form = {
   serverId: string;
   branch: string;
   clonePath: string;
+  runAsUser: string;
   blocks: ProjectBlock[];
   globalEnv: DeployEnvVar[];
   appEnv: Record<string, DeployEnvVar[]>;
@@ -87,6 +90,7 @@ const emptyForm: Form = {
   serverId: "",
   branch: "main",
   clonePath: "",
+  runAsUser: "",
   blocks: [],
   globalEnv: [],
   appEnv: {},
@@ -243,6 +247,7 @@ export default function NewDeployPage() {
         name: repoName,
         // Keep the server chosen on the grid; only fall back if somehow empty.
         serverId: form.serverId || defaultServer(),
+        runAsUser: form.runAsUser,
         branch: ins?.default_branch || src.defaultBranch || "main",
         clonePath: ins?.clone_path || "",
         blocks: ins ? [seedBlockFromInspect(ins, src.fullName)] : [emptyBlock()],
@@ -403,6 +408,7 @@ export default function NewDeployPage() {
       name: repoName,
       // Keep the server / branch the operator already picked when clearing a YAML.
       serverId: form.serverId || defaultServer(),
+      runAsUser: form.runAsUser,
       branch: form.branch || ins?.default_branch || src.defaultBranch || "main",
       clonePath: ins?.clone_path || "",
       blocks: ins ? [seedBlockFromInspect(ins, src.fullName)] : [emptyBlock()],
@@ -492,6 +498,7 @@ export default function NewDeployPage() {
         clone_path: form.clonePath.trim(),
         port: first?.port || 0,
         process_manager: first?.process_manager || "none",
+        run_as_user: form.runAsUser.trim() || undefined,
         env: envVarsToRecord(form.globalEnv),
         apps: submitApps,
         // A repo croncompose.yml (auto-detected or picked) must not be overwritten.
@@ -722,6 +729,29 @@ export default function NewDeployPage() {
           onAdvanced={(advanced) => setForm((f) => ({ ...f, advanced }))}
           clonePath={form.clonePath}
           onClonePath={(clonePath) => setForm((f) => ({ ...f, clonePath }))}
+          serverId={form.serverId}
+          runAsUser={form.runAsUser}
+          onRunAsUser={(runAsUser) => {
+            void (async () => {
+              let home = "";
+              if (runAsUser && form.serverId) {
+                try {
+                  const res = await fetch(`/api/servers/${form.serverId}/terminal/users`);
+                  if (res.ok) {
+                    const data = (await res.json()) as { users: SystemUser[] };
+                    home = data.users?.find((u) => u.username === runAsUser)?.home || "";
+                  }
+                } catch { /* keep previous path */ }
+              }
+              setForm((f) => ({
+                ...f,
+                runAsUser,
+                clonePath: home
+                  ? clonePathForUser(f.clonePath || inspect?.clone_path || "/opt/apps", runAsUser, home)
+                  : f.clonePath,
+              }));
+            })();
+          }}
           inspect={inspect}
           redeployOn={form.redeployOn}
           onRedeployOn={(redeployOn) => setForm((f) => ({ ...f, redeployOn }))}

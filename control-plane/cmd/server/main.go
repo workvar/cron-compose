@@ -96,6 +96,22 @@ func run(seedAndExit bool) error {
 	}
 	if dbErr == nil {
 		log.Info("postgres reachable")
+		// Apply pending migrations on every healthy boot so an Updates-panel /
+		// update.sh restart (or a binary swap) rolls schema forward without a
+		// manual migrate on the host. Idempotent via schema_migrations.
+		migCtx, migCancel := context.WithTimeout(ctx, 2*time.Minute)
+		n, migErr := setup.Migrate(migCtx, pool, setup.Options{
+			ProjectRoot:   cfg.ProjectRoot,
+			MigrationsDir: cfg.MigrationsDir,
+		})
+		migCancel()
+		if migErr != nil {
+			log.Warn("pending migrations failed; control plane continues with the current schema", "err", migErr)
+		} else if n > 0 {
+			log.Info("applied pending migrations", "count", n)
+		} else {
+			log.Info("schema is up to date")
+		}
 	}
 
 	seedErr := auth.SeedAdmin(ctx, log, auth.NewStore(pool), cfg.SeedAdminEmail, cfg.SeedAdminPassword)

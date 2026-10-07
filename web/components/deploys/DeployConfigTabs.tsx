@@ -21,6 +21,7 @@ import { AppEnvEditor } from "./AppEnvEditor";
 import { HealthCheckFields } from "./HealthCheckFields";
 import { RepoFolderPicker } from "./RepoFolderPicker";
 import { GitConnections } from "./GitConnections";
+import { UserSwitcher } from "@/components/terminal/UserSwitcher";
 
 export type ConfigTabId =
   | "processes"
@@ -55,6 +56,10 @@ type Props = {
   onAdvanced: (advanced: AdvancedSettings) => void;
   clonePath: string;
   onClonePath: (path: string) => void;
+  /** Target server for the deploy-as user picker. */
+  serverId: string;
+  runAsUser: string;
+  onRunAsUser: (user: string) => void;
   inspect: DeployInspect | null;
   redeployOn: RedeployMode[];
   onRedeployOn: (modes: RedeployMode[]) => void;
@@ -495,6 +500,9 @@ function AdvancedTab({
   onAdvanced,
   clonePath,
   onClonePath,
+  serverId,
+  runAsUser,
+  onRunAsUser,
   blocks,
   showBranch,
   branch,
@@ -517,6 +525,22 @@ function AdvancedTab({
           />
         </div>
       )}
+      {serverId ? (
+        <div className="field">
+          <label htmlFor="run-as-user">Deploy as</label>
+          <UserSwitcher
+            id="run-as-user"
+            serverId={serverId}
+            value={runAsUser}
+            onChange={onRunAsUser}
+          />
+          <p className="field-hint">
+            Clone, install, and start run as this OS account. Non-root accounts use{" "}
+            <code>~/opt</code> and <code>~/tmp</code>, and see that user&apos;s login PATH
+            (nvm, etc.).
+          </p>
+        </div>
+      ) : null}
       <div className="field">
         <label htmlFor="clonePath">Folder on the server</label>
         <input

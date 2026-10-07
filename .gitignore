@@ -38,6 +38,7 @@ tls/
 *.deb
 *.rpm
 *.tgz
+.tools/
 
 # OS
 .DS_Store

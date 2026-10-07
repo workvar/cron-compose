@@ -1,8 +1,15 @@
 # Upgrades
 
-CronCompose has no migrator binary yet. Migrations live in `migrations/` and are
-applied with `make migrate` (which loops through `*.sql` in lexicographic order).
-This doc describes what each migration does and how to roll forward safely.
+Migrations live in `migrations/` and are applied automatically:
+
+1. **`./update.sh`** (and the in-app Updates flow that runs it) applies pending
+   SQL after rebuilding, before restart.
+2. **Control plane boot** applies any still-pending files whenever Postgres is
+   reachable (idempotent via `schema_migrations`).
+
+You should not need to run `make migrate` by hand for a normal upgrade: update
+the control plane, then update agents from the UI. This doc still describes each
+migration and how to roll forward safely if you are debugging.
 
 ## Before any migration
 
@@ -10,11 +17,17 @@ This doc describes what each migration does and how to roll forward safely.
 2. **Skim the migration's SQL** so you know what's changing.
 3. **Apply on a staging copy first** if you can. Migrations here use `IF NOT EXISTS`
    and `IF EXISTS` where it's safe, so re-running on a freshly-restored DB is fine.
-4. **Roll the control plane forward AFTER the migration**, not before. The control
-   plane reads new columns that older deployments do not yet have. Sequence:
-   `make migrate` -> restart control plane -> agents reconnect on their own.
+4. **Preferred path:** update control plane (migrations run on update + boot) →
+   update agents from the UI → they reconnect with the new binary. Manual
+   `make migrate` is only a fallback.
 
 ## Migration index
+
+### `0022_deploy_run_as_user.sql` — deploy as OS account
+
+Adds `deploy_projects.run_as_user` so a project can clone/install/start as `pi`,
+`root`, etc. Empty keeps the previous “agent’s own user” behavior. Applied
+automatically on control-plane update/boot.
 
 ### `0001_init.sql` — initial schema
 
@@ -79,7 +92,7 @@ Roll the control-plane binary back to the matching version at the same time.
 
 ## When you write a new migration
 
-- Number it `NNNN_short_name.sql` in lexicographic order so `make migrate` picks it
+- Number it `NNNN_short_name.sql` in lexicographic order so update/boot pick it
   up after the previous ones.
 - Use `IF NOT EXISTS` / `IF EXISTS` for `create` / `drop` so reruns are safe.
 - Wrap structural changes in `begin; ... commit;`.

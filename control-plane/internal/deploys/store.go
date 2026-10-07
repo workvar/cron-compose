@@ -27,6 +27,7 @@ func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 const projectCols = `
   id, name, provider, repo_full_name, repo_id, clone_url, default_branch, server_id,
   language, install_script, root_directory, clone_path, port, process_manager,
+  coalesce(run_as_user,''),
   coalesce(env::text,'{}'), coalesce(apps::text,'[]'), write_spec, auto_rollback,
   health_path, health_port, health_timeout_seconds, deploy_timeout_seconds, health_state,
   coalesce(redeploy_on::text,'["branch"]'),
@@ -39,6 +40,7 @@ func scanProject(row pgx.Row) (Project, error) {
 	err := row.Scan(
 		&p.ID, &p.Name, &p.Provider, &p.RepoFullName, &p.RepoID, &p.CloneURL, &p.DefaultBranch, &p.ServerID,
 		&p.Language, &p.InstallScript, &p.RootDirectory, &p.ClonePath, &p.Port, &p.ProcessManager,
+		&p.RunAsUser,
 		&envJSON, &appsJSON, &p.WriteSpec, &p.AutoRollback,
 		&p.HealthPath, &p.HealthPort, &p.HealthTimeoutSeconds, &p.DeployTimeoutSeconds, &p.HealthState,
 		&redeployJSON,
@@ -175,10 +177,12 @@ func (s *Store) insertRow(ctx context.Context, id string, in CreateInput, actor,
 		insert into deploy_projects (
 		  id, name, provider, repo_full_name, repo_id, clone_url, default_branch, server_id,
 		  language, install_script, root_directory, clone_path, port, process_manager,
+		  run_as_user,
 		  env, apps, webhook_secret, deploy_token_hash, write_spec, redeploy_on, created_by
-		) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+		) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
 	`, id, in.Name, in.Provider, in.RepoFullName, in.RepoID, in.CloneURL, in.DefaultBranch, in.ServerID,
 		in.Language, in.InstallScript, in.RootDirectory, in.ClonePath, in.Port, in.ProcessManager,
+		in.RunAsUser,
 		envJSON, appsJSON, wh, hashToken(token), writeSpec, redeployJSON, createdBy)
 	if err != nil {
 		return Project{}, err
@@ -212,12 +216,14 @@ func (s *Store) Update(ctx context.Context, id string, in UpdateInput) (Project,
 		update deploy_projects set
 		  name=$2, default_branch=$3, server_id=$4, language=$5, install_script=$6,
 		  root_directory=$7, clone_path=$8, port=$9, process_manager=$10,
-		  env=$11, apps=$12, write_spec=$13, auto_rollback=$14,
-		  health_path=$15, health_port=$16, health_timeout_seconds=$17,
-		  deploy_timeout_seconds=$18, redeploy_on=$19, updated_at=now()
+		  run_as_user=$11,
+		  env=$12, apps=$13, write_spec=$14, auto_rollback=$15,
+		  health_path=$16, health_port=$17, health_timeout_seconds=$18,
+		  deploy_timeout_seconds=$19, redeploy_on=$20, updated_at=now()
 		where id=$1
 	`, p.ID, p.Name, p.DefaultBranch, p.ServerID, p.Language, p.InstallScript,
-		p.RootDirectory, p.ClonePath, p.Port, p.ProcessManager, envJSON, appsJSON, p.WriteSpec, p.AutoRollback,
+		p.RootDirectory, p.ClonePath, p.Port, p.ProcessManager, p.RunAsUser,
+		envJSON, appsJSON, p.WriteSpec, p.AutoRollback,
 		p.HealthPath, p.HealthPort, p.HealthTimeoutSeconds, p.DeployTimeoutSeconds, redeployJSON)
 	if err != nil {
 		return Project{}, err

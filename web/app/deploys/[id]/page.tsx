@@ -92,6 +92,7 @@ export default async function DeployDetailPage({ params }: { params: Promise<{ i
             <span className="pill">{p.language}</span>
             <span className="pill">{p.default_branch}</span>
             <span className="pill">{p.process_manager}</span>
+            {p.run_as_user ? <span className="pill" title="OS account for clone/install/start">as {p.run_as_user}</span> : null}
             {p.port > 0 && <span className="pill">PORT {p.port}</span>}
             {p.auto_rollback && <span className="pill" title="Redeploys the last successful commit automatically after a failed run">auto-rollback</span>}
             {p.health_path && (

@@ -16,6 +16,7 @@ import (
 	"github.com/croncompose/croncompose/control-plane/internal/cryptobox"
 	"github.com/croncompose/croncompose/control-plane/internal/deploys"
 	"github.com/croncompose/croncompose/control-plane/internal/githubapp"
+	"github.com/croncompose/croncompose/control-plane/internal/hosttools"
 	"github.com/croncompose/croncompose/control-plane/internal/jobs"
 	"github.com/croncompose/croncompose/control-plane/internal/notify"
 	"github.com/croncompose/croncompose/control-plane/internal/pki"
@@ -123,6 +124,7 @@ func New(d Deps) *fiber.App {
 	templates.Register(authed, d.Log, d.Pool, writer)
 	runs.Register(authed, d.Log, d.Pool, d.Gateway.Broker())
 	terminal.Register(authed, d.Log, d.Gateway, writer, d.PublicHTTPURL)
+	hosttools.Register(authed, d.Log, d.Gateway)
 	audit.Register(authed, d.Log, d.Pool)
 	auth.RegisterOAuthSettings(authed.Group("", auth.RequireRole("admin")), oauthSettings, writer)
 	secrets.Register(authed, d.Log, d.Pool, d.Crypto, writer)

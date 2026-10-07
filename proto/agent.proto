@@ -52,6 +52,7 @@ message AgentMessage {
     DeployEvent     deploy_event     = 10; // git clone / install progress
     ListUsersResult list_users_result = 11; // reply to a ListUsersRequest
     UpdateProgress  update_progress   = 12; // self-update / stack rebuild stage
+    HostToolsResult host_tools_result = 13; // reply to a HostToolsRequest
   }
 }
 
@@ -66,6 +67,7 @@ message ServerMessage {
     DeployCommand    deploy_command    = 7; // clone + install on the target host
     ListUsersRequest list_users_request = 8; // web terminal: who can this box switch to?
     AgentRootCommand agent_root_command = 9; // elevate or demote the agent process
+    HostToolsRequest host_tools_request = 10; // detect / install host toolchains
   }
 }
 
@@ -359,6 +361,39 @@ message DeployCommand {
   // installer cannot hold the project's deploy slot forever. 0 means the agent
   // default.
   int32  timeout_seconds  = 16;
+  // OS account to clone/install/start as. Empty = the agent's own user. A root
+  // agent can switch to pi/deploy/… so the login PATH (nvm, etc.) and home
+  // directories of that account are used.
+  string run_as_user = 17;
+}
+
+// ---- Host tools (node, go, python, pm2, …) ----
+//
+// Detect which toolchains are on a chosen account's PATH, or install a curated
+// set for that account. Request/response on the stream (same pattern as
+// ListUsers): the control plane HTTP handler blocks until HostToolsResult.
+
+message HostToolsRequest {
+  string request_id = 1;
+  string op         = 2; // detect | install
+  string run_as     = 3; // OS user; empty = agent's own user
+  string tool       = 4; // install only: node | go | python | pm2 | git | yarn | pnpm | bun
+}
+
+message ToolStatus {
+  string name      = 1; // node | npm | go | …
+  bool   installed = 2;
+  string version   = 3;
+  string path      = 4;
+}
+
+message HostToolsResult {
+  string request_id = 1;
+  repeated ToolStatus tools = 2; // detect (and post-install snapshot)
+  string log        = 3; // install stdout/stderr (capped)
+  int32  exit_code  = 4;
+  string error      = 5;
+  string status     = 6; // succeeded | failed
 }
 
 // HealthCheck is the opt-in "is it actually up" probe run after the process manager

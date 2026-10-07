@@ -115,3 +115,9 @@ export const IconGit = (p: P) => (
     <path d="M6 8.5v7M8.2 7.2 16 11.2" />
   </svg>
 );
+export const IconTools = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4L15 12l-2.3-2.3 1.9-3.4Z" />
+    <path d="m16 3 5 5" />
+  </svg>
+);
