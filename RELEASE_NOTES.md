@@ -1,28 +1,31 @@
-# CronCompose v0.0.33
+# CronCompose v0.0.34
 
-Deploy opens on large server cards with live process counts. Opening a server
-shows PM2, systemd, and Docker tabs so you can import an already-running
-process into a git-style Deploy Project—without restarting it. Environment
-values stay masked until a passkey step-up reveals them.
+New-project configure is tabbed and modular: pick processes, set build and run
+scripts, env, process manager, and Git redeploy triggers in separate steps. The
+server search bar is full width. Build artifacts land under the deploy path
+(usually `/opt/…`); the run script starts with that folder as cwd. Agents honor
+an explicit run command, and webhooks can redeploy on branch push, tag push, or
+a published release.
 
 ## Highlights
 
-- **Deploy = pick a server** — `/deploys` lists big cards (emoji, status,
-  OS/arch) with PM2 / systemd / Docker process counts. Click through to that
-  server’s process tabs.
-- **Import running processes** — from each tab, Import prefills name, command,
-  cwd, and (when detectable) the git remote from the working directory. Creates
-  a Deploy Project and **does not** start a redeploy run.
-- **Richer agent inventory** — PM2 `jlist`, systemd `systemctl show`, and
-  Docker `inspect` expose command, cwd, args, and env key lists on discovery.
-- **Passkey-gated env** — values show as dots until step-up. Live inspect via
-  `POST /connectors/:id/objects/:ref/inspect`; sealed project env via
-  `POST /deploys/:id/env/reveal`.
-- **APIs** — `GET /servers/:id/deploy-inventory`,
-  `POST /servers/:id/deploys/import-process`.
+- **Full-width server search** — while choosing a deploy target, the search
+  field spans the picker.
+- **Tabbed configure** — Processes, Build & run, Environment, Process manager,
+  Advanced, and Redeploy replace the long single-page form.
+- **Build script + run script** — `install` builds after clone; `run` is the
+  start command in the activated app folder (e.g. `./app` for Go). Documented
+  on `/docs` and in the UI callout, including port detection for the web UI.
+- **Redeploy triggers** — configure `redeploy_on`: `branch` (searchable branch
+  dropdown), `tag`, and/or `release`. GitHub/GitLab webhooks subscribe to push
+  and release events accordingly.
+- **Agent + proto** — `DeployApp.run_script` is passed through; pm2/systemd use
+  it when set instead of guessing from language alone.
+- **Migration** — `0021_redeploy_on.sql` adds `deploy_projects.redeploy_on`
+  (default `["branch"]`).
 
 ## Upgrade
 
-Rebuild and restart the **control plane**, **web UI**, and **agent** (inspect
-and enriched attributes require the new agent). No database migration is
-required. Enroll a passkey before revealing environment values.
+Apply migrations, then rebuild and restart the **control plane**, **web UI**,
+and **agent**. Existing projects keep branch-push redeploy until you change
+`redeploy_on`.
