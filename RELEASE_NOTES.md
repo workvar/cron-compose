@@ -1,31 +1,28 @@
-# CronCompose v0.0.32
+# CronCompose v0.0.33
 
-Deploy creation starts with a searchable server grid, redeploy can target a
-branch, tag, or release, and the review plan breaks each app directory into
-install → build → run steps. The installer also wires pm2 boot resurrection,
-and the web terminal can open fullscreen in a new tab.
+Deploy opens on large server cards with live process counts. Opening a server
+shows PM2, systemd, and Docker tabs so you can import an already-running
+process into a git-style Deploy Project—without restarting it. Environment
+values stay masked until a passkey step-up reveals them.
 
 ## Highlights
 
-- **Server-first deploy flow** — pick a target from a searchable grid (emoji +
-  name + status), then import and configure. Later steps show a clear
-  “Deploying to” chip.
-- **Green server emojis** — assign a monochrome emoji on the server page
-  (`labels.emoji`) so hosts are easy to spot in lists and the deploy wizard.
-- **Redeploy from branch, tag, or release** — searchable ref picker on the
-  project page (`GET /git/refs`). Reminders after env or settings edits that a
-  redeploy is required for the agent to apply them.
-- **Hierarchical deploy review** — with a `croncompose.yml`, Confirm shows
-  prepare → per-app Build (install/build) → activate release → per-app Run
-  (env/start/health), matching how the agent works.
-- **pm2 survives reboot** — `install.sh` runs `pm2 startup` + `pm2 save`
-  (sudo once); `./croncompose-ctl.sh boot` remains for repair.
-- **Fullscreen terminal** — Open in new tab / New tab opens a chrome-less
-  session at `/servers/:id/terminal/full`.
+- **Deploy = pick a server** — `/deploys` lists big cards (emoji, status,
+  OS/arch) with PM2 / systemd / Docker process counts. Click through to that
+  server’s process tabs.
+- **Import running processes** — from each tab, Import prefills name, command,
+  cwd, and (when detectable) the git remote from the working directory. Creates
+  a Deploy Project and **does not** start a redeploy run.
+- **Richer agent inventory** — PM2 `jlist`, systemd `systemctl show`, and
+  Docker `inspect` expose command, cwd, args, and env key lists on discovery.
+- **Passkey-gated env** — values show as dots until step-up. Live inspect via
+  `POST /connectors/:id/objects/:ref/inspect`; sealed project env via
+  `POST /deploys/:id/env/reveal`.
+- **APIs** — `GET /servers/:id/deploy-inventory`,
+  `POST /servers/:id/deploys/import-process`.
 
 ## Upgrade
 
-Pull or rebuild the control plane, web UI, and (for boot persistence) re-run
-the installer or `./croncompose-ctl.sh boot` on existing hosts. No database
-migration is required. Agent binaries do not need an update for these UI and
-install changes.
+Rebuild and restart the **control plane**, **web UI**, and **agent** (inspect
+and enriched attributes require the new agent). No database migration is
+required. Enroll a passkey before revealing environment values.
