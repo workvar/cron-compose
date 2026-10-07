@@ -1,31 +1,30 @@
-# CronCompose v0.0.34
+# CronCompose v0.0.35
 
-New-project configure is tabbed and modular: pick processes, set build and run
-scripts, env, process manager, and Git redeploy triggers in separate steps. The
-server search bar is full width. Build artifacts land under the deploy path
-(usually `/opt/…`); the run script starts with that folder as cwd. Agents honor
-an explicit run command, and webhooks can redeploy on branch push, tag push, or
-a published release.
+Shared environment variables apply to every process, and the framework picker
+now covers Next.js, NestJS, React, Go, .NET/C#, and more — selecting one fills
+build script, run command, port, and process manager. Repo detection recognizes
+those stacks too, and framework ids map to the right clone-path runtime.
 
 ## Highlights
 
-- **Full-width server search** — while choosing a deploy target, the search
-  field spans the picker.
-- **Tabbed configure** — Processes, Build & run, Environment, Process manager,
-  Advanced, and Redeploy replace the long single-page form.
-- **Build script + run script** — `install` builds after clone; `run` is the
-  start command in the activated app folder (e.g. `./app` for Go). Documented
-  on `/docs` and in the UI callout, including port detection for the web UI.
-- **Redeploy triggers** — configure `redeploy_on`: `branch` (searchable branch
-  dropdown), `tag`, and/or `release`. GitHub/GitLab webhooks subscribe to push
-  and release events accordingly.
-- **Agent + proto** — `DeployApp.run_script` is passed through; pm2/systemd use
-  it when set instead of guessing from language alone.
-- **Migration** — `0021_redeploy_on.sql` adds `deploy_projects.redeploy_on`
-  (default `["branch"]`).
+- **Shared env** — Environment tab has a “Shared (all processes)” section.
+  Values are stored as project-level `env` (same as top-level `env:` in
+  `croncompose.yml`). Process-level vars override the same key. Secrets stay
+  on individual processes.
+- **Framework presets** — Next.js, NestJS, React, Vue, Nuxt, Remix, SvelteKit,
+  Astro, Express, Go, Rust, C# / ASP.NET, .NET, FastAPI, Django, Flask, Spring
+  Boot, Rails, Laravel, and base runtimes. Picking one seeds install, run,
+  port, and process manager.
+- **Smarter detection** — control-plane Detect returns framework ids (e.g.
+  `nextjs`, `nestjs`, `dotnet`, `fastapi`) from `package.json`, `.csproj`,
+  requirements, and similar markers.
+- **Runtime mapping** — framework ids resolve to clone paths and agent
+  fallbacks (`nextjs` → `/opt/apps/node/…`, `csharp` → `/opt/apps/dotnet/…`).
+- **Cleanup** — removed unused `ProjectBlockCard`; deploy-steps and agent
+  start fallbacks use the shared runtime map instead of long switch lists.
 
 ## Upgrade
 
-Apply migrations, then rebuild and restart the **control plane**, **web UI**,
-and **agent**. Existing projects keep branch-push redeploy until you change
-`redeploy_on`.
+Rebuild and restart the **control plane**, **web UI**, and **agent**. No new
+migration. Existing projects keep per-app env; add shared vars from the project
+Environment panel or a top-level `env:` in `croncompose.yml`.
