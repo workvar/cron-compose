@@ -19,6 +19,7 @@ type handler struct {
 	store   *Store
 	gateway *agentgw.Gateway
 	audit   audit.Writer
+	stepUp  auth.StepUp
 }
 
 // audited records one connector mutation against the acting user.

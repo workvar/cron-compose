@@ -7,7 +7,7 @@ import "context"
 // package stays free of any wire dependency (same reason discoveredToProto lives in
 // runtime rather than here).
 type Command struct {
-	Op           string // discover|status|list|read|validate|apply|lifecycle|rollback|ports
+	Op           string // discover|status|list|inspect|read|validate|apply|lifecycle|rollback|ports
 	Kind         string // nginx|systemd|docker|pm2|...
 	Instance     string // provider instance discriminator; empty for singletons
 	Ref          string // path | unit | container id | pm2 id

@@ -3,6 +3,7 @@ package connectors
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -40,6 +41,16 @@ func (e *Executor) Execute(ctx context.Context, cmd Command) Result {
 	switch cmd.Op {
 	case "status", "list":
 		return e.list(ctx, prov, inst)
+
+	case "inspect":
+		inspector, okAssert := prov.(ObjectInspector)
+		if !okAssert {
+			return fail(StatusUnsupported, cmd.Kind+" does not support object inspect")
+		}
+		if strings.TrimSpace(cmd.Ref) == "" {
+			return fail(StatusFailed, "inspect requires a ref")
+		}
+		return inspector.Inspect(ctx, inst, cmd.Ref)
 
 	case "ports":
 		lister, okAssert := prov.(PortLister)

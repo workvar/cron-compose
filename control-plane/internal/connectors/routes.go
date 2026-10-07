@@ -21,8 +21,12 @@ import (
 //   - anything involving config bytes is admin. Config files hold upstream addresses,
 //     internal ports and sometimes credentials, and a bad edit takes a service down,
 //     so reading them is admin too, not just writing them.
-func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, gw *agentgw.Gateway, writer audit.Writer) {
-	h := &handler{log: log, store: NewStore(pool), gateway: gw, audit: writer}
+//   - object inspect (full env) requires admin + passkey step-up.
+func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, gw *agentgw.Gateway, writer audit.Writer, stepUp auth.StepUp) {
+	if stepUp == nil {
+		stepUp = auth.DisabledStepUp()
+	}
+	h := &handler{log: log, store: NewStore(pool), gateway: gw, audit: writer, stepUp: stepUp}
 
 	// Read: any authenticated role.
 	r.Get("/connectors", h.listAll)
@@ -33,9 +37,13 @@ func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, gw *agentgw.
 	r.Get("/port-labels", h.listLabels)
 	r.Put("/port-labels", auth.RequireRole("operator"), h.upsertLabel)
 	r.Get("/servers/:id/connectors", h.listByServer)
+	r.Get("/servers/:id/deploy-inventory", h.deployInventory)
 
 	// Lifecycle: operator and above.
 	r.Post("/connectors/:id/actions", auth.RequireRole("operator"), h.action)
+
+	// Inspect (env): admin + passkey step-up.
+	r.Post("/connectors/:id/objects/:ref/inspect", auth.RequireRole("admin"), h.inspectObject)
 
 	// Config: admin and above.
 	r.Get("/connectors/:id/config", auth.RequireRole("admin"), h.readConfig)

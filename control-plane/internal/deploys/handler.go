@@ -28,6 +28,7 @@ type handler struct {
 	audit   audit.Writer
 	public  string
 	box     *cryptobox.Box
+	stepUp  auth.StepUp
 	// app is the optional GitHub App used to post commit statuses as CronCompose
 	// rather than as the user who imported the repo. nil means none is configured.
 	app *githubapp.App

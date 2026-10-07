@@ -119,7 +119,7 @@ func New(d Deps) *fiber.App {
 		InstallScriptURL: d.InstallScriptURL,
 	}, d.Gateway, stepUp)
 	jobs.Register(authed, d.Log, d.Pool, d.Gateway, writer)
-	connectors.Register(authed, d.Log, d.Pool, d.Gateway, writer)
+	connectors.Register(authed, d.Log, d.Pool, d.Gateway, writer, stepUp)
 	templates.Register(authed, d.Log, d.Pool, writer)
 	runs.Register(authed, d.Log, d.Pool, d.Gateway.Broker())
 	terminal.Register(authed, d.Log, d.Gateway, writer, d.PublicHTTPURL)
@@ -131,7 +131,7 @@ func New(d Deps) *fiber.App {
 	publicOrigin := strings.TrimSuffix(d.PublicHTTPURL, "/")
 	publicOrigin = strings.TrimSuffix(publicOrigin, "/api/v1")
 	publicOrigin = strings.TrimSuffix(publicOrigin, "/api")
-	deployH := deploys.Register(authed, d.Log, d.Pool, d.Gateway, writer, conns, publicOrigin, d.GitLabOrigin, d.GitHubApp, d.Crypto)
+	deployH := deploys.Register(authed, d.Log, d.Pool, d.Gateway, writer, conns, publicOrigin, d.GitLabOrigin, d.GitHubApp, d.Crypto, stepUp)
 	deploys.RegisterPublic(v1, deployH, auth.OptionalAuth(d.SessionSecret, userStore, d.Log))
 	// Lets a failed deploy trigger an automatic rollback without agentgw depending on
 	// the deploys package; see agentgw.DeployFinishedHook.

@@ -28,7 +28,7 @@ func TestPm2DumpPathFallsBackToHome(t *testing.T) {
 
 func TestParsePm2ListSkipsBannerAndFillsAttributes(t *testing.T) {
 	raw := `[PM2] Spawning PM2 daemon
-[{"name":"api","pm_id":3,"pm2_env":{"status":"online","restart_time":2,"exec_mode":"fork_mode","pm_exec_path":"/app/server.js","pm_cwd":"/app"}}]`
+[{"name":"api","pm_id":3,"pm2_env":{"status":"online","restart_time":2,"exec_mode":"fork_mode","pm_exec_path":"/app/server.js","pm_cwd":"/app","exec_interpreter":"node","args":["--port","3000"],"env":{"NODE_ENV":"production","PORT":"3000"}}}]`
 	procs := parsePm2List(raw)
 	if len(procs) != 1 {
 		t.Fatalf("len: got %d want 1", len(procs))
@@ -47,6 +47,12 @@ func TestParsePm2ListSkipsBannerAndFillsAttributes(t *testing.T) {
 	if res.Attributes["exec"] != "/app/server.js" {
 		t.Fatalf("exec: %q", res.Attributes["exec"])
 	}
+	if res.Attributes["command"] != "node /app/server.js" {
+		t.Fatalf("command: %q", res.Attributes["command"])
+	}
+	if res.Attributes["args"] != "--port 3000" {
+		t.Fatalf("args: %q", res.Attributes["args"])
+	}
 	if res.Attributes["mode"] != "fork_mode" {
 		t.Fatalf("mode: %q", res.Attributes["mode"])
 	}
@@ -55,6 +61,12 @@ func TestParsePm2ListSkipsBannerAndFillsAttributes(t *testing.T) {
 	}
 	if res.Attributes["cwd"] != "/app" {
 		t.Fatalf("cwd: %q", res.Attributes["cwd"])
+	}
+	if res.Attributes["env_count"] != "2" {
+		t.Fatalf("env_count: %q", res.Attributes["env_count"])
+	}
+	if res.Attributes["env_keys"] != "NODE_ENV,PORT" {
+		t.Fatalf("env_keys: %q", res.Attributes["env_keys"])
 	}
 }
 

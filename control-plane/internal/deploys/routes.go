@@ -21,10 +21,13 @@ func RegisterPublic(r fiber.Router, h *handler, optAuth fiber.Handler) {
 }
 
 // Register attaches authenticated deploy and git-connection routes.
-func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, gw *agentgw.Gateway, writer audit.Writer, conns *auth.ConnStore, publicBase, gitlabBase string, app *githubapp.App, box *cryptobox.Box) *handler {
+func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, gw *agentgw.Gateway, writer audit.Writer, conns *auth.ConnStore, publicBase, gitlabBase string, app *githubapp.App, box *cryptobox.Box, stepUp auth.StepUp) *handler {
+	if stepUp == nil {
+		stepUp = auth.DisabledStepUp()
+	}
 	h := &handler{
 		log: log, store: NewStore(pool), conns: conns, git: NewGitAPI(gitlabBase),
-		gateway: gw, audit: writer, public: publicBase, app: app, box: box,
+		gateway: gw, audit: writer, public: publicBase, app: app, box: box, stepUp: stepUp,
 	}
 	r.Get("/git/connections", h.listConnections)
 	r.Delete("/git/connections/:provider", h.deleteConnection)
@@ -47,6 +50,8 @@ func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, gw *agentgw.
 	r.Post("/deploys", auth.RequireRole("operator"), h.create)
 	r.Patch("/deploys/:id", auth.RequireRole("operator"), h.patch)
 	r.Delete("/deploys/:id", auth.RequireRole("operator"), h.remove)
+	r.Post("/deploys/:id/env/reveal", auth.RequireRole("admin"), h.revealEnv)
+	r.Post("/servers/:id/deploys/import-process", auth.RequireRole("operator"), h.importProcess)
 
 	r.Get("/deploy-runs/:runId", h.getRun)
 	r.Get("/deploy-runs/:runId/logs/stream", h.stream)

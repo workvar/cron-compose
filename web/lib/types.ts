@@ -204,6 +204,38 @@ export type ConnectorResource = {
   updated_at: string;
 };
 
+/** One process-manager bucket from GET /servers/:id/deploy-inventory. */
+export type DeployInventoryKind = {
+  kind: "pm2" | "systemd" | "docker" | string;
+  connectors: Connector[];
+  objects: ConnectorResource[];
+  count: number;
+};
+
+export type DeployInventory = {
+  server_id: string;
+  total: number;
+  items: DeployInventoryKind[];
+};
+
+/** Agent inspect payload for a live process (after passkey step-up). */
+export type ProcessInspectDetail = {
+  name: string;
+  command?: string;
+  args?: string;
+  cwd?: string;
+  state?: string;
+  env?: Record<string, string>;
+  extra?: Record<string, string>;
+  git?: {
+    remote?: string;
+    provider?: string;
+    repo_full_name?: string;
+    branch?: string;
+    clone_url?: string;
+  };
+};
+
 export type ConnectorStep = {
   name: string;
   ok: boolean;

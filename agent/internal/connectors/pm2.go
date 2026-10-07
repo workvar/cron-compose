@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 type pm2Provider struct{}
@@ -14,16 +15,46 @@ func (pm2Provider) Kind() string { return "pm2" }
 
 // pm2Proc is the slice of `pm2 jlist` output we care about.
 type pm2Proc struct {
-	Name   string `json:"name"`
-	PmID   int    `json:"pm_id"`
-	Pid    int    `json:"pid"`
-	Pm2Env struct {
-		Status      string `json:"status"`
-		RestartTime int    `json:"restart_time"`
-		ExecMode    string `json:"exec_mode"`
-		ExecPath    string `json:"pm_exec_path"`
-		Cwd         string `json:"pm_cwd"`
-	} `json:"pm2_env"`
+	Name   string   `json:"name"`
+	PmID   int      `json:"pm_id"`
+	Pid    int      `json:"pid"`
+	Pm2Env pm2Env   `json:"pm2_env"`
+}
+
+type pm2Env struct {
+	Status      string            `json:"status"`
+	RestartTime int               `json:"restart_time"`
+	ExecMode    string            `json:"exec_mode"`
+	ExecPath    string            `json:"pm_exec_path"`
+	Cwd         string            `json:"pm_cwd"`
+	Interpreter string            `json:"exec_interpreter"`
+	Args        pm2Args           `json:"args"`
+	Env         map[string]string `json:"env"`
+}
+
+// pm2Args accepts either a JSON array or a single string from pm2 jlist.
+type pm2Args []string
+
+func (a *pm2Args) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 || string(b) == "null" {
+		return nil
+	}
+	if b[0] == '[' {
+		var s []string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		*a = s
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	if s != "" {
+		*a = []string{s}
+	}
+	return nil
 }
 
 func (p *pm2Provider) Detect(ctx context.Context) []Instance {
@@ -104,6 +135,45 @@ func (p *pm2Provider) list(ctx context.Context) []pm2Proc {
 	return parsePm2List(out)
 }
 
+func (p *pm2Provider) find(ctx context.Context, ref string) (pm2Proc, bool) {
+	for _, pr := range p.list(ctx) {
+		if strconv.Itoa(pr.PmID) == ref || pr.Name == ref {
+			return pr, true
+		}
+	}
+	return pm2Proc{}, false
+}
+
+// Inspect returns full process detail including env for Deploy import / reveal.
+func (p *pm2Provider) Inspect(ctx context.Context, inst Instance, ref string) Result {
+	pr, ok := p.find(ctx, ref)
+	if !ok {
+		return fail(StatusFailed, "pm2 process not found: "+ref)
+	}
+	name := pr.Name
+	if name == "" {
+		name = strconv.Itoa(pr.PmID)
+	}
+	cmd := pr.Pm2Env.ExecPath
+	if pr.Pm2Env.Interpreter != "" && pr.Pm2Env.Interpreter != "none" {
+		cmd = strings.TrimSpace(pr.Pm2Env.Interpreter + " " + pr.Pm2Env.ExecPath)
+	}
+	return inspectJSON(ProcessDetail{
+		Name:    name,
+		Command: cmd,
+		Args:    strings.Join(pr.Pm2Env.Args, " "),
+		Cwd:     pr.Pm2Env.Cwd,
+		State:   pr.Pm2Env.Status,
+		Env:     pr.Pm2Env.Env,
+		Extra: map[string]string{
+			"mode":        pr.Pm2Env.ExecMode,
+			"restarts":    strconv.Itoa(pr.Pm2Env.RestartTime),
+			"interpreter": pr.Pm2Env.Interpreter,
+			"pm_id":       strconv.Itoa(pr.PmID),
+		},
+	})
+}
+
 // pm2DumpPath is the dump file `pm2 save` writes and `pm2 resurrect` reads.
 func pm2DumpPath() string {
 	home := os.Getenv("PM2_HOME")
@@ -138,17 +208,27 @@ func pm2Object(p pm2Proc) Resource {
 	if name == "" {
 		name = strconv.Itoa(p.PmID)
 	}
+	cmd := p.Pm2Env.ExecPath
+	if p.Pm2Env.Interpreter != "" && p.Pm2Env.Interpreter != "none" {
+		cmd = strings.TrimSpace(p.Pm2Env.Interpreter + " " + p.Pm2Env.ExecPath)
+	}
+	attrs := map[string]string{
+		"exec":        p.Pm2Env.ExecPath,
+		"command":     cmd,
+		"mode":        p.Pm2Env.ExecMode,
+		"restarts":    strconv.Itoa(p.Pm2Env.RestartTime),
+		"cwd":         p.Pm2Env.Cwd,
+		"interpreter": p.Pm2Env.Interpreter,
+		"args":        strings.Join(p.Pm2Env.Args, " "),
+		"env_count":   strconv.Itoa(len(p.Pm2Env.Env)),
+		"env_keys":    envKeysCSV(p.Pm2Env.Env),
+	}
 	return Resource{
-		Type:  "object",
-		Ref:   strconv.Itoa(p.PmID),
-		Name:  name,
-		State: p.Pm2Env.Status,
-		Attributes: map[string]string{
-			"exec":     p.Pm2Env.ExecPath,
-			"mode":     p.Pm2Env.ExecMode,
-			"restarts": strconv.Itoa(p.Pm2Env.RestartTime),
-			"cwd":      p.Pm2Env.Cwd,
-		},
+		Type:       "object",
+		Ref:        strconv.Itoa(p.PmID),
+		Name:       name,
+		State:      p.Pm2Env.Status,
+		Attributes: attrs,
 	}
 }
 
