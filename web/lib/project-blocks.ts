@@ -14,6 +14,11 @@ export type ProjectBlock = {
    * Example for a Go binary: `./server`.
    */
   run: string;
+  /**
+   * Shell run after build to drop source/caches from the release. Framework
+   * presets fill this automatically.
+   */
+  cleanup: string;
   port: string;
   processManager: string;
   /**
@@ -74,6 +79,7 @@ export function seedBlockFromInspect(inspect: DeployInspect, repoFullName: strin
     language,
     install: inspect.install_script || preset?.install || "",
     run: defaultRunForLanguage(language),
+    cleanup: preset?.cleanup || "",
     port: preset?.port || "",
     processManager: pm,
     autoDetect: true,
@@ -114,6 +120,7 @@ export function applyDetection(
     language: lang,
     install: det.install_script || preset?.install || block.install,
     run: defaultRunForLanguage(lang) || block.run,
+    cleanup: block.cleanup || preset?.cleanup || "",
     port: block.port || preset?.port || "",
     processManager:
       block.processManager !== "none"
@@ -131,6 +138,7 @@ export function emptyBlock(): ProjectBlock {
     language: preset.id,
     install: preset.install,
     run: preset.run,
+    cleanup: preset.cleanup,
     port: preset.port,
     processManager: preset.processManager,
     autoDetect: true,
@@ -176,6 +184,7 @@ export function blocksToDeployApps(
     language: block.language,
     install: block.install,
     run: block.run.trim() || undefined,
+    cleanup: block.cleanup.trim() || undefined,
     process_manager: block.processManager,
     port: block.port ? Number(block.port) : undefined,
     env: appEnv[block.name] ?? [],

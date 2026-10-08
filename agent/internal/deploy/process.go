@@ -125,8 +125,10 @@ func systemdUnit(name, work, execStart string, env map[string]string) string {
 	return b.String()
 }
 
-func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, language, runScript string, env map[string]string, cred *osuser.Credential, tmpDir string) error {
-	name := filepath.Base(work)
+func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, name, language, runScript string, env map[string]string, cred *osuser.Credential, tmpDir string) error {
+	if name == "" {
+		name = filepath.Base(work)
+	}
 	if language == "" {
 		language = detectLangHint(work)
 	}
@@ -184,6 +186,38 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, lang
 		return runCmdAs(ctx, work, env, cred, tmpDir, "systemctl", "--user", "enable", "--now", unit+".service")
 	default:
 		m.logLine(runID, token, "unknown process_manager="+pm)
+		return nil
+	}
+}
+
+// persistProcessManager makes the process list survive reboot. For pm2 that is
+// `pm2 save` plus a best-effort `pm2 startup`; systemd already enable --now'd the
+// unit in startProcess. Failures here are logged but only pm2 save is hard-fail.
+func (m *Manager) persistProcessManager(ctx context.Context, runID, token, work, pm string, cred *osuser.Credential, tmpDir string) error {
+	switch pm {
+	case "pm2":
+		m.logLine(runID, token, "pm2 save")
+		if err := runCmdAs(ctx, work, nil, cred, tmpDir, "pm2", "save"); err != nil {
+			return fmt.Errorf("pm2 save: %w", err)
+		}
+		m.logLine(runID, token, "pm2 startup (best-effort)")
+		if err := runCmdAs(ctx, work, nil, cred, tmpDir, "pm2", "startup"); err != nil {
+			m.logLine(runID, token, "pm2 startup skipped or needs sudo once on this host: "+err.Error())
+		}
+		return nil
+	case "systemd":
+		// enable --now already ran; linger so user units survive logout.
+		if cred != nil && cred.Username != "" && cred.Username != "root" {
+			m.logLine(runID, token, "loginctl enable-linger "+cred.Username+" (best-effort)")
+			if err := runCmdAs(ctx, work, nil, cred, tmpDir, "loginctl", "enable-linger", cred.Username); err != nil {
+				m.logLine(runID, token, "enable-linger skipped: "+err.Error())
+			}
+		}
+		return nil
+	case "docker":
+		m.logLine(runID, token, "docker: compose project left running; host reboot policy is unchanged")
+		return nil
+	default:
 		return nil
 	}
 }

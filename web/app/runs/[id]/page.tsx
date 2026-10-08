@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { LogLine, Run } from "@/lib/types";
 import { IconChevronLeft } from "@/components/icons";
 import { TerminalFrame } from "@/components/terminal/TerminalFrame";
+import { stripAnsi } from "@/lib/strip-ansi";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -81,7 +82,7 @@ export default function RunDetailPage({ params }: Props) {
             logs.map((l) => (
               <div key={`${l.stream}-${l.seq}`} className={l.stream === "stderr" ? "term-stderr" : "term-stdout"}>
                 <span className="term-stream">{l.stream}</span>
-                {l.chunk}
+                {stripAnsi(l.chunk)}
               </div>
             ))
           )}

@@ -26,6 +26,7 @@ assert.match(next.install || "", /npm ci/);
 assert.equal(next.run, "npm start");
 assert.equal(next.port, "3000");
 assert.equal(next.processManager, "pm2");
+assert.match(next.cleanup || "", /\.next\/cache/);
 
 const nest = fieldsForFramework("nestjs")!;
 assert.match(nest.run || "", /dist\/main/);

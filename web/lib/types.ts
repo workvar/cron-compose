@@ -360,6 +360,7 @@ export type DeploySpecApp = {
   install?: string;
   /** Start command after the release is live (cwd = app folder under the deploy path). */
   run?: string;
+  cleanup?: string;
   port?: number;
   process_manager?: string;
   env?: DeployEnvVar[];
@@ -377,6 +378,7 @@ export type DeploySpec = {
   language?: string;
   install?: string;
   run?: string;
+  cleanup?: string;
   root?: string;
   port?: number;
   process_manager?: string;
@@ -424,6 +426,8 @@ export type DeployApp = {
   install?: string;
   /** Start command after the release is live (cwd = app folder under the deploy path). */
   run?: string;
+  /** Post-build cleanup shell (drop source/caches from the release). */
+  cleanup?: string;
   port?: number;
   process_manager?: string;
   env?: DeployEnvVar[];

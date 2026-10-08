@@ -336,6 +336,10 @@ message DeployApp {
   // Start command after the release is activated (cwd = app folder). Empty means
   // the agent guesses from language / ecosystem files.
   string run_script        = 9;
+  // Shell snippet run after install inside the app release folder to drop source
+  // and other non-runtime files (e.g. rm -rf src .git). Empty = agent framework
+  // default when language is known, otherwise skip.
+  string cleanup_script    = 10;
 }
 
 message DeployCommand {

@@ -196,6 +196,14 @@ func (m *Manager) start(parent context.Context, cmd *agentv1.DeployCommand) {
 
 // deploy walks one run through its phases and returns the first failure. It is split
 // out of start so every exit path gets the same timeout and failure reporting.
+//
+// Pipeline:
+//  1. clone the full repo into a disposable tmp directory
+//  2. cherry-pick each app's root folder into <clone_path>/releases/…
+//  3. build (install script) inside that release folder
+//  4. cleanup non-runtime files
+//  5. activate release, start process manager, persist boot config
+//  6. delete the tmp clone
 func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error {
 	runID := cmd.GetRunId()
 	token := cmd.GetCloneToken()
@@ -219,28 +227,73 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 		return phaseError{phasePreflight, err}
 	}
 
-	release, sha, reused, err := m.checkout(ctx, cmd, base, branch, cred, tmpDir)
+	layout := NewLayout(base)
+	if layout.NeedsMigration() {
+		m.phaseLine(runID, token, phaseRelease, "migrating existing checkout into "+releasesDir+"/")
+		moved, err := layout.Migrate(ctx)
+		if err != nil {
+			return phaseError{phaseRelease, fmt.Errorf("migrate to release layout: %w", err)}
+		}
+		_ = chownTree(moved, cred)
+		m.phaseLine(runID, token, phaseRelease, "existing checkout is now "+filepath.Base(moved))
+	}
+
+	// Rollback to a release already on disk: no network, no tmp clone.
+	if pin := cmd.GetRollbackSha(); pin != "" {
+		if dir := layout.FindRelease(pin); dir != "" {
+			m.phaseLine(runID, token, phaseRelease, "rolling back to release "+filepath.Base(dir)+" already on disk")
+			m.emit(runID, token, &agentv1.DeployEvent{
+				RunId: runID, Kind: "log", Phase: phaseClone, CommitSha: pin,
+				Data: []byte("commit: " + pin + "\n"),
+			})
+			if err := layout.Swap(dir); err != nil {
+				return phaseError{phaseRelease, fmt.Errorf("activate release: %w", err)}
+			}
+			m.phaseLine(runID, token, phaseRelease, "current -> "+filepath.Base(dir))
+			if err := m.startApps(ctx, cmd, layout, cred, tmpDir); err != nil {
+				return phaseError{phaseStart, err}
+			}
+			if err := m.persistProcessManagers(ctx, cmd, layout, cred, tmpDir); err != nil {
+				return phaseError{phaseStart, err}
+			}
+			if err := m.checkHealth(ctx, cmd); err != nil {
+				return phaseError{phaseHealth, err}
+			}
+			return nil
+		}
+		m.phaseLine(runID, token, phaseClone, "commit "+shortSHA(pin)+" is not on disk; fetching it")
+	}
+
+	cloneDir, sha, err := m.cloneToTmp(ctx, cmd, branch, cred, tmpDir)
 	if err != nil {
 		return phaseError{phaseClone, err}
 	}
-	// Sent as a field rather than parsed out of log text: this is what a later failed
-	// run rolls back to, so it should not depend on log formatting.
+	defer func() {
+		m.phaseLine(runID, token, phaseClone, "removing tmp clone "+cloneDir)
+		_ = os.RemoveAll(cloneDir)
+	}()
+
 	m.emit(runID, token, &agentv1.DeployEvent{
 		RunId: runID, Kind: "log", Phase: phaseClone, CommitSha: sha,
 		Data: []byte("commit: " + sha + "\n"),
 	})
+
+	release, err := m.materializeRelease(ctx, cmd, layout, cloneDir, sha, cred)
+	if err != nil {
+		return phaseError{phaseClone, err}
+	}
 	_ = writeSpec(release, cmd)
 	_ = chownTree(release, cred)
 
-	if !reused {
-		if err := m.installApps(ctx, cmd, release, cred, tmpDir); err != nil {
-			return phaseError{phaseInstall, err}
-		}
+	if err := m.installApps(ctx, cmd, release, cred, tmpDir); err != nil {
+		return phaseError{phaseInstall, err}
+	}
+	if err := m.cleanupApps(ctx, cmd, release, cred, tmpDir); err != nil {
+		return phaseError{phaseInstall, err}
 	}
 
 	// Nothing serves from the new release until this point, which is what makes a
 	// deploy atomic: a failed install leaves the previous release live.
-	layout := NewLayout(base)
 	if err := layout.Swap(release); err != nil {
 		return phaseError{phaseRelease, fmt.Errorf("activate release: %w", err)}
 	}
@@ -248,6 +301,9 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 	m.phaseLine(runID, token, phaseRelease, "current -> "+filepath.Base(release))
 
 	if err := m.startApps(ctx, cmd, layout, cred, tmpDir); err != nil {
+		return phaseError{phaseStart, err}
+	}
+	if err := m.persistProcessManagers(ctx, cmd, layout, cred, tmpDir); err != nil {
 		return phaseError{phaseStart, err}
 	}
 	if err := m.checkHealth(ctx, cmd); err != nil {
@@ -259,56 +315,79 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 	return nil
 }
 
-// checkout produces the release directory this run will serve from. A rollback whose
-// commit is still on disk skips the network entirely and simply reuses that release,
-// which is the whole point of keeping them: the commit may be gone from the remote.
-func (m *Manager) checkout(ctx context.Context, cmd *agentv1.DeployCommand, base, branch string, cred *osuser.Credential, tmpDir string) (release, sha string, reused bool, err error) {
+// cloneToTmp clones the full repository into a disposable directory under the
+// deploy user's tmp. The release tree is built by cherry-picking app roots from
+// this clone; the clone itself is deleted after the run.
+func (m *Manager) cloneToTmp(ctx context.Context, cmd *agentv1.DeployCommand, branch string, cred *osuser.Credential, tmpDir string) (cloneDir, sha string, err error) {
 	runID := cmd.GetRunId()
 	token := cmd.GetCloneToken()
-	layout := NewLayout(base)
-
-	if layout.NeedsMigration() {
-		m.phaseLine(runID, token, phaseRelease, "migrating existing checkout into "+releasesDir+"/")
-		moved, err := layout.Migrate(ctx)
-		if err != nil {
-			return "", "", false, fmt.Errorf("migrate to release layout: %w", err)
-		}
-		_ = chownTree(moved, cred)
-		m.phaseLine(runID, token, phaseRelease, "existing checkout is now "+filepath.Base(moved))
+	if tmpDir == "" {
+		tmpDir = os.TempDir()
 	}
-
-	if pin := cmd.GetRollbackSha(); pin != "" {
-		if dir := layout.FindRelease(pin); dir != "" {
-			m.phaseLine(runID, token, phaseRelease, "rolling back to release "+filepath.Base(dir)+" already on disk")
-			return dir, pin, true, nil
-		}
-		m.phaseLine(runID, token, phaseClone, "commit "+shortSHA(pin)+" is not on disk; fetching it")
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+		return "", "", err
 	}
-
-	tmp, err := layout.Prepare(runID)
-	if err != nil {
-		return "", "", false, err
+	_ = chownTree(tmpDir, cred)
+	cloneDir = filepath.Join(tmpDir, "croncompose-clone-"+sanitizeSegment(runID))
+	_ = os.RemoveAll(cloneDir)
+	if err := os.MkdirAll(cloneDir, 0o755); err != nil {
+		return "", "", err
 	}
-	_ = chownTree(tmp, cred)
-	defer func() {
-		if err != nil {
-			_ = os.RemoveAll(tmp)
-		}
-	}()
+	_ = chownTree(cloneDir, cred)
 
 	provider := providerFromURL(cmd.GetCloneUrl())
-	m.phaseLine(runID, token, phaseClone, "cloning "+PublicCloneURL(cmd.GetCloneUrl())+" ("+branch+")")
-	if err = cloneInto(ctx, tmp, cmd.GetCloneUrl(), provider, token, branch, cmd.GetRollbackSha(), cred, tmpDir); err != nil {
-		return "", "", false, err
+	m.phaseLine(runID, token, phaseClone, "cloning "+PublicCloneURL(cmd.GetCloneUrl())+" ("+branch+") into tmp")
+	if err := cloneInto(ctx, cloneDir, cmd.GetCloneUrl(), provider, token, branch, cmd.GetRollbackSha(), cred, tmpDir); err != nil {
+		_ = os.RemoveAll(cloneDir)
+		return "", "", err
 	}
-	sha = headCommit(ctx, tmp, cred, tmpDir)
-	release, err = layout.Promote(tmp, sha)
+	sha = headCommit(ctx, cloneDir, cred, tmpDir)
+	m.phaseLine(runID, token, phaseClone, "tmp clone ready ("+shortSHA(sha)+")")
+	return cloneDir, sha, nil
+}
+
+// materializeRelease creates the release directory and copies only each app's
+// root folder from the tmp clone into it (no sibling monorepo packages).
+func (m *Manager) materializeRelease(_ context.Context, cmd *agentv1.DeployCommand, layout Layout, cloneDir, sha string, cred *osuser.Credential) (string, error) {
+	runID := cmd.GetRunId()
+	token := cmd.GetCloneToken()
+
+	staging, err := layout.Prepare(runID)
 	if err != nil {
-		return "", "", false, err
+		return "", err
+	}
+	_ = chownTree(staging, cred)
+
+	apps := appsOf(cmd, "")
+	multi := len(apps) > 1
+	for _, app := range apps {
+		root := appRoot(cmd, app)
+		src := cloneDir
+		if root != "." {
+			src = filepath.Join(cloneDir, root)
+		}
+		dest := staging
+		label := "release root"
+		if multi {
+			sub := releaseSubdir(app, root)
+			dest = filepath.Join(staging, sub)
+			label = sub
+		}
+		m.phaseLine(runID, token, phaseClone, "cherry-pick "+root+" -> "+label)
+		if err := copyAppRoot(src, dest); err != nil {
+			_ = os.RemoveAll(staging)
+			return "", err
+		}
+	}
+
+	release, err := layout.Promote(staging, sha)
+	if err != nil {
+		_ = os.RemoveAll(staging)
+		return "", err
 	}
 	_ = chownTree(release, cred)
 	m.phaseLine(runID, token, phaseClone, "release "+filepath.Base(release))
-	return release, sha, false, nil
+	return release, nil
 }
 
 // installApps runs each app's install script inside the new release directory.
@@ -326,7 +405,26 @@ func (m *Manager) installApps(ctx context.Context, cmd *agentv1.DeployCommand, r
 		}
 		m.phaseLine(runID, token, phaseInstall, script+" (in "+work+")")
 		if err := m.runPTY(ctx, runID, token, work, script, appEnv(cmd, app), cred, tmpDir); err != nil {
-			return err
+			return fmt.Errorf("%s: %w", script, err)
+		}
+	}
+	return nil
+}
+
+// cleanupApps runs each app's cleanup script after a successful build so the
+// release keeps runtime artifacts and drops source / caches.
+func (m *Manager) cleanupApps(ctx context.Context, cmd *agentv1.DeployCommand, release string, cred *osuser.Credential, tmpDir string) error {
+	runID := cmd.GetRunId()
+	token := cmd.GetCloneToken()
+	for _, app := range appsOf(cmd, release) {
+		script := cleanupScriptFor(app.GetCleanupScript(), app.GetLanguage())
+		if script == "" {
+			continue
+		}
+		work := appWorkDir(release, cmd, app)
+		m.phaseLine(runID, token, phaseInstall, "cleanup: "+script+" (in "+work+")")
+		if err := m.runPTY(ctx, runID, token, work, script, appEnv(cmd, app), cred, tmpDir); err != nil {
+			return fmt.Errorf("cleanup: %w", err)
 		}
 	}
 	return nil
@@ -344,7 +442,32 @@ func (m *Manager) startApps(ctx context.Context, cmd *agentv1.DeployCommand, lay
 		if pm == "" {
 			pm = cmd.GetProcessManager()
 		}
-		if err := m.startProcess(ctx, runID, token, work, pm, app.GetLanguage(), app.GetRunScript(), appEnv(cmd, app), cred, tmpDir); err != nil {
+		name := app.GetName()
+		if name == "" {
+			name = filepath.Base(work)
+		}
+		if err := m.startProcess(ctx, runID, token, work, pm, name, app.GetLanguage(), app.GetRunScript(), appEnv(cmd, app), cred, tmpDir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// persistProcessManagers runs the boot-persistence step once per distinct process
+// manager used by the project (pm2 save + startup, etc.).
+func (m *Manager) persistProcessManagers(ctx context.Context, cmd *agentv1.DeployCommand, layout Layout, cred *osuser.Credential, tmpDir string) error {
+	seen := map[string]bool{}
+	for _, app := range appsOf(cmd, layout.Current) {
+		pm := app.GetProcessManager()
+		if pm == "" {
+			pm = cmd.GetProcessManager()
+		}
+		if pm == "" || pm == "none" || seen[pm] {
+			continue
+		}
+		seen[pm] = true
+		work := appWorkDir(layout.Current, cmd, app)
+		if err := m.persistProcessManager(ctx, cmd.GetRunId(), cmd.GetCloneToken(), work, pm, cred, tmpDir); err != nil {
 			return err
 		}
 	}
@@ -407,15 +530,35 @@ func appsOf(cmd *agentv1.DeployCommand, dir string) []*agentv1.DeployApp {
 	}}
 }
 
-func appWorkDir(root string, cmd *agentv1.DeployCommand, app *agentv1.DeployApp) string {
-	sub := app.GetRootDirectory()
-	if sub == "" {
-		sub = cmd.GetRootDirectory()
+func appRoot(cmd *agentv1.DeployCommand, app *agentv1.DeployApp) string {
+	root := app.GetRootDirectory()
+	if root == "" {
+		root = cmd.GetRootDirectory()
 	}
-	if sub == "" || sub == "." {
+	return normalizeRoot(root)
+}
+
+// releaseSubdir is where a multi-app cherry-pick lands inside the release.
+func releaseSubdir(app *agentv1.DeployApp, root string) string {
+	if root != "." {
 		return root
 	}
-	return filepath.Join(root, filepath.Clean(sub))
+	sub := sanitizeSegment(app.GetName())
+	if sub == "" || sub == "run" {
+		return "app"
+	}
+	return sub
+}
+
+// appWorkDir is the directory install/start/cleanup run in. After cherry-pick,
+// a single-app release is flattened to the release root (the repo root_directory
+// is only the source filter). Multi-app releases keep each app under its subdir.
+func appWorkDir(release string, cmd *agentv1.DeployCommand, app *agentv1.DeployApp) string {
+	apps := appsOf(cmd, "")
+	if len(apps) <= 1 {
+		return release
+	}
+	return filepath.Join(release, releaseSubdir(app, appRoot(cmd, app)))
 }
 
 func appEnv(cmd *agentv1.DeployCommand, app *agentv1.DeployApp) map[string]string {
@@ -511,7 +654,20 @@ func (m *Manager) runPTY(ctx context.Context, runID, token, dir, script string, 
 	// otherwise skips ~/.bashrc and npm "disappears").
 	cmd := exec.CommandContext(ctx, "/bin/bash", "-lc", osuser.WrapScript(script))
 	cmd.Dir = dir
-	cmd.Env = credEnv(cred, tmpDir, env)
+	// Quiet installer chrome: npm's PTY spinner is ESC[1G ESC[0K spam in a log
+	// pane that is not a real terminal emulator. CI/NO_COLOR/progress=false cut
+	// most of it at the source; scrubPTYLog strips whatever remains.
+	merged := map[string]string{
+		"CI":                  "true",
+		"NO_COLOR":            "1",
+		"FORCE_COLOR":         "0",
+		"TERM":                "dumb",
+		"npm_config_progress": "false",
+	}
+	for k, v := range env {
+		merged[k] = v
+	}
+	cmd.Env = credEnv(cred, tmpDir, merged)
 	applyCredential(cmd, cred)
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
@@ -545,8 +701,19 @@ func (m *Manager) runPTY(ctx context.Context, runID, token, dir, script string, 
 		}
 	}()
 	waitErr := cmd.Wait()
+	// Give the PTY reader a beat to flush the installer’s final lines (npm ERR!,
+	// stack traces) before the caller emits FAILED — otherwise the UI often shows
+	// a bare failure with no trailing output.
+	time.Sleep(100 * time.Millisecond)
 	if ctx.Err() != nil {
 		return ctx.Err()
+	}
+	if waitErr == nil {
+		return nil
+	}
+	var ee *exec.ExitError
+	if errors.As(waitErr, &ee) {
+		return fmt.Errorf("script exited %d", ee.ExitCode())
 	}
 	return waitErr
 }
@@ -607,6 +774,18 @@ func writeSpec(dest string, cmd *agentv1.DeployCommand) error {
 }
 
 func (m *Manager) fail(runID, token, phase, msg string) {
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		msg = "deploy failed"
+	}
+	if phase != "" && !strings.HasPrefix(msg, phase+":") {
+		msg = phase + ": " + msg
+	}
+	// Surface the reason in the log stream too — the finished event’s Message is
+	// easy to miss when the UI only updates status/exit from the SSE done event.
+	m.emit(runID, token, &agentv1.DeployEvent{
+		RunId: runID, Kind: "log", Phase: phase, Data: []byte("FAILED — " + msg + "\n"),
+	})
 	m.emit(runID, token, &agentv1.DeployEvent{
 		RunId: runID, Kind: "finished", Status: "failed", ExitCode: 1, Phase: phase, Message: msg,
 	})
@@ -650,6 +829,12 @@ func (m *Manager) overLogCap(runID string, n int) bool {
 }
 
 func (m *Manager) emit(runID, token string, ev *agentv1.DeployEvent) {
+	if ev.Kind == "log" && len(ev.Data) > 0 {
+		ev.Data = scrubPTYLog(ev.Data)
+		if len(ev.Data) == 0 {
+			return
+		}
+	}
 	if ev.Kind == "log" && len(ev.Data) > 0 && m.overLogCap(runID, len(ev.Data)) {
 		return
 	}

@@ -2,6 +2,7 @@
 // file (POST /deploys/spec/validate, GET /git/inspect); this module only maps the
 // parsed result onto the form, and renders the form back out as YAML for "Export".
 import type { DeployEnvVar, DeploySpec, Server } from "./types";
+import { frameworkPreset } from "./frameworks";
 import {
   defaultRunForLanguage,
   type ProjectBlock,
@@ -104,6 +105,7 @@ export function specToDraft(
         language: spec.language,
         install: spec.install,
         run: spec.run,
+        cleanup: spec.cleanup,
         port: spec.port,
         process_manager: spec.process_manager,
         env: [] as DeployEnvVar[],
@@ -123,6 +125,7 @@ export function specToDraft(
       language,
       install: app.install || spec.install || detected?.install || "",
       run: app.run || spec.run || defaultRunForLanguage(language),
+      cleanup: app.cleanup || spec.cleanup || frameworkPreset(language)?.cleanup || "",
       port: port ? String(port) : "",
       processManager: app.process_manager || spec.process_manager || "none",
       // Came from an explicit croncompose.yml (or a pasted one): never let a later
@@ -259,6 +262,7 @@ export function draftToYaml(d: ExportInput): string {
     line("language", b.language === "unknown" ? "" : b.language, "    ");
     line("install", b.install, "    ");
     line("run", b.run, "    ");
+    line("cleanup", b.cleanup, "    ");
     line("port", Number(b.port) || 0, "    ");
     line("process_manager", b.processManager === "none" ? "" : b.processManager, "    ");
     if (b.healthPath.trim()) {
@@ -290,6 +294,7 @@ server: my-server            # server name or id in CronCompose
 
 install: npm ci && npm run build
 run: npm start               # cwd = activated folder under /opt/…
+cleanup: rm -rf .git node_modules/.cache   # after build; frameworks set this
 port: 3000
 process_manager: pm2         # none | pm2 | systemd | docker
 redeploy_on: [branch]        # branch | tag | release

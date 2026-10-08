@@ -380,14 +380,13 @@ function BuildRunTab({ blocks, onBlocks, clonePath, projectName }: Props) {
       <div className="build-run-callout">
         <strong>How build &amp; run work</strong>
         <p>
-          The <em>build script</em> runs after clone inside the app&apos;s repo folder. Its output
-          stays in the release that CronCompose activates under the target path (usually{" "}
-          <code>{deployHint}</code>). After activation, the working directory for that process is
-          that folder — typically named from the project and process (for example{" "}
-          <code>myapp-api</code> under <code>/opt/…</code>). The <em>run script</em> therefore only
-          needs the start command relative to that folder, such as <code>./app</code> for a Go
-          binary or <code>npm start</code> for Node. CronCompose also detects the port the process
-          listens on and surfaces it in the web interface.
+          CronCompose clones the repo into a temporary folder, then cherry-picks only each
+          process&apos;s root directory into the release under <code>{deployHint}</code>. The{" "}
+          <em>build script</em> runs inside that release folder; <em>cleanup</em> then drops
+          source and caches. After activation, the <em>run script</em> starts the process
+          (pm2 / systemd / docker) from that folder — for example <code>./app</code> or{" "}
+          <code>npm start</code>. With pm2, CronCompose also runs <code>pm2 save</code> and
+          best-effort <code>pm2 startup</code> so the app returns after reboot.
         </p>
       </div>
       <div className="stack">
@@ -424,6 +423,23 @@ function BuildRunTab({ blocks, onBlocks, clonePath, projectName }: Props) {
               <p className="field-hint">
                 Executed with cwd set to the activated deploy folder. Keep it short — the binary or
                 start command only.
+              </p>
+            </div>
+            <div className="field">
+              <label htmlFor={`block-cleanup-${block.id}`}>Cleanup (after build)</label>
+              <textarea
+                id={`block-cleanup-${block.id}`}
+                rows={2}
+                value={block.cleanup}
+                onChange={(e) =>
+                  onBlocks(blocks.map((b) => (b.id === block.id ? { ...b, cleanup: e.target.value } : b)))
+                }
+                placeholder="rm -rf .git src node_modules/.cache"
+                spellCheck={false}
+              />
+              <p className="field-hint">
+                Removes source and other non-runtime files from the release after a successful build.
+                Framework presets fill this automatically; leave blank to skip.
               </p>
             </div>
           </div>

@@ -22,6 +22,7 @@ const base = {
   language: "",
   install: "",
   run: "",
+  cleanup: "",
   port: "",
   processManager: "none",
   autoDetect: true,
@@ -88,6 +89,7 @@ assert.equal(
       language: "node",
       install: "old",
       run: "old",
+      cleanup: "",
       port: "",
       processManager: "none",
       autoDetect: true,
@@ -102,6 +104,7 @@ assert.equal(
   assert.equal(next.run, "npm start");
   assert.equal(next.port, "3000");
   assert.equal(next.processManager, "pm2");
+  assert.ok(next.cleanup.includes(".next/cache"));
   assert.equal(next.autoDetect, false);
 
   const go = applyFramework(next, "go");
@@ -120,6 +123,7 @@ assert.equal(
       language: "node",
       install: "npm ci",
       run: "npm start",
+      cleanup: "rm -rf .git",
       port: "3000",
       processManager: "pm2",
       autoDetect: true,

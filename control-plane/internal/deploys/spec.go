@@ -24,6 +24,8 @@ type Spec struct {
 	Install        string            `yaml:"install,omitempty" json:"install,omitempty"`
 	// Run is the start command after the release is activated (cwd = app folder).
 	Run            string            `yaml:"run,omitempty" json:"run,omitempty"`
+	// Cleanup drops non-runtime files after install (see SpecApp.Cleanup).
+	Cleanup        string            `yaml:"cleanup,omitempty" json:"cleanup,omitempty"`
 	Root           string            `yaml:"root,omitempty" json:"root,omitempty"`
 	Port           int               `yaml:"port,omitempty" json:"port,omitempty"`
 	ProcessManager string            `yaml:"process_manager,omitempty" json:"process_manager,omitempty"`
@@ -52,6 +54,9 @@ type SpecApp struct {
 	Install        string   `yaml:"install,omitempty" json:"install,omitempty"`
 	// Run is the start command after the release is activated (cwd = app folder).
 	Run            string   `yaml:"run,omitempty" json:"run,omitempty"`
+	// Cleanup is a shell snippet run after install to drop source/caches from the
+	// release. Empty lets the agent apply a framework default.
+	Cleanup        string   `yaml:"cleanup,omitempty" json:"cleanup,omitempty"`
 	Port           int      `yaml:"port,omitempty" json:"port,omitempty"`
 	ProcessManager string   `yaml:"process_manager,omitempty" json:"process_manager,omitempty"`
 	Env            []EnvVar `yaml:"env,omitempty" json:"env,omitempty"`

@@ -6,6 +6,7 @@ import type { DeployProject, DeployRun, LogLine } from "@/lib/types";
 import { IconChevronLeft } from "@/components/icons";
 import { TerminalFrame } from "@/components/terminal/TerminalFrame";
 import { HostThisApp } from "@/components/deploys/HostThisApp";
+import { stripAnsi } from "@/lib/strip-ansi";
 
 type Props = { params: Promise<{ runId: string }> };
 
@@ -93,9 +94,23 @@ export default function DeployRunPage({ params }: Props) {
     });
     es.addEventListener("done", (ev) => {
       try {
-        const data = JSON.parse((ev as MessageEvent).data) as { status: DeployRun["status"]; exit_code?: number };
-        setRun((prev) => (prev ? { ...prev, status: data.status, exit_code: data.exit_code } : prev));
+        const data = JSON.parse((ev as MessageEvent).data) as {
+          status: DeployRun["status"];
+          exit_code?: number;
+          error?: string;
+        };
+        setRun((prev) => (prev ? {
+          ...prev,
+          status: data.status,
+          exit_code: data.exit_code,
+          error: data.error || prev.error,
+        } : prev));
       } catch { /* ignore */ }
+      // Refetch so error/exit_code match the DB even if the done payload was sparse.
+      fetch(`/api/deploy-runs/${runId}`)
+        .then((r) => r.json() as Promise<DeployRun>)
+        .then((r) => setRun(r))
+        .catch(() => { /* ignore */ });
       es.close();
     });
     // Do not close permanently on the first error — EventSource reconnects by default
@@ -148,7 +163,7 @@ export default function DeployRunPage({ params }: Props) {
               {live ? "(waiting for agent output…)" : "(no output)"}
             </span>
           ) : (
-            logs.map((l, i) => <span key={`${l.seq}-${i}`}>{l.chunk}</span>)
+            logs.map((l, i) => <span key={`${l.seq}-${i}`}>{stripAnsi(l.chunk)}</span>)
           )}
         </pre>
       </TerminalFrame>

@@ -315,6 +315,47 @@ func DefaultLanguagePaths() map[string]string {
 	}
 }
 
+// DefaultCleanup is the post-build cleanup script for a framework when the
+// project did not set one. Keep in sync with agent/internal/deploy/cleanup.go
+// and web/lib/frameworks.ts.
+func DefaultCleanup(language string) string {
+	switch strings.ToLower(strings.TrimSpace(language)) {
+	case "nextjs":
+		return "rm -rf .git .github node_modules/.cache .next/cache .turbo"
+	case "nestjs":
+		return "rm -rf .git .github src test node_modules/.cache .turbo *.md"
+	case "react", "vue", "nuxt", "astro", "sveltekit", "remix":
+		return "rm -rf .git .github src node_modules/.cache .turbo *.md"
+	case "express", "node", "typescript", "javascript", "bun":
+		return "rm -rf .git .github node_modules/.cache *.md"
+	case "go", "golang":
+		return "rm -rf .git .github *.md"
+	case "rust":
+		return "rm -rf .git .github src target/debug *.md"
+	case "dotnet", "csharp", "aspnet", "aspnetcore":
+		return "rm -rf .git .github *.md"
+	case "fastapi", "django", "flask", "python":
+		return "rm -rf .git .github __pycache__ .pytest_cache *.md"
+	case "rails", "ruby":
+		return "rm -rf .git .github tmp/cache log/*.log *.md"
+	case "laravel", "php":
+		return "rm -rf .git .github tests *.md"
+	case "spring", "java", "kotlin":
+		return "rm -rf .git .github src *.md"
+	case "elixir":
+		return "rm -rf .git .github *_test.exs *.md"
+	case "deno":
+		return "rm -rf .git .github *.md"
+	case "docker":
+		return ""
+	default:
+		if language == "" || language == "unknown" {
+			return "rm -rf .git .github"
+		}
+		return "rm -rf .git .github"
+	}
+}
+
 // RuntimeLanguage maps a framework id to the clone-path / agent runtime bucket.
 func RuntimeLanguage(language string) string {
 	switch strings.ToLower(strings.TrimSpace(language)) {

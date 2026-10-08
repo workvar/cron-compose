@@ -2600,7 +2600,11 @@ type DeployApp struct {
 	Health *HealthCheck `protobuf:"bytes,8,opt,name=health,proto3" json:"health,omitempty"`
 	// Start command after the release is activated (cwd = app folder). Empty means
 	// the agent guesses from language / ecosystem files.
-	RunScript     string `protobuf:"bytes,9,opt,name=run_script,json=runScript,proto3" json:"run_script,omitempty"`
+	RunScript string `protobuf:"bytes,9,opt,name=run_script,json=runScript,proto3" json:"run_script,omitempty"`
+	// Shell snippet run after install inside the app release folder to drop source
+	// and other non-runtime files (e.g. rm -rf src .git). Empty = agent framework
+	// default when language is known, otherwise skip.
+	CleanupScript string `protobuf:"bytes,10,opt,name=cleanup_script,json=cleanupScript,proto3" json:"cleanup_script,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2694,6 +2698,13 @@ func (x *DeployApp) GetHealth() *HealthCheck {
 func (x *DeployApp) GetRunScript() string {
 	if x != nil {
 		return x.RunScript
+	}
+	return ""
+}
+
+func (x *DeployApp) GetCleanupScript() string {
+	if x != nil {
+		return x.CleanupScript
 	}
 	return ""
 }
@@ -3518,7 +3529,7 @@ const file_agent_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x126\n" +
 	"\x05users\x18\x02 \x03(\v2 .croncompose.agent.v1.SystemUserR\x05users\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"\x94\x03\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\xbb\x03\n" +
 	"\tDeployApp\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12%\n" +
 	"\x0eroot_directory\x18\x02 \x01(\tR\rrootDirectory\x12%\n" +
@@ -3529,7 +3540,9 @@ const file_agent_proto_rawDesc = "" +
 	"\x03env\x18\a \x03(\v2(.croncompose.agent.v1.DeployApp.EnvEntryR\x03env\x129\n" +
 	"\x06health\x18\b \x01(\v2!.croncompose.agent.v1.HealthCheckR\x06health\x12\x1d\n" +
 	"\n" +
-	"run_script\x18\t \x01(\tR\trunScript\x1a6\n" +
+	"run_script\x18\t \x01(\tR\trunScript\x12%\n" +
+	"\x0ecleanup_script\x18\n" +
+	" \x01(\tR\rcleanupScript\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9e\x05\n" +

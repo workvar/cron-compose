@@ -64,14 +64,6 @@ export default async function DeployDetailPage({ params }: { params: Promise<{ i
             <HealthBadge state={p.health_state} />
           </div>
           <p className="subtle">{p.provider}/{p.repo_full_name}</p>
-          {server && (
-            <div style={{ marginTop: 10 }}>
-              <DeployServerChip server={server} />
-            </div>
-          )}
-          {!server && (
-            <p className="subtle" style={{ marginTop: 6 }}>{p.server_id.slice(0, 8)}</p>
-          )}
         </div>
         <div className="page-head-actions">
           <ProjectActions project={p} />
@@ -80,31 +72,55 @@ export default async function DeployDetailPage({ params }: { params: Promise<{ i
             provider={p.provider}
             repo={p.repo_full_name}
             defaultBranch={p.default_branch}
+            compact
           />
         </div>
       </div>
 
-      <div className="cards">
-        <div className="panel">
-          <div className="card-title">Clone</div>
-          <p className="subtle" style={{ margin: "8px 0 0" }}><code>{p.clone_path}</code></p>
-          <div className="cluster" style={{ marginTop: 10 }}>
-            <span className="pill">{p.language}</span>
-            <span className="pill">{p.default_branch}</span>
-            <span className="pill">{p.process_manager}</span>
-            {p.run_as_user ? <span className="pill" title="OS account for clone/install/start">as {p.run_as_user}</span> : null}
-            {p.port > 0 && <span className="pill">PORT {p.port}</span>}
-            {p.auto_rollback && <span className="pill" title="Redeploys the last successful commit automatically after a failed run">auto-rollback</span>}
-            {p.health_path && (
-              <span className="pill" title={`Each deploy must answer on 127.0.0.1:${p.health_port || p.port}${p.health_path} within ${p.health_timeout_seconds || 60}s`}>
-                health {p.health_path}
-              </span>
+      <div className="deploy-summary">
+        <div className="panel deploy-summary-main">
+          <div className="deploy-summary-meta">
+            {server ? (
+              <DeployServerChip server={server} />
+            ) : (
+              <span className="subtle">Server {p.server_id.slice(0, 8)}</span>
             )}
+            <div className="cluster">
+              <span className="pill">{p.language || "unknown"}</span>
+              <span className="pill">{p.default_branch}</span>
+              <span className="pill">{p.process_manager}</span>
+              {p.run_as_user ? <span className="pill" title="OS account for clone/install/start">as {p.run_as_user}</span> : null}
+              {p.port > 0 && <span className="pill">PORT {p.port}</span>}
+              {p.auto_rollback && <span className="pill" title="Redeploys the last successful commit automatically after a failed run">auto-rollback</span>}
+              {p.health_path && (
+                <span className="pill" title={`Each deploy must answer on 127.0.0.1:${p.health_port || p.port}${p.health_path} within ${p.health_timeout_seconds || 60}s`}>
+                  health {p.health_path}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="deploy-summary-grid">
+            <div>
+              <div className="card-title">Path</div>
+              <p className="subtle" style={{ margin: "6px 0 0" }}><code>{p.clone_path}</code></p>
+            </div>
+            <div>
+              <div className="card-title">Install</div>
+              <pre className="subtle deploy-summary-install">{p.install_script || "(none)"}</pre>
+            </div>
           </div>
         </div>
-        <div className="panel">
-          <div className="card-title">Install</div>
-          <pre className="subtle" style={{ whiteSpace: "pre-wrap", margin: "8px 0 0" }}>{p.install_script || "(none)"}</pre>
+        <div className="panel deploy-summary-redeploy">
+          <div className="card-title">Redeploy</div>
+          <p className="subtle" style={{ margin: "6px 0 12px" }}>
+            Pick a branch, tag, or release, then start a new run on the agent.
+          </p>
+          <RedeployButton
+            projectId={p.id}
+            provider={p.provider}
+            repo={p.repo_full_name}
+            defaultBranch={p.default_branch}
+          />
         </div>
       </div>
 

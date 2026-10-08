@@ -13,6 +13,11 @@ export type FrameworkPreset = {
   runtime: string;
   install: string;
   run: string;
+  /**
+   * Shell run after install inside the release to drop source/caches. Keep in
+   * sync with control-plane DefaultCleanup and agent defaultCleanup.
+   */
+  cleanup: string;
   port: string;
   processManager: string;
 };
@@ -27,6 +32,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "npm ci && npm run build",
     run: "npm start",
     port: "3000",
+    cleanup: "rm -rf .git .github node_modules/.cache .next/cache .turbo",
     processManager: "pm2",
   },
   {
@@ -37,6 +43,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "npm ci && npm run build",
     run: "node dist/main.js",
     port: "3000",
+    cleanup: "rm -rf .git .github src test node_modules/.cache .turbo *.md",
     processManager: "pm2",
   },
   {
@@ -47,6 +54,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "npm ci && npm run build",
     run: "npx --yes serve -s dist -l 3000",
     port: "3000",
+    cleanup: "rm -rf .git .github src node_modules/.cache .turbo *.md",
     processManager: "pm2",
   },
   {
@@ -57,6 +65,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "npm ci && npm run build",
     run: "npx --yes serve -s dist -l 3000",
     port: "3000",
+    cleanup: "rm -rf .git .github src node_modules/.cache .turbo *.md",
     processManager: "pm2",
   },
   {
@@ -67,6 +76,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "npm ci && npm run build",
     run: "node .output/server/index.mjs",
     port: "3000",
+    cleanup: "rm -rf .git .github src node_modules/.cache .turbo *.md",
     processManager: "pm2",
   },
   {
@@ -77,6 +87,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "npm ci && npm run build",
     run: "npm start",
     port: "3000",
+    cleanup: "rm -rf .git .github src node_modules/.cache .turbo *.md",
     processManager: "pm2",
   },
   {
@@ -87,6 +98,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "npm ci && npm run build",
     run: "node build",
     port: "3000",
+    cleanup: "rm -rf .git .github src node_modules/.cache .turbo *.md",
     processManager: "pm2",
   },
   {
@@ -97,6 +109,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "npm ci && npm run build",
     run: "node ./dist/server/entry.mjs",
     port: "4321",
+    cleanup: "rm -rf .git .github src node_modules/.cache .turbo *.md",
     processManager: "pm2",
   },
   {
@@ -107,6 +120,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "npm ci",
     run: "npm start",
     port: "3000",
+    cleanup: "rm -rf .git .github node_modules/.cache *.md",
     processManager: "pm2",
   },
   {
@@ -117,6 +131,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "npm ci",
     run: "npm start",
     port: "3000",
+    cleanup: "rm -rf .git .github node_modules/.cache *.md",
     processManager: "pm2",
   },
   {
@@ -127,6 +142,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "npm ci && npm run build",
     run: "npm start",
     port: "3000",
+    cleanup: "rm -rf .git .github node_modules/.cache *.md",
     processManager: "pm2",
   },
   {
@@ -137,6 +153,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "bun install && bun run build",
     run: "bun start",
     port: "3000",
+    cleanup: "rm -rf .git .github node_modules/.cache *.md",
     processManager: "pm2",
   },
   {
@@ -147,6 +164,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "deno cache main.ts",
     run: "deno run -A main.ts",
     port: "8000",
+    cleanup: "rm -rf .git .github *.md",
     processManager: "systemd",
   },
 
@@ -159,6 +177,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "go build -o app .",
     run: "./app",
     port: "8080",
+    cleanup: "rm -rf .git .github *.md",
     processManager: "systemd",
   },
   {
@@ -169,6 +188,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "cargo build --release",
     run: "./target/release/app",
     port: "8080",
+    cleanup: "rm -rf .git .github src target/debug *.md",
     processManager: "systemd",
   },
 
@@ -181,6 +201,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "dotnet restore && dotnet publish -c Release -o out",
     run: "bash -lc 'dotnet out/*.dll --urls http://0.0.0.0:8080'",
     port: "8080",
+    cleanup: "rm -rf .git .github *.md",
     processManager: "systemd",
   },
   {
@@ -191,6 +212,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "dotnet restore && dotnet publish -c Release -o out",
     run: "bash -lc 'dotnet out/*.dll --urls http://0.0.0.0:8080'",
     port: "8080",
+    cleanup: "rm -rf .git .github *.md",
     processManager: "systemd",
   },
 
@@ -204,6 +226,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
       "python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt",
     run: ".venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000",
     port: "8000",
+    cleanup: "rm -rf .git .github __pycache__ .pytest_cache *.md",
     processManager: "systemd",
   },
   {
@@ -215,6 +238,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
       "python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt",
     run: ".venv/bin/gunicorn myproject.wsgi:application --bind 0.0.0.0:8000",
     port: "8000",
+    cleanup: "rm -rf .git .github __pycache__ .pytest_cache *.md",
     processManager: "systemd",
   },
   {
@@ -226,6 +250,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
       "python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt",
     run: ".venv/bin/gunicorn app:app --bind 0.0.0.0:8000",
     port: "8000",
+    cleanup: "rm -rf .git .github __pycache__ .pytest_cache *.md",
     processManager: "systemd",
   },
   {
@@ -237,6 +262,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
       "python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt",
     run: "python3 -m app",
     port: "8000",
+    cleanup: "rm -rf .git .github __pycache__ .pytest_cache *.md",
     processManager: "systemd",
   },
 
@@ -249,6 +275,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "./gradlew bootJar || mvn -q -DskipTests package",
     run: "bash -lc 'java -jar target/*.jar || java -jar build/libs/*.jar'",
     port: "8080",
+    cleanup: "rm -rf .git .github src *.md",
     processManager: "systemd",
   },
   {
@@ -259,6 +286,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "mvn -q -DskipTests package || ./gradlew build",
     run: "bash -lc 'java -jar target/*.jar || java -jar build/libs/*.jar'",
     port: "8080",
+    cleanup: "rm -rf .git .github src *.md",
     processManager: "systemd",
   },
   {
@@ -269,6 +297,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "./gradlew build",
     run: "bash -lc 'java -jar build/libs/*.jar'",
     port: "8080",
+    cleanup: "rm -rf .git .github src *.md",
     processManager: "systemd",
   },
 
@@ -281,6 +310,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "bundle install && bundle exec rake assets:precompile",
     run: "bundle exec puma -C config/puma.rb",
     port: "3000",
+    cleanup: "rm -rf .git .github tmp/cache log/*.log *.md",
     processManager: "systemd",
   },
   {
@@ -291,6 +321,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "bundle install",
     run: "bundle exec ruby app.rb",
     port: "3000",
+    cleanup: "rm -rf .git .github tmp/cache log/*.log *.md",
     processManager: "systemd",
   },
   {
@@ -301,6 +332,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "composer install --no-dev --optimize-autoloader",
     run: "php artisan serve --host=0.0.0.0 --port=8000",
     port: "8000",
+    cleanup: "rm -rf .git .github tests *.md",
     processManager: "systemd",
   },
   {
@@ -311,6 +343,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "composer install --no-dev",
     run: "php -S 0.0.0.0:8000 -t public",
     port: "8000",
+    cleanup: "rm -rf .git .github tests *.md",
     processManager: "systemd",
   },
   {
@@ -321,6 +354,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "mix deps.get && mix compile",
     run: "mix phx.server",
     port: "4000",
+    cleanup: "rm -rf .git .github *_test.exs *.md",
     processManager: "systemd",
   },
 
@@ -333,6 +367,7 @@ export const FRAMEWORKS: FrameworkPreset[] = [
     install: "docker compose pull",
     run: "",
     port: "",
+    cleanup: "",
     processManager: "docker",
   },
 ];
@@ -392,6 +427,7 @@ export function fieldsForFramework(id: string): Partial<ProjectBlock> | null {
     run: p.run,
     port: p.port,
     processManager: p.processManager,
+    cleanup: p.cleanup,
     autoDetect: false,
   };
 }

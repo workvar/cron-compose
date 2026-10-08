@@ -572,7 +572,7 @@ func (h *handler) stream(c fiber.Ctx) error {
 			writeEvent(w, "log", fmt.Sprintf(`{"stream":%q,"seq":%d,"chunk":%q}`, l.Stream, l.Seq, l.Chunk))
 		}
 		if done {
-			writeEvent(w, "done", fmt.Sprintf(`{"status":%q}`, run.Status))
+			writeDone(w, run.Status, run.ExitCode, run.Error)
 			return
 		}
 		ticker := time.NewTicker(15 * time.Second)
@@ -588,8 +588,8 @@ func (h *handler) stream(c fiber.Ctx) error {
 						ev.Chunk.GetStream(), ev.Chunk.GetSeq(), string(ev.Chunk.GetData())))
 				}
 				if ev.Finished != nil {
-					writeEvent(w, "done", fmt.Sprintf(`{"status":%q,"exit_code":%d}`,
-						ev.Finished.GetStatus(), ev.Finished.GetExitCode()))
+					code := int(ev.Finished.GetExitCode())
+					writeDone(w, ev.Finished.GetStatus(), &code, ev.Finished.GetError())
 					return
 				}
 			case <-ticker.C:
@@ -606,6 +606,16 @@ func (h *handler) stream(c fiber.Ctx) error {
 func writeEvent(w *bufio.Writer, event, data string) {
 	_, _ = w.WriteString("event: " + event + "\ndata: " + data + "\n\n")
 	_ = w.Flush()
+}
+
+// writeDone ends an SSE log stream. error must travel with status — otherwise the
+// UI flips to "failed" with no message when watching a live run.
+func writeDone(w *bufio.Writer, status string, exitCode *int, errMsg string) {
+	if exitCode != nil {
+		writeEvent(w, "done", fmt.Sprintf(`{"status":%q,"exit_code":%d,"error":%q}`, status, *exitCode, errMsg))
+		return
+	}
+	writeEvent(w, "done", fmt.Sprintf(`{"status":%q,"error":%q}`, status, errMsg))
 }
 
 func (h *handler) githubWebhook(c fiber.Ctx) error {
@@ -770,15 +780,20 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 		for k, v := range appEnv {
 			merged[k] = v
 		}
+		cleanup := a.Cleanup
+		if cleanup == "" {
+			cleanup = DefaultCleanup(lang)
+		}
 		cmd.Apps = append(cmd.Apps, &agentv1.DeployApp{
 			Name: a.Name, RootDirectory: a.Root, InstallScript: a.Install,
-			RunScript: a.Run, Language: lang, Port: int32(a.Port), ProcessManager: pm, Env: merged,
+			RunScript: a.Run, CleanupScript: cleanup, Language: lang, Port: int32(a.Port), ProcessManager: pm, Env: merged,
 			Health: healthCheckForApp(a),
 		})
 	}
 	if len(cmd.Apps) == 0 {
 		cmd.Apps = []*agentv1.DeployApp{{
 			Name: p.Name, RootDirectory: p.RootDirectory, InstallScript: p.InstallScript,
+			CleanupScript: DefaultCleanup(p.Language),
 			Language: p.Language, Port: int32(p.Port), ProcessManager: p.ProcessManager, Env: p.Env,
 		}}
 	}
