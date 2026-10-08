@@ -4,9 +4,8 @@ import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import type { DeployProject, DeployRun, LogLine } from "@/lib/types";
 import { IconChevronLeft } from "@/components/icons";
-import { TerminalFrame } from "@/components/terminal/TerminalFrame";
 import { HostThisApp } from "@/components/deploys/HostThisApp";
-import { stripAnsi } from "@/lib/strip-ansi";
+import { DeployRunBoard } from "@/components/deploys/DeployRunBoard";
 
 type Props = { params: Promise<{ runId: string }> };
 
@@ -155,18 +154,7 @@ export default function DeployRunPage({ params }: Props) {
 
       {run.error && <p className="form-error">{run.error}</p>}
 
-      <h2>Logs <span className="subtle" style={{ fontSize: 13, fontWeight: 500 }}>· live</span></h2>
-      <TerminalFrame title={`${run.trigger} ${run.id.slice(0, 8)} · ${run.status}`}>
-        <pre className="term-log">
-          {logs.length === 0 ? (
-            <span className="term-log-empty">
-              {live ? "(waiting for agent output…)" : "(no output)"}
-            </span>
-          ) : (
-            logs.map((l, i) => <span key={`${l.seq}-${i}`}>{stripAnsi(l.chunk)}</span>)
-          )}
-        </pre>
-      </TerminalFrame>
+      <DeployRunBoard logs={logs} project={project} status={run.status} live={live} />
 
       {live && (
         <form onSubmit={sendStdin} className="cluster" style={{ marginTop: 12 }}>

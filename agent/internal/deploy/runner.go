@@ -91,18 +91,25 @@ func NewManager(log *slog.Logger, send Sender) *Manager {
 
 // Handle routes one inbound DeployCommand. start/cancel run on a goroutine so the
 // receive loop is never blocked by git or an interactive installer.
-func (m *Manager) Handle(ctx context.Context, cmd *agentv1.DeployCommand) {
+//
+// The stream context is not the deploy's parent. That context dies when the
+// connection cycle ends, and a stalled stream (a Next.js build pegging a small
+// host) was canceling installs that had already compiled. Progress is queued in
+// the outbox and flushes when the stream returns. The run stops on its own
+// timeout, an explicit cancel, or CloseAll during process shutdown.
+func (m *Manager) Handle(_ context.Context, cmd *agentv1.DeployCommand) {
 	switch cmd.GetOp() {
 	case "stdin":
 		m.writeStdin(cmd.GetRunId(), cmd.GetStdin())
 	case "cancel":
 		m.cancelRun(cmd.GetRunId())
 	default:
-		go m.start(ctx, cmd)
+		go m.start(cmd)
 	}
 }
 
-// CloseAll tears down every in-flight deploy (stream dropped).
+// CloseAll cancels every in-flight deploy. The runtime calls this when the agent
+// process is shutting down, not when the control-plane stream drops.
 func (m *Manager) CloseAll() {
 	m.mu.Lock()
 	cancels := make([]context.CancelFunc, 0, len(m.cancel))
@@ -155,11 +162,12 @@ func runTimeout(seconds int32) time.Duration {
 	return d
 }
 
-func (m *Manager) start(parent context.Context, cmd *agentv1.DeployCommand) {
+func (m *Manager) start(cmd *agentv1.DeployCommand) {
 	runID := cmd.GetRunId()
 	token := cmd.GetCloneToken()
 	budget := runTimeout(cmd.GetTimeoutSeconds())
-	ctx, cancel := context.WithTimeout(parent, budget)
+	// Detached from the gRPC stream. See Handle.
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
 	m.mu.Lock()
 	m.cancel[runID] = cancel
 	m.seq[runID] = &atomic.Int32{}
@@ -184,6 +192,10 @@ func (m *Manager) start(parent context.Context, cmd *agentv1.DeployCommand) {
 	if err := m.deploy(ctx, cmd); err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			m.fail(runID, token, phaseInstall, fmt.Sprintf("deploy timed out after %s", budget))
+			return
+		}
+		if errors.Is(ctx.Err(), context.Canceled) {
+			m.fail(runID, token, failedPhase(err), "deploy canceled")
 			return
 		}
 		m.fail(runID, token, failedPhase(err), redact(err.Error(), token))

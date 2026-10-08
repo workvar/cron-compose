@@ -107,6 +107,12 @@ func (r *Runtime) Run(ctx context.Context) error {
 	}
 	r.sched.Start()
 	defer r.sched.Stop()
+	// Deploys outlive a dropped stream and stop when the process does.
+	defer func() {
+		if r.deploys != nil {
+			r.deploys.CloseAll()
+		}
+	}()
 
 	addr := dialAddr(r.cfg.ControlPlaneAddr, r.cfg.GRPCAddrSet, r.ident.ControlPlaneGRPCAddr)
 	if enrolled := r.ident.ControlPlaneGRPCAddr; enrolled != "" && addr != enrolled {
@@ -163,10 +169,10 @@ func (r *Runtime) connectAndServe(ctx context.Context, addr string) error {
 	}
 	r.log.Info("stream open")
 
-	// Terminal sessions are tied to the connection: when this cycle ends, kill any live
-	// shells so none linger across a reconnect.
+	// Terminal sessions die with the connection so a shell is not left running across
+	// a reconnect. Deploys do not: CloseAll on stream drop was canceling installs
+	// mid-build. Their events stay in the outbox and flush when the stream returns.
 	defer r.terminals.CloseAll()
-	defer r.deploys.CloseAll()
 
 	// Enqueue Hello and a periodic heartbeat. The drain loop is the sole sender.
 	r.queue(&agentv1.AgentMessage{
