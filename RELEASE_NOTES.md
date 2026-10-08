@@ -1,24 +1,25 @@
-# CronCompose v0.0.40
+# CronCompose v0.0.41
 
-Deploys no longer die when the agent briefly loses the control plane, and the
-live run page shows how far each process has gotten.
+Agents that the control plane rejects with `unknown cert` reconnect on their
+own. You do not need a shell on the host.
 
 ## Highlights
 
-- **Installs survive a stream blip** — The deploy was tied to the agent’s gRPC
-  stream, so a stalled connection (a Next.js build pegging a small host)
-  canceled `npm install && npm run build` with `context canceled` after the
-  compile had already succeeded. The install now keeps running. Its log stays
-  in the outbox and flushes when the agent reconnects. The run still stops on
-  its own timeout, an explicit cancel, or agent shutdown.
-- **Per-process progress** — The deploy run page shows a completion bar and a
-  step rail: Preflight, Clone, Installing {name}, Building {name}, Activate,
-  Starting, Checking. The step that is running shows its own percent.
-- **One terminal per process** — When a project has several processes, each has
-  a collapsible log. On a wide screen they sit side by side, so you can watch
-  one build while another is still installing.
+- **Stale agent certificates rebind** — Enrollment writes the server id into
+  the client certificate, and TLS already checks that this control plane signed
+  it. When the fingerprint stored on the server row no longer matches, the next
+  connection saves the fingerprint the agent is presenting and accepts the
+  stream. Offline hosts come back on their usual retry, about 30 seconds after
+  the control plane restarts.
+- **Lookup failures stay distinct** — A database error during auth is reported
+  as `cert lookup failed`, so a canceled query is a separate error from a
+  certificate the control plane does not recognize.
 
 ## Upgrade
 
-Update the **agent** and **web**. The control plane is unchanged. No new
+Update the **control plane** only. Agents and web are unchanged. No new
 migration.
+
+A certificate this control plane signed earlier for the same server is
+accepted, and it becomes the stored fingerprint. A host enrolled against a
+different CA needs `agent enroll` on that machine.
