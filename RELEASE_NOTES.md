@@ -1,23 +1,31 @@
-# CronCompose v0.0.38
+# CronCompose v0.0.39
 
-Fixes deploy run pages stuck on **(no output yet)** while the run showed
-**Running** (and a misleading **exit 0**). Live deploy logs could vanish or never
-open in the browser even when the agent was working.
+Leaner deploys: clone into tmp, cherry-pick only each process root into
+`/opt/apps/…/releases`, build there, clean up source, start the process manager,
+then delete the tmp clone. Also fixes noisy npm spinner logs, silent failures on
+the live run page, and the cramped project Edit UI.
 
 ## Highlights
 
-- **Durable deploy log stream** — Deploy progress events now go through the
-  agent's durable outbox (same path as job run logs) instead of a droppable
-  direct buffer, so install output survives brief stream blips.
-- **SSE that actually opens** — Log streams flush a `: connected` comment and
-  periodic keepalives when the snapshot is empty, so EventSource/proxies see an
-  open body before the first chunk.
-- **No fake exit 0** — Marking a run `running` no longer stamps `exit_code=0`.
-  The UI only shows the exit pill after the run finishes.
-- **REST log fallback** — `GET /deploy-runs/:id/logs` plus a short poll on the
-  run page, so a flaky EventSource still fills the terminal.
+- **Cherry-pick deploy pipeline** — Full repo clones land in a disposable tmp
+  directory. Only each app’s root folder (e.g. `web/`) is copied into the
+  release under the project path. The tmp clone is removed when the run ends.
+- **Cleanup after build** — New `cleanup` field on apps / `croncompose.yml`.
+  Curated framework presets fill it automatically (drop `.git`, caches, source
+  trees that are not needed at runtime).
+- **pm2 / systemd boot persistence** — After start, deploys run `pm2 save` and
+  best-effort `pm2 startup`; systemd user units keep `enable --now` and try
+  `loginctl enable-linger`.
+- **Readable install logs** — ANSI spinner frames from npm PTYs are stripped on
+  the agent and in the UI (`CI` / `NO_COLOR` / `npm_config_progress=false` cut
+  most of it at the source).
+- **Failure reason on live runs** — SSE `done` includes `error`; the agent logs
+  `FAILED — …` and the run page refetches so “failed” is never blank.
+- **Deploy edit modal** — Project Edit opens a centered modal (Target / Build /
+  Health) instead of nesting a form in the page header next to Redeploy.
 
 ## Upgrade
 
-Update the **control plane** and **agent**. No new migration. Open a new deploy
-(or re-open a live run page) after both are on v0.0.38 to see live output.
+Update the **control plane**, **agent**, and **web**. No new migration. Existing
+projects pick up framework cleanup defaults on the next deploy; set `cleanup`
+explicitly in the Build & run tab or `croncompose.yml` to override.
