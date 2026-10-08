@@ -78,8 +78,8 @@ func (s *service) AgentStream(stream agentv1.AgentService_AgentStreamServer) err
 }
 
 // authenticate resolves the caller to a server: the edge listener's interceptor has
-// already done so for edge streams, otherwise the peer's client cert fingerprint is
-// looked up.
+// already done so for edge streams, otherwise the peer's client cert is matched to a
+// server row. TLS has already verified the cert against this control plane's CA.
 func (s *service) authenticate(ctx context.Context) (string, error) {
 	if id, ok := edgeServerID(ctx); ok {
 		return id, nil // already authenticated by the edge listener's interceptor
@@ -95,14 +95,42 @@ func (s *service) authenticate(ctx context.Context) (string, error) {
 	if len(tlsInfo.State.PeerCertificates) == 0 {
 		return "", status.Error(codes.Unauthenticated, "no client cert")
 	}
-	fp := pki.FingerprintDER(tlsInfo.State.PeerCertificates[0].Raw)
+	cert := tlsInfo.State.PeerCertificates[0]
+	fp := pki.FingerprintDER(cert.Raw)
 
 	var serverID string
 	err := s.pool.QueryRow(ctx, `select id from servers where cert_fingerprint = $1`, fp).Scan(&serverID)
-	if errors.Is(err, context.Canceled) || err != nil {
+	if err == nil {
+		return serverID, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		s.log.Warn("agent cert lookup failed", "err", err)
+		return "", status.Error(codes.Unavailable, "cert lookup failed")
+	}
+
+	// Enrollment stamps the CommonName with the server id, and the CA check already
+	// passed. A fingerprint miss means the row no longer records this cert (reinstall,
+	// restore, or a token issued for a host we cannot shell into). Bind the cert the
+	// agent is actually presenting so it can reconnect without local access.
+	id := strings.TrimSpace(cert.Subject.CommonName)
+	if id == "" {
 		return "", status.Error(codes.Unauthenticated, "unknown cert")
 	}
-	return serverID, nil
+	var stored string
+	err = s.pool.QueryRow(ctx, `select coalesce(cert_fingerprint, '') from servers where id = $1`, id).Scan(&stored)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", status.Error(codes.Unauthenticated, "unknown cert")
+	}
+	if err != nil {
+		s.log.Warn("agent cert lookup failed", "err", err, "server_id", id)
+		return "", status.Error(codes.Unavailable, "cert lookup failed")
+	}
+	if _, err := s.pool.Exec(ctx, `update servers set cert_fingerprint = $1 where id = $2`, fp, id); err != nil {
+		s.log.Warn("agent cert rebind failed", "err", err, "server_id", id)
+		return "", status.Error(codes.Unavailable, "cert lookup failed")
+	}
+	s.log.Warn("rebound agent certificate", "server_id", id, "previous_fingerprint", stored)
+	return id, nil
 }
 
 // handleAgentMessage routes one inbound message.
