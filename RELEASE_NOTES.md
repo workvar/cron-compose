@@ -1,31 +1,24 @@
-# CronCompose v0.0.39
+# CronCompose v0.0.40
 
-Leaner deploys: clone into tmp, cherry-pick only each process root into
-`/opt/apps/…/releases`, build there, clean up source, start the process manager,
-then delete the tmp clone. Also fixes noisy npm spinner logs, silent failures on
-the live run page, and the cramped project Edit UI.
+Deploys no longer die when the agent briefly loses the control plane, and the
+live run page shows how far each process has gotten.
 
 ## Highlights
 
-- **Cherry-pick deploy pipeline** — Full repo clones land in a disposable tmp
-  directory. Only each app’s root folder (e.g. `web/`) is copied into the
-  release under the project path. The tmp clone is removed when the run ends.
-- **Cleanup after build** — New `cleanup` field on apps / `croncompose.yml`.
-  Curated framework presets fill it automatically (drop `.git`, caches, source
-  trees that are not needed at runtime).
-- **pm2 / systemd boot persistence** — After start, deploys run `pm2 save` and
-  best-effort `pm2 startup`; systemd user units keep `enable --now` and try
-  `loginctl enable-linger`.
-- **Readable install logs** — ANSI spinner frames from npm PTYs are stripped on
-  the agent and in the UI (`CI` / `NO_COLOR` / `npm_config_progress=false` cut
-  most of it at the source).
-- **Failure reason on live runs** — SSE `done` includes `error`; the agent logs
-  `FAILED — …` and the run page refetches so “failed” is never blank.
-- **Deploy edit modal** — Project Edit opens a centered modal (Target / Build /
-  Health) instead of nesting a form in the page header next to Redeploy.
+- **Installs survive a stream blip** — The deploy was tied to the agent’s gRPC
+  stream, so a stalled connection (a Next.js build pegging a small host)
+  canceled `npm install && npm run build` with `context canceled` after the
+  compile had already succeeded. The install now keeps running. Its log stays
+  in the outbox and flushes when the agent reconnects. The run still stops on
+  its own timeout, an explicit cancel, or agent shutdown.
+- **Per-process progress** — The deploy run page shows a completion bar and a
+  step rail: Preflight, Clone, Installing {name}, Building {name}, Activate,
+  Starting, Checking. The step that is running shows its own percent.
+- **One terminal per process** — When a project has several processes, each has
+  a collapsible log. On a wide screen they sit side by side, so you can watch
+  one build while another is still installing.
 
 ## Upgrade
 
-Update the **control plane**, **agent**, and **web**. No new migration. Existing
-projects pick up framework cleanup defaults on the next deploy; set `cleanup`
-explicitly in the Build & run tab or `croncompose.yml` to override.
+Update the **agent** and **web**. The control plane is unchanged. No new
+migration.
