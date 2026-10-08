@@ -1,0 +1,167 @@
+/* Tools page — full-width selectors, row progress, bottom terminal dock. */
+
+.tools-page {
+  padding-bottom: 120px; /* room for collapsed dock */
+}
+
+.tools-selectors {
+  width: 100%;
+  max-width: none;
+}
+
+.tools-selectors .grid-2 {
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.tools-selectors .ss,
+.tools-selectors .field > .ss {
+  width: 100%;
+}
+
+.tools-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 8px;
+}
+
+.tools-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tools-row:last-child {
+  border-bottom: 0;
+}
+
+.tools-row-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.tools-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.tools-progress-btn {
+  position: relative;
+  overflow: hidden;
+  min-width: 112px;
+  justify-content: center;
+  padding: 0;
+  height: 34px;
+}
+
+.tools-progress-btn .tools-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in srgb, var(--green) 35%, transparent);
+  transition: width 0.25s ease;
+  pointer-events: none;
+}
+
+.tools-progress-btn .tools-progress-label {
+  position: relative;
+  z-index: 1;
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.tools-status-waiting {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Bottom terminal dock (Windows-style tab) */
+.tools-dock {
+  position: fixed;
+  left: var(--sidebar-w, 240px);
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: #0f1412;
+  color: #d7e0db;
+  border-top: 1px solid #24302a;
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.18);
+  transition: height 0.2s ease;
+}
+
+.tools-dock.collapsed {
+  height: 40px;
+}
+
+.tools-dock.expanded {
+  height: min(42vh, 360px);
+}
+
+.tools-dock-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 14px;
+  background: #161c19;
+  border: 0;
+  border-bottom: 1px solid #24302a;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.tools-dock-tab:hover {
+  background: #1a221e;
+}
+
+.tools-dock-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.tools-dock-sub {
+  font-size: 12px;
+  color: #8fa198;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tools-dock-chev {
+  font-size: 11px;
+  color: #8fa198;
+}
+
+.tools-dock-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 860px) {
+  .tools-dock {
+    left: 0;
+  }
+  .tools-selectors .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}

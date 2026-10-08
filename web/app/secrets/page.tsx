@@ -63,7 +63,7 @@ export default function SecretsPage() {
         </div>
       </div>
 
-      <div className="panel" style={{ maxWidth: 560 }}>
+      <div className="panel" style={{ maxWidth: "none", width: "100%" }}>
         <div className="card-head"><div className="card-title">Add a secret</div></div>
         {/* autoComplete="off" plus a distinct autocomplete value on the password field
             keeps browser password managers from guessing the scope select is a

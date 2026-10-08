@@ -1,18 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { UserSwitcher } from "@/components/terminal/UserSwitcher";
 import { IconTools } from "@/components/icons";
-import type { ListResponse, Server } from "@/lib/types";
-
-type ToolStatus = {
-  name: string;
-  installed: boolean;
-  version?: string;
-  path?: string;
-};
+import {
+  clearToolsCache,
+  mergeToolStatuses,
+  readToolsCache,
+  writeToolsCache,
+} from "@/lib/tools-cache";
+import { consumeToolsSSE, type ToolsStreamDone } from "@/lib/tools-stream";
+import type { ListResponse, Server, ToolStatus } from "@/lib/types";
+import "./tools.css";
 
 const INSTALLABLE = ["node", "go", "python", "pm2", "git", "yarn", "pnpm", "bun"] as const;
 
@@ -27,14 +28,35 @@ const TOOL_BLURB: Record<string, string> = {
   bun: "Bun under ~/.bun",
 };
 
+type RowState = "idle" | "waiting" | "ready" | "error";
+type JobOp = "install" | "uninstall";
+
+type DockJob = {
+  op: JobOp;
+  tool: string;
+  percent: number;
+  log: string;
+  done: boolean;
+  failed?: boolean;
+};
+
+function pickStatus(byName: Record<string, ToolStatus>, name: string): ToolStatus | undefined {
+  if (byName[name]) return byName[name];
+  if (name === "python") return byName.python3;
+  return undefined;
+}
+
 export default function ToolsPage() {
   const [servers, setServers] = useState<Server[]>([]);
   const [serverId, setServerId] = useState("");
   const [runAs, setRunAs] = useState("");
-  const [tools, setTools] = useState<ToolStatus[] | null>(null);
-  const [busy, setBusy] = useState<"detect" | string | null>(null);
-  const [log, setLog] = useState<string | null>(null);
+  const [byName, setByName] = useState<Record<string, ToolStatus>>({});
+  const [rowState, setRowState] = useState<Record<string, RowState>>({});
   const [error, setError] = useState<string | null>(null);
+  const [job, setJob] = useState<DockJob | null>(null);
+  const [dockOpen, setDockOpen] = useState(true);
+  const scanGen = useRef(0);
+  const logPaneRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -57,62 +79,171 @@ export default function ToolsPage() {
     [servers],
   );
 
-  const detect = useCallback(async () => {
-    if (!serverId) return;
-    setBusy("detect");
-    setError(null);
-    setLog(null);
-    try {
-      const q = new URLSearchParams();
-      if (runAs) q.set("run_as", runAs);
-      const res = await fetch(`/api/servers/${serverId}/tools?${q}`);
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      setTools((body.tools || []) as ToolStatus[]);
-    } catch (e) {
-      setError((e as Error).message);
-      setTools(null);
-    } finally {
-      setBusy(null);
-    }
-  }, [serverId, runAs]);
+  const startJob = useCallback((op: JobOp, tool: string) => {
+    setDockOpen(true);
+    setJob({
+      op,
+      tool,
+      percent: 1,
+      log: `${op === "install" ? "Installing" : "Uninstalling"} ${tool}…\n`,
+      done: false,
+    });
+  }, []);
+
+  const scanTool = useCallback(
+    async (tool: string, gen: number) => {
+      if (!serverId) return;
+      setRowState((s) => ({ ...s, [tool]: "waiting" }));
+      try {
+        const q = new URLSearchParams({ tool });
+        if (runAs) q.set("run_as", runAs);
+        const res = await fetch(`/api/servers/${serverId}/tools?${q}`);
+        const body = await res.json().catch(() => ({}));
+        if (gen !== scanGen.current) return;
+        if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+        const tools = (body.tools || []) as ToolStatus[];
+        setByName((prev) => {
+          const next = mergeToolStatuses(prev, tools);
+          writeToolsCache(serverId, runAs, next);
+          return next;
+        });
+        setRowState((s) => ({ ...s, [tool]: "ready" }));
+      } catch (e) {
+        if (gen !== scanGen.current) return;
+        setRowState((s) => ({ ...s, [tool]: "error" }));
+        setError((e as Error).message);
+      }
+    },
+    [serverId, runAs],
+  );
+
+  const scanAll = useCallback(
+    (force: boolean) => {
+      if (!serverId) return;
+      const gen = ++scanGen.current;
+      setError(null);
+
+      if (!force) {
+        const cached = readToolsCache(serverId, runAs);
+        if (cached) {
+          setByName(cached.tools);
+          const ready: Record<string, RowState> = {};
+          for (const name of INSTALLABLE) ready[name] = "ready";
+          setRowState(ready);
+          return;
+        }
+      } else {
+        clearToolsCache(serverId, runAs);
+      }
+
+      const waiting: Record<string, RowState> = {};
+      for (const name of INSTALLABLE) waiting[name] = "waiting";
+      setRowState(waiting);
+      setByName({});
+
+      // Kick each tool off independently so rows fill as probes return.
+      for (const name of INSTALLABLE) {
+        void scanTool(name, gen);
+      }
+    },
+    [serverId, runAs, scanTool],
+  );
 
   useEffect(() => {
-    if (serverId) void detect();
-  }, [serverId, runAs, detect]);
+    if (serverId) scanAll(false);
+  }, [serverId, runAs, scanAll]);
 
-  async function install(tool: string) {
-    if (!serverId) return;
-    setBusy(tool);
+  useEffect(() => {
+    const el = logPaneRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [job?.log]);
+
+  async function mutate(op: JobOp, tool: string) {
+    if (!serverId || job) return;
+    startJob(op, tool);
     setError(null);
-    setLog(null);
     try {
-      const res = await fetch(`/api/servers/${serverId}/tools/install`, {
+      const res = await fetch(`/api/servers/${serverId}/tools/${op}`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          accept: "text/event-stream",
+        },
         body: JSON.stringify({ run_as: runAs, tool }),
       });
-      const body = await res.json().catch(() => ({}));
-      if (body.log) setLog(String(body.log));
-      if (body.tools) setTools(body.tools as ToolStatus[]);
-      if (!res.ok || body.status === "failed") {
-        throw new Error(body.error || `install failed (exit ${body.exit_code ?? "?"})`);
+      // Non-SSE error (offline / bad request) still returns JSON.
+      const ctype = res.headers.get("content-type") || "";
+      if (!res.ok && !ctype.includes("text/event-stream")) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
+
+      let doneBody: ToolsStreamDone | null = null;
+
+      await consumeToolsSSE(res, {
+        onLog: (ev) => {
+          setJob((prev) => {
+            if (!prev || prev.done) return prev;
+            const chunk = ev.chunk || "";
+            const pct = typeof ev.percent === "number" && ev.percent > 0
+              ? Math.max(prev.percent, Math.min(95, ev.percent))
+              : prev.percent;
+            return { ...prev, percent: pct, log: prev.log + chunk };
+          });
+        },
+        onDone: (ev) => {
+          doneBody = ev;
+        },
+      });
+
+      const body: ToolsStreamDone = doneBody ?? {};
+      const failed = body.status === "failed" || (body.exit_code != null && body.exit_code !== 0);
+      const finalLog = body.log && body.log.length > 0 ? body.log : undefined;
+      setJob((prev) => ({
+        op,
+        tool,
+        percent: 100,
+        log: finalLog || prev?.log || (failed ? `${op} failed\n` : `${op} finished\n`),
+        done: true,
+        failed,
+      }));
+      if (body.tools) {
+        const tools = body.tools as ToolStatus[];
+        const next: Record<string, ToolStatus> = {};
+        for (const t of tools) next[t.name] = t;
+        setByName(next);
+        writeToolsCache(serverId, runAs, next);
+        const ready: Record<string, RowState> = {};
+        for (const name of INSTALLABLE) ready[name] = "ready";
+        setRowState(ready);
+      } else {
+        clearToolsCache(serverId, runAs);
+        scanAll(true);
+      }
+      if (failed) {
+        throw new Error(body.error || `${op} failed (exit ${body.exit_code ?? "?"})`);
       }
     } catch (e) {
       setError((e as Error).message);
-    } finally {
-      setBusy(null);
+      setJob((prev) =>
+        prev
+          ? {
+              ...prev,
+              percent: 100,
+              done: true,
+              failed: true,
+              log: prev.log + `\nERROR: ${(e as Error).message}\n`,
+            }
+          : prev,
+      );
     }
   }
 
-  const byName = useMemo(() => {
-    const m = new Map<string, ToolStatus>();
-    for (const t of tools || []) m.set(t.name, t);
-    return m;
-  }, [tools]);
+  const waitingCount = INSTALLABLE.filter((n) => rowState[n] === "waiting").length;
+  const readyCount = INSTALLABLE.filter((n) => rowState[n] === "ready").length;
 
   return (
-    <>
+    <div className="tools-page">
       <div className="page-head">
         <div>
           <h1 style={{ display: "flex", alignItems: "center", gap: 10, margin: 0 }}>
@@ -125,7 +256,7 @@ export default function ToolsPage() {
         </div>
       </div>
 
-      <div className="panel" style={{ maxWidth: 720 }}>
+      <div className="panel tools-selectors">
         <div className="grid-2">
           <div className="field">
             <label htmlFor="tools-server">Server</label>
@@ -154,9 +285,21 @@ export default function ToolsPage() {
             <p className="field-hint">Installs land in this account&apos;s home when possible.</p>
           </div>
         </div>
-        <div className="cluster" style={{ marginTop: 8 }}>
-          <button type="button" className="button secondary sm" onClick={() => void detect()} disabled={!serverId || busy === "detect"}>
-            {busy === "detect" ? "Scanning…" : "Rescan"}
+        <div className="cluster" style={{ marginTop: 8, justifyContent: "space-between" }}>
+          <p className="subtle" style={{ margin: 0, fontSize: 13 }}>
+            {waitingCount > 0
+              ? `Loaded ${readyCount}/${INSTALLABLE.length} · waiting for ${waitingCount}…`
+              : readyCount > 0
+                ? `${readyCount} tools ready (cached until install/uninstall)`
+                : "Pick a server to scan"}
+          </p>
+          <button
+            type="button"
+            className="button secondary sm"
+            onClick={() => scanAll(true)}
+            disabled={!serverId || !!job || waitingCount > 0}
+          >
+            {waitingCount > 0 ? "Scanning…" : "Rescan"}
           </button>
         </div>
       </div>
@@ -165,86 +308,107 @@ export default function ToolsPage() {
 
       <div className="panel" style={{ marginTop: 16 }}>
         <div className="card-title">Toolchains</div>
-        {!tools && !error && <p className="subtle">Scanning…</p>}
-        {tools && (
-          <div className="tools-grid" style={{ display: "grid", gap: 12, marginTop: 12 }}>
-            {INSTALLABLE.map((name) => {
-              const st = byName.get(name) || byName.get(name === "python" ? "python3" : name);
-              const installed = !!(st?.installed || (name === "python" && byName.get("python3")?.installed));
-              const version = st?.version || (name === "python" ? byName.get("python3")?.version : "") || "";
-              const path = st?.path || "";
-              return (
-                <div
-                  key={name}
-                  className="row"
-                  style={{
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    padding: "10px 0",
-                    borderBottom: "1px solid var(--border, #e5e5e5)",
-                  }}
-                >
-                  <div>
-                    <div className="cluster" style={{ gap: 8, alignItems: "center" }}>
-                      <strong>{name}</strong>
+        <div className="tools-grid">
+          {INSTALLABLE.map((name) => {
+            const st = pickStatus(byName, name);
+            const state = rowState[name] || "idle";
+            const installed = !!(st?.installed || (name === "python" && byName.python3?.installed));
+            const version = st?.version || (name === "python" ? byName.python3?.version : "") || "";
+            const path = st?.path || "";
+            const active = job && !job.done && job.tool === name;
+            const pct = active ? Math.round(job.percent) : 0;
+
+            return (
+              <div key={name} className="tools-row">
+                <div className="tools-row-meta">
+                  <div className="cluster" style={{ gap: 8, alignItems: "center" }}>
+                    <strong>{name}</strong>
+                    {state === "waiting" || state === "idle" ? (
+                      <span className="pill neutral">checking…</span>
+                    ) : (
                       <span className={`pill ${installed ? "ok" : "neutral"}`}>
                         {installed ? "installed" : "missing"}
                       </span>
-                    </div>
-                    <p className="field-hint" style={{ margin: "4px 0 0" }}>
-                      {TOOL_BLURB[name]}
-                      {version ? <> · {version}</> : null}
-                      {path ? <> · <code>{path}</code></> : null}
-                    </p>
+                    )}
                   </div>
+                  <p className="field-hint" style={{ margin: "4px 0 0" }}>
+                    {TOOL_BLURB[name]}
+                    {version ? <> · {version}</> : null}
+                    {path ? <> · <code>{path}</code></> : null}
+                    {state === "waiting" ? (
+                      <span className="tools-status-waiting"> · waiting…</span>
+                    ) : null}
+                  </p>
+                </div>
+                <div className="tools-row-actions">
+                  {(installed || (active && job.op === "uninstall")) && (
+                    <button
+                      type="button"
+                      className={`button secondary sm tools-progress-btn`}
+                      disabled={!serverId || (!!job && !(active && job.op === "uninstall")) || state === "waiting"}
+                      onClick={() => void mutate("uninstall", name)}
+                    >
+                      {active && job.op === "uninstall" ? (
+                        <>
+                          <span className="tools-progress-fill" style={{ width: `${pct}%` }} />
+                          <span className="tools-progress-label">Removing {pct}%</span>
+                        </>
+                      ) : (
+                        <span className="tools-progress-label">Uninstall</span>
+                      )}
+                    </button>
+                  )}
                   <button
                     type="button"
-                    className="button sm"
-                    disabled={!serverId || busy !== null}
-                    onClick={() => void install(name)}
+                    className="button sm tools-progress-btn"
+                    disabled={!serverId || (!!job && !(active && job.op === "install")) || state === "waiting"}
+                    onClick={() => void mutate("install", name)}
                   >
-                    {busy === name ? "Installing…" : installed ? "Reinstall" : "Install"}
+                    {active && job.op === "install" ? (
+                      <>
+                        <span className="tools-progress-fill" style={{ width: `${pct}%` }} />
+                        <span className="tools-progress-label">Installing {pct}%</span>
+                      </>
+                    ) : (
+                      <span className="tools-progress-label">
+                        {installed ? "Reinstall" : "Install"}
+                      </span>
+                    )}
                   </button>
                 </div>
-              );
-            })}
-          </div>
-        )}
-        {tools && tools.filter((t) => !INSTALLABLE.includes(t.name as typeof INSTALLABLE[number])).length > 0 && (
-          <div style={{ marginTop: 20 }}>
-            <div className="card-title">Also detected</div>
-            <ul className="subtle" style={{ marginTop: 8 }}>
-              {tools
-                .filter((t) => !INSTALLABLE.includes(t.name as typeof INSTALLABLE[number]))
-                .map((t) => (
-                  <li key={t.name}>
-                    <code>{t.name}</code>
-                    {t.installed ? ` — ${t.version || "ok"}` : " — missing"}
-                    {t.path ? ` (${t.path})` : ""}
-                  </li>
-                ))}
-            </ul>
-          </div>
-        )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      {log && (
-        <div className="panel" style={{ marginTop: 16 }}>
-          <div className="card-title">Install log</div>
-          <pre
-            style={{
-              marginTop: 8,
-              maxHeight: 320,
-              overflow: "auto",
-              fontSize: 12,
-              whiteSpace: "pre-wrap",
-            }}
+      {job && (
+        <div className={`tools-dock ${dockOpen ? "expanded" : "collapsed"}`} role="region" aria-label="Install log">
+          <button
+            type="button"
+            className="tools-dock-tab"
+            onClick={() => setDockOpen((v) => !v)}
+            aria-expanded={dockOpen}
           >
-            {log}
-          </pre>
+            <span className="tools-dock-title">
+              {job.op === "uninstall" ? "Uninstall" : "Install"} · {job.tool}
+            </span>
+            <span className="tools-dock-sub">
+              {job.done
+                ? job.failed
+                  ? "Failed"
+                  : "Done"
+                : `${Math.round(job.percent)}%`}
+            </span>
+            <span className="tools-dock-chev">{dockOpen ? "▾" : "▴"}</span>
+          </button>
+          {dockOpen && (
+            <div className="tools-dock-body" ref={logPaneRef}>
+              {job.log || "Waiting for output…"}
+            </div>
+          )}
         </div>
       )}
-    </>
+    </div>
   );
 }

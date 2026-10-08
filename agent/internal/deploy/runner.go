@@ -33,8 +33,11 @@ const (
 // Bounds on a single run. The timeout keeps a wedged installer (one waiting on a
 // prompt nobody will answer, say) from holding the project forever; the log cap
 // keeps a runaway build from filling the database with megabytes of progress bars.
+//
+// Default is 60m (not 15m): a Next.js + Go install on a Pi routinely exceeds a
+// quarter-hour even when healthy. Projects can still set deploy_timeout lower.
 const (
-	defaultRunTimeout = 15 * time.Minute
+	defaultRunTimeout = 60 * time.Minute
 	maxRunTimeout     = 2 * time.Hour
 	logCapBytes       = 2 << 20 // 2MB of streamed output per run
 )

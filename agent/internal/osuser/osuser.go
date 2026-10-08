@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strconv"
 	"syscall"
 )
@@ -100,15 +101,27 @@ func (c *Credential) SysProcAttr() *syscall.SysProcAttr {
 // Env returns the environment overrides that make a switched-to process look like it
 // belongs to that user. Without these a job running as `deploy` would still write to
 // root's HOME, which is a surprising and occasionally destructive difference.
+//
+// Also rewrites Go cache paths under that home. A root agent unit sets
+// GOCACHE=/root/.cache/go-build; inheriting that while uid is `pi` fails with
+// "mkdir /root/.cache: permission denied" on every `go build` in an install script.
 func (c *Credential) Env() []string {
 	if c == nil {
 		return nil
 	}
+	home := c.Home
+	if home == "" {
+		home = "/tmp"
+	}
+	gopath := filepath.Join(home, "go")
 	return []string{
 		"USER=" + c.Username,
 		"LOGNAME=" + c.Username,
-		"HOME=" + c.Home,
+		"HOME=" + home,
 		"SHELL=" + c.Shell,
+		"GOPATH=" + gopath,
+		"GOMODCACHE=" + filepath.Join(gopath, "pkg", "mod"),
+		"GOCACHE=" + filepath.Join(home, ".cache", "go-build"),
 	}
 }
 

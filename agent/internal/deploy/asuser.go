@@ -27,19 +27,51 @@ func applyCredential(cmd *exec.Cmd, cred *osuser.Credential) {
 	}
 }
 
+// credEnvKeysDropped are inherited from the agent process but must not survive a
+// user switch. HOME/USER come from Credential.Env; Go cache vars from a root
+// systemd unit would otherwise keep pointing at /root while the child runs as pi.
+var credEnvKeysDropped = []string{
+	"HOME", "USER", "LOGNAME", "SHELL",
+	"GOPATH", "GOMODCACHE", "GOCACHE", "GOTMPDIR",
+	"TMPDIR", "TMP", "TEMP",
+}
+
 // credEnv merges identity overrides and optional TMPDIR for the target account.
 func credEnv(cred *osuser.Credential, tmpDir string, extra map[string]string) []string {
 	env := append([]string(nil), os.Environ()...)
 	if cred != nil {
+		env = stripEnvKeys(env, credEnvKeysDropped...)
 		env = append(env, cred.Env()...)
 	}
 	if tmpDir != "" {
+		env = stripEnvKeys(env, "TMPDIR", "TMP", "TEMP")
 		env = append(env, "TMPDIR="+tmpDir, "TMP="+tmpDir, "TEMP="+tmpDir)
 	}
 	for k, v := range extra {
 		env = append(env, k+"="+v)
 	}
 	return env
+}
+
+func stripEnvKeys(env []string, keys ...string) []string {
+	if len(keys) == 0 || len(env) == 0 {
+		return env
+	}
+	drop := make(map[string]struct{}, len(keys))
+	for _, k := range keys {
+		drop[k] = struct{}{}
+	}
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		k, _, ok := strings.Cut(e, "=")
+		if ok {
+			if _, skip := drop[k]; skip {
+				continue
+			}
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // lookPathAs asks a login shell of the target user whether bin is on PATH. This is

@@ -73,7 +73,7 @@ func (s *Store) StuckRuns(ctx context.Context, grace time.Duration) ([]Run, erro
 		from deploy_runs r
 		where r.status in ('pending','running')
 		  and r.created_at < now() - (
-		        coalesce(nullif((select p.deploy_timeout_seconds from deploy_projects p where p.id = r.project_id), 0), 900)
+		        coalesce(nullif((select p.deploy_timeout_seconds from deploy_projects p where p.id = r.project_id), 0), 3600)
 		        + $1
 		      ) * interval '1 second'
 		order by r.created_at asc

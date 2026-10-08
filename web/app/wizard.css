@@ -260,11 +260,63 @@ p.small { margin: 4px 0 12px; }
 .deploy-flow > .panel + .panel { margin-top: 16px; }
 .advanced summary .chev svg { width: 16px; height: 16px; }
 
-/* Deploy landing — large server cards */
+/* Deploy landing — large server cards (3 per row on desktop) */
 .deploy-server-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
+}
+@media (max-width: 1100px) {
+  .deploy-server-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .deploy-server-grid { grid-template-columns: 1fr; }
+}
+
+.deploy-project-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 1100px) {
+  .deploy-project-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .deploy-project-grid { grid-template-columns: 1fr; }
+}
+.deploy-project-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 18px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  text-decoration: none;
+  color: inherit;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  min-height: 140px;
+}
+.deploy-project-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-card);
+  transform: translateY(-1px);
+  color: inherit;
+}
+.deploy-project-card-name {
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.deploy-project-card-foot {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding-top: 8px;
 }
 .deploy-server-card {
   display: flex;
@@ -398,8 +450,14 @@ table.data-table tr:last-child td { border-bottom: 0; }
 }
 .server-picker-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+@media (max-width: 1100px) {
+  .server-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .server-picker-grid { grid-template-columns: 1fr; }
 }
 .server-picker-card {
   display: flex;

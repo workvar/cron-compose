@@ -67,7 +67,7 @@ const TOP_KEYS: Row[] = [
   { key: "redeploy_on", type: "list", def: '["branch"]', desc: <>Git events that redeploy: <code>branch</code> (push to branch), <code>tag</code> (tag push), <code>release</code> (published release). Requires a connected GitHub or GitLab account.</> },
   { key: "env", type: "map", desc: "Non-secret environment variables, shared by every app." },
   { key: "health", type: "object", desc: "Optional HTTP probe that must pass before a deploy counts as successful." },
-  { key: "deploy_timeout", type: "seconds", def: "900", desc: "Budget for a whole deploy. The agent caps it at 2 hours." },
+  { key: "deploy_timeout", type: "seconds", def: "3600", desc: "Budget for a whole deploy. The agent caps it at 2 hours." },
   { key: "auto_rollback", type: "boolean", def: "false", desc: "When a deploy fails, redeploy the last commit that worked." },
   { key: "apps", type: "list", desc: "Several apps from one repo (monorepo). Each item takes the keys below." },
 ];
@@ -207,13 +207,62 @@ export default function DocsPage() {
       </nav>
 
       <article className="docs-body">
-        <p className="docs-eyebrow">Docs</p>
-        <h1>croncompose.yml</h1>
-        <p className="docs-lead">
-          One file at the root of your repo that tells CronCompose how to build and run your app: the install command,
-          what keeps it running, env vars, health check, and which server it goes to. Import the repo and every field
-          fills itself in.
-        </p>
+        <header className="docs-hero">
+          <p className="docs-eyebrow">Get setup</p>
+          <h1>croncompose.yml reference</h1>
+          <p className="docs-lead">
+            Find the guides and fields you need to build, run, and redeploy with CronCompose.
+          </p>
+          <div className="docs-cards">
+            <a className="docs-card" href="#quick-start">
+              <span className="docs-card-icon" aria-hidden>▶</span>
+              <strong>Quick start</strong>
+              <span>Drop a minimal file in the repo root and import the project.</span>
+            </a>
+            <a className="docs-card" href="#reference">
+              <span className="docs-card-icon" aria-hidden>{"{}"}</span>
+              <strong>Key reference</strong>
+              <span>Every top-level field, default, and what it changes on deploy.</span>
+            </a>
+            <a className="docs-card" href="#examples">
+              <span className="docs-card-icon" aria-hidden>◇</span>
+              <strong>Examples</strong>
+              <span>Next.js, Go, monorepos, and script-only deploys.</span>
+            </a>
+            <Link className="docs-card" href="/deploys/new">
+              <span className="docs-card-icon" aria-hidden>⇢</span>
+              <strong>Import a project</strong>
+              <span>Open Deploy and let CronCompose fill the form from your file.</span>
+            </Link>
+          </div>
+        </header>
+
+        <div className="docs-frameworks" aria-label="Common stacks">
+          <div className="docs-framework">
+            <div>
+              <strong>Next.js / Node</strong>
+              <span>pm2 or systemd with <code>npm ci && npm run build</code>.</span>
+            </div>
+          </div>
+          <div className="docs-framework">
+            <div>
+              <strong>Go</strong>
+              <span>Build a binary, run it under systemd with a health path.</span>
+            </div>
+          </div>
+          <div className="docs-framework">
+            <div>
+              <strong>Monorepo apps</strong>
+              <span>Use <code>apps:</code> for web + API from one repository.</span>
+            </div>
+          </div>
+          <div className="docs-framework">
+            <div>
+              <strong>Docker Compose</strong>
+              <span>Point <code>process_manager: docker</code> at your compose file.</span>
+            </div>
+          </div>
+        </div>
 
         <h2 id="quick-start">Quick start</h2>
         <ol className="docs-steps">

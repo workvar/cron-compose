@@ -435,6 +435,13 @@ export type DeployApp = {
   health?: DeployAppHealth;
 };
 
+export type ToolStatus = {
+  name: string;
+  installed: boolean;
+  version?: string;
+  path?: string;
+};
+
 export type DeployHealthState = "unknown" | "healthy" | "degraded" | "rolled_back";
 
 export type DeployProject = {

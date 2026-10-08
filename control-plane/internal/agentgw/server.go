@@ -151,9 +151,19 @@ func (g *Gateway) Users() *PendingUserRequests { return g.users }
 func (g *Gateway) Tools() *PendingToolRequests { return g.tools }
 
 // Start binds and serves over mTLS.
-func (g *Gateway) Start(_ context.Context) error {
+func (g *Gateway) Start(ctx context.Context) error {
 	if g.bundle == nil {
 		return errors.New("agentgw: nil PKI bundle")
+	}
+
+	// A restart drops every in-memory stream. Until each agent reconnects, treat
+	// previously-online servers as offline so Terminal and the servers page agree.
+	if g.pool != nil {
+		if tag, err := g.pool.Exec(ctx, `update servers set status = 'offline' where status = 'online'`); err != nil {
+			g.log.Warn("reset online agents on start failed", "err", err)
+		} else if tag.RowsAffected() > 0 {
+			g.log.Info("marked agents offline until they reconnect", "count", tag.RowsAffected())
+		}
 	}
 
 	clientCAs := x509.NewCertPool()

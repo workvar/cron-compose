@@ -57,14 +57,18 @@ func (r *Registry) Add(serverID string) *Conn {
 	return c
 }
 
-// Remove drops a Conn (only if it is still the registered one for serverID).
-func (r *Registry) Remove(c *Conn) {
+// Remove drops a Conn only if it is still the registered one for serverID.
+// Returns true when this Conn was the live stream (so the server is now offline).
+// A superseded reconnect leaves the newer Conn in place and returns false.
+func (r *Registry) Remove(c *Conn) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if cur, ok := r.conns[c.serverID]; ok && cur == c {
 		delete(r.conns, c.serverID)
 		close(c.done)
+		return true
 	}
+	return false
 }
 
 // Send pushes a message to the named server, or returns ErrAgentOffline.

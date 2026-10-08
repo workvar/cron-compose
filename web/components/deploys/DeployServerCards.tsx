@@ -56,7 +56,7 @@ export function DeployServerCards({ servers, connectors }: Props) {
 
   return (
     <div>
-      <div className="search" style={{ marginBottom: 18, maxWidth: 420 }}>
+      <div className="search" style={{ marginBottom: 18, width: "100%", maxWidth: "none" }}>
         <IconSearch />
         <input
           type="search"

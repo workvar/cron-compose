@@ -89,6 +89,14 @@ export const IconCalendarClock = (p: P) => (
 export const IconClipboard = (p: P) => (
   <svg {...base(p)}><rect x="6" y="4" width="12" height="17" rx="2" /><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9.5 13l1.5 1.5 3.5-3.5" /></svg>
 );
+export const IconArchitecture = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3" y="3" width="7" height="7" rx="1.5" />
+    <rect x="14" y="3" width="7" height="7" rx="1.5" />
+    <rect x="8.5" y="14" width="7" height="7" rx="1.5" />
+    <path d="M10 6.5h4M6.5 10v2.5A1.5 1.5 0 0 0 8 14M17.5 10v2.5A1.5 1.5 0 0 1 16 14" />
+  </svg>
+);
 export const IconPlay = (p: P) => (
   <svg {...base(p)}><path d="M6 4.5v15l13-7.5-13-7.5Z" /></svg>
 );

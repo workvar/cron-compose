@@ -72,13 +72,13 @@ export function HealthCheckFields({ value, onChange, appPort, idPrefix = "", hid
           <label htmlFor={id("deploy-timeout")}>Deploy timeout (seconds)</label>
           <input
             id={id("deploy-timeout")}
-            placeholder="900"
+            placeholder="3600"
             value={value.deployTimeout}
             onChange={(e) => set({ deployTimeout: e.target.value })}
           />
           <p className="field-hint">
             Whole-run budget, so a wedged installer cannot hold the project forever. Empty uses the
-            agent&apos;s default of 15 minutes; the agent caps it at 2 hours.
+            agent&apos;s default of 60 minutes; the agent caps it at 2 hours.
           </p>
         </div>
       )}

@@ -13,6 +13,8 @@ import { Treemap } from "@/components/charts/Treemap";
 import { IconPlus, IconJobs, IconServer, IconChevronRight } from "@/components/icons";
 import type { Server } from "@/lib/types";
 
+const deployHref = "/deploys/new";
+
 const serverTone: Record<Server["status"], string> = {
   online: "ok",
   offline: "danger",
@@ -50,7 +52,6 @@ function formatUptime(sec?: number): string {
 
 export default async function DashboardPage() {
   const d = await getDashboardData();
-  const newJobHref = d.servers.length > 0 ? `/servers/${d.servers[0].id}/jobs/new` : "/servers/new";
   const host = d.host;
 
   return (
@@ -58,11 +59,11 @@ export default async function DashboardPage() {
       <div className="page-head">
         <div>
           <h1>Dashboard</h1>
-          <p className="subtle">Schedule, run, and watch jobs across your Linux fleet.</p>
+          <p className="subtle">Deploy apps, watch agents, and keep your Linux fleet healthy.</p>
         </div>
         <div className="page-head-actions">
-          <Link href="/servers/new" className="button"><IconPlus /> Add server</Link>
-          <Link href="/jobs" className="button secondary">View jobs</Link>
+          <Link href="/servers/new" className="button secondary"><IconPlus /> Add server</Link>
+          <Link href={deployHref} className="button"><IconPlus /> New project</Link>
         </div>
       </div>
 
@@ -134,9 +135,9 @@ export default async function DashboardPage() {
             <>
               <p style={{ fontSize: 22, fontWeight: 800, color: "var(--text)", margin: "4px 0" }}>All clear</p>
               <p className="subtle" style={{ fontSize: 13 }}>
-                Every agent is reporting in. Add a new scheduled job whenever you&apos;re ready.
+                Every agent is reporting in. Import a repo and deploy whenever you&apos;re ready.
               </p>
-              <Link href={newJobHref} className="button block" style={{ marginTop: 14 }}><IconPlus /> New job</Link>
+              <Link href={deployHref} className="button block" style={{ marginTop: 14 }}><IconPlus /> New project</Link>
             </>
           )}
         </section>

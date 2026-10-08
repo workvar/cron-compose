@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -32,7 +33,14 @@ func (s *service) AgentStream(stream agentv1.AgentService_AgentStreamServer) err
 	}
 
 	conn := s.registry.Add(serverID)
-	defer s.registry.Remove(conn)
+	defer func() {
+		if s.registry.Remove(conn) {
+			// Stream is gone and nothing replaced it. The servers page used to keep
+			// showing "online" from the last Hello while Terminal/ListUsers already
+			// failed with agent offline (those need a live registry Conn).
+			s.markOffline(serverID)
+		}
+	}()
 
 	metrics.AgentsConnected.Inc()
 	defer metrics.AgentsConnected.Dec()
@@ -162,6 +170,9 @@ func (s *service) handleAgentMessage(ctx context.Context, serverID string, msg *
 	case *agentv1.AgentMessage_ListUsersResult:
 		s.users.Resolve(body.ListUsersResult)
 		return nil
+	case *agentv1.AgentMessage_HostToolsEvent:
+		s.tools.PushLog(body.HostToolsEvent)
+		return nil
 	case *agentv1.AgentMessage_HostToolsResult:
 		s.tools.Resolve(body.HostToolsResult)
 		return nil
@@ -205,6 +216,16 @@ func (s *service) onHello(ctx context.Context, serverID string, h *agentv1.Hello
 func (s *service) onHeartbeat(ctx context.Context, serverID string, _ *agentv1.Heartbeat) error {
 	_, err := s.pool.Exec(ctx, `update servers set last_seen_at = now(), status = 'online' where id = $1`, serverID)
 	return err
+}
+
+// markOffline records that no AgentStream is registered for serverID. Uses a
+// background context because the stream context is already canceled on disconnect.
+func (s *service) markOffline(serverID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := s.pool.Exec(ctx, `update servers set status = 'offline' where id = $1 and status = 'online'`, serverID); err != nil {
+		s.log.Warn("mark agent offline failed", "server_id", serverID, "err", err)
+	}
 }
 
 func (s *service) onRunStarted(ctx context.Context, serverID string, r *agentv1.RunStarted) error {

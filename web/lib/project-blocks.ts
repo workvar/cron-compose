@@ -1,4 +1,4 @@
-import type { DeployApp, DeployEnvVar, DeployInspect } from "./types";
+import type { DeployApp, DeployEnvVar, DeployInspect, DeployProject } from "./types";
 import { defaultRunForFramework, fieldsForFramework, frameworkPreset } from "./frameworks";
 
 export type ProjectBlock = {
@@ -195,5 +195,44 @@ export function blocksToDeployApps(
           timeout: block.healthTimeout ? Number(block.healthTimeout) : undefined,
         }
       : undefined,
+  }));
+}
+
+/** Seed configure-tab blocks from an existing project (edit flow). */
+export function blocksFromProject(project: DeployProject): ProjectBlock[] {
+  const apps = project.apps?.length
+    ? project.apps
+    : [
+        {
+          name: project.name || nameFromRoot(project.root_directory || ".", project.repo_full_name),
+          root: project.root_directory || ".",
+          language: project.language,
+          install: project.install_script,
+          process_manager: project.process_manager,
+          port: project.port || undefined,
+          health: project.health_path
+            ? {
+                path: project.health_path,
+                port: project.health_port || undefined,
+                timeout: project.health_timeout_seconds || undefined,
+              }
+            : undefined,
+        } satisfies DeployApp,
+      ];
+
+  return apps.map((app) => ({
+    id: newBlockId(),
+    name: app.name,
+    root: app.root || ".",
+    language: app.language || project.language || "unknown",
+    install: app.install || project.install_script || "",
+    run: app.run || "",
+    cleanup: app.cleanup || "",
+    port: app.port ? String(app.port) : project.port ? String(project.port) : "",
+    processManager: app.process_manager || project.process_manager || "none",
+    autoDetect: false,
+    healthPath: app.health?.path || "",
+    healthPort: app.health?.port ? String(app.health.port) : "",
+    healthTimeout: app.health?.timeout ? String(app.health.timeout) : "",
   }));
 }

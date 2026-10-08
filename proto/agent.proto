@@ -53,6 +53,7 @@ message AgentMessage {
     ListUsersResult list_users_result = 11; // reply to a ListUsersRequest
     UpdateProgress  update_progress   = 12; // self-update / stack rebuild stage
     HostToolsResult host_tools_result = 13; // reply to a HostToolsRequest
+    HostToolsEvent  host_tools_event  = 14; // streaming install/uninstall log chunks
   }
 }
 
@@ -374,14 +375,14 @@ message DeployCommand {
 // ---- Host tools (node, go, python, pm2, …) ----
 //
 // Detect which toolchains are on a chosen account's PATH, or install a curated
-// set for that account. Request/response on the stream (same pattern as
-// ListUsers): the control plane HTTP handler blocks until HostToolsResult.
+// set for that account. Detect is request/response (HostToolsResult). Install and
+// uninstall stream HostToolsEvent log chunks, then finish with HostToolsResult.
 
 message HostToolsRequest {
   string request_id = 1;
-  string op         = 2; // detect | install
+  string op         = 2; // detect | install | uninstall
   string run_as     = 3; // OS user; empty = agent's own user
-  string tool       = 4; // install only: node | go | python | pm2 | git | yarn | pnpm | bun
+  string tool       = 4; // install/uninstall: node | go | python | pm2 | git | yarn | pnpm | bun
 }
 
 message ToolStatus {
@@ -394,10 +395,20 @@ message ToolStatus {
 message HostToolsResult {
   string request_id = 1;
   repeated ToolStatus tools = 2; // detect (and post-install snapshot)
-  string log        = 3; // install stdout/stderr (capped)
+  string log        = 3; // install stdout/stderr (capped); may duplicate streamed chunks
   int32  exit_code  = 4;
   string error      = 5;
   string status     = 6; // succeeded | failed
+}
+
+// HostToolsEvent is a live chunk during install/uninstall. The control plane
+// forwards these over SSE; HostToolsResult still closes the request.
+message HostToolsEvent {
+  string request_id = 1;
+  string kind       = 2; // log | progress
+  bytes  data       = 3; // utf-8 log fragment when kind=log
+  int32  percent    = 4; // 0–100 hint; 0 means unknown
+  int32  seq        = 5;
 }
 
 // HealthCheck is the opt-in "is it actually up" probe run after the process manager

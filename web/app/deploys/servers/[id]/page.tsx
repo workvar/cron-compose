@@ -66,17 +66,22 @@ export default async function DeployServerPage({ params }: Props) {
       {projects.length > 0 && (
         <div style={{ marginTop: 28 }}>
           <div className="card-title" style={{ marginBottom: 12 }}>Projects on this server</div>
-          <div className="stack">
+          <div className="deploy-project-grid">
             {projects.map((p) => (
-              <Link key={p.id} href={`/deploys/${p.id}`} className="panel">
-                <div className="row">
-                  <div>
-                    <div style={{ fontWeight: 700 }}>{p.name}</div>
-                    <div className="subtle" style={{ fontSize: 13 }}>
-                      {p.provider}/{p.repo_full_name}
-                    </div>
-                  </div>
+              <Link key={p.id} href={`/deploys/${p.id}`} className="deploy-project-card">
+                <div className="deploy-project-card-name">{p.name}</div>
+                <div className="subtle" style={{ fontSize: 13 }}>
+                  {p.provider}/{p.repo_full_name}
+                </div>
+                <div className="subtle" style={{ fontSize: 12 }}>
+                  {p.language || "unknown"} · {p.default_branch}
+                </div>
+                <div className="deploy-project-card-foot">
                   <span className="pill">{p.process_manager}</span>
+                  {p.port > 0 && <span className="pill">PORT {p.port}</span>}
+                  <span className="button ghost sm" style={{ marginLeft: "auto" }}>
+                    Open
+                  </span>
                 </div>
               </Link>
             ))}

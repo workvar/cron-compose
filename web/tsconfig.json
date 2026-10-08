@@ -54,6 +54,7 @@
     "lib/frameworks.test.ts",
     "lib/git-repos.test.ts",
     "lib/api-error.test.ts",
-    "lib/deploy-user-path.test.ts"
+    "lib/deploy-user-path.test.ts",
+    "lib/tools-stream.test.ts"
   ]
 }

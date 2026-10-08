@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,10 @@ import (
 	"github.com/croncompose/croncompose/agent/internal/osuser"
 	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
 )
+
+// LogSink receives live stdout/stderr fragments during install/uninstall.
+// percent is a 0–90 hint while the process runs; the final result closes at 100.
+type LogSink func(chunk []byte, percent int32)
 
 const (
 	detectTimeout  = 30 * time.Second
@@ -39,7 +44,9 @@ var Installable = map[string]bool{
 }
 
 // Detect reports which known tools are on the chosen user's login PATH.
-func Detect(ctx context.Context, runAs string) ([]*agentv1.ToolStatus, error) {
+// When only is non-empty, only that tool (and its aliases) is probed so the UI
+// can fill rows progressively instead of waiting for the whole catalog.
+func Detect(ctx context.Context, runAs string, only ...string) ([]*agentv1.ToolStatus, error) {
 	cred, err := osuser.Resolve(runAs)
 	if err != nil {
 		return nil, err
@@ -47,8 +54,13 @@ func Detect(ctx context.Context, runAs string) ([]*agentv1.ToolStatus, error) {
 	ctx, cancel := context.WithTimeout(ctx, detectTimeout)
 	defer cancel()
 
-	out := make([]*agentv1.ToolStatus, 0, len(KnownTools))
-	for _, name := range KnownTools {
+	names := KnownTools
+	if len(only) > 0 && strings.TrimSpace(only[0]) != "" {
+		names = expandToolAliases(strings.ToLower(strings.TrimSpace(only[0])))
+	}
+
+	out := make([]*agentv1.ToolStatus, 0, len(names))
+	for _, name := range names {
 		st := &agentv1.ToolStatus{Name: name}
 		path, ver, ok := probe(ctx, cred, name)
 		st.Installed = ok
@@ -59,9 +71,21 @@ func Detect(ctx context.Context, runAs string) ([]*agentv1.ToolStatus, error) {
 	return out, nil
 }
 
+func expandToolAliases(tool string) []string {
+	switch tool {
+	case "python":
+		return []string{"python", "python3"}
+	case "pip":
+		return []string{"pip", "pip3"}
+	default:
+		return []string{tool}
+	}
+}
+
 // Install runs a curated installer for tool as runAs and returns a fresh detect
-// snapshot plus captured log output.
-func Install(ctx context.Context, runAs, tool string) (tools []*agentv1.ToolStatus, log string, exitCode int, err error) {
+// snapshot plus captured log output. onLog may be nil; when set it receives live
+// stdout/stderr chunks as the installer runs.
+func Install(ctx context.Context, runAs, tool string, onLog LogSink) (tools []*agentv1.ToolStatus, log string, exitCode int, err error) {
 	tool = strings.ToLower(strings.TrimSpace(tool))
 	if !Installable[tool] {
 		return nil, "", 1, fmt.Errorf("unknown or unsupported tool %q", tool)
@@ -74,18 +98,40 @@ func Install(ctx context.Context, runAs, tool string) (tools []*agentv1.ToolStat
 	if err != nil {
 		return nil, "", 1, err
 	}
+	return runScript(ctx, runAs, cred, script, onLog)
+}
 
+// Uninstall removes a curated toolchain install for runAs where we know a safe
+// reverse path (user-local installs). Package-manager installs that need root
+// are best-effort and may refuse. onLog may be nil.
+func Uninstall(ctx context.Context, runAs, tool string, onLog LogSink) (tools []*agentv1.ToolStatus, log string, exitCode int, err error) {
+	tool = strings.ToLower(strings.TrimSpace(tool))
+	if !Installable[tool] {
+		return nil, "", 1, fmt.Errorf("unknown or unsupported tool %q", tool)
+	}
+	cred, err := osuser.Resolve(runAs)
+	if err != nil {
+		return nil, "", 1, err
+	}
+	script, err := uninstallScript(tool, cred)
+	if err != nil {
+		return nil, "", 1, err
+	}
+	return runScript(ctx, runAs, cred, script, onLog)
+}
+
+func runScript(ctx context.Context, runAs string, cred *osuser.Credential, script string, onLog LogSink) (tools []*agentv1.ToolStatus, log string, exitCode int, err error) {
 	ctx, cancel := context.WithTimeout(ctx, installTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "/bin/bash", "-lc", osuser.WrapScript(script))
 	cmd.Env = buildEnv(cred)
 	applyCred(cmd, cred)
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
+	sw := newStreamWriter(onLog)
+	cmd.Stdout = sw
+	cmd.Stderr = sw
 	runErr := cmd.Run()
-	log = trimLog(buf.String())
+	log = trimLog(sw.String())
 	exitCode = 0
 	if runErr != nil {
 		exitCode = 1
@@ -93,7 +139,7 @@ func Install(ctx context.Context, runAs, tool string) (tools []*agentv1.ToolStat
 			exitCode = ee.ExitCode()
 		}
 		if ctx.Err() != nil {
-			return nil, log, exitCode, fmt.Errorf("install timed out")
+			return nil, log, exitCode, fmt.Errorf("timed out")
 		}
 	}
 
@@ -102,6 +148,139 @@ func Install(ctx context.Context, runAs, tool string) (tools []*agentv1.ToolStat
 		return tools, log, exitCode, detErr
 	}
 	return tools, log, exitCode, runErr
+}
+
+// streamWriter tees process output into a capped buffer and optional live sink.
+// Percent climbs toward 90% over a soft expected duration so the UI can show
+// movement while real log lines arrive.
+type streamWriter struct {
+	buf    bytes.Buffer
+	onLog  LogSink
+	start  time.Time
+	expect time.Duration
+}
+
+func newStreamWriter(onLog LogSink) *streamWriter {
+	return &streamWriter{onLog: onLog, start: time.Now(), expect: 3 * time.Minute}
+}
+
+func (w *streamWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	// Cap the retained buffer the same way trimLog does at the end.
+	if w.buf.Len()+len(p) > logCap*2 {
+		keep := w.buf.Bytes()
+		if len(keep) > logCap {
+			w.buf.Reset()
+			_, _ = w.buf.Write(keep[len(keep)-logCap:])
+		}
+	}
+	_, _ = w.buf.Write(p)
+	if w.onLog != nil {
+		chunk := append([]byte(nil), p...)
+		elapsed := time.Since(w.start)
+		pct := int32(elapsed * 90 / w.expect)
+		if pct < 1 {
+			pct = 1
+		}
+		if pct > 90 {
+			pct = 90
+		}
+		w.onLog(chunk, pct)
+	}
+	return len(p), nil
+}
+
+func (w *streamWriter) String() string { return w.buf.String() }
+
+// Ensure streamWriter satisfies io.Writer.
+var _ io.Writer = (*streamWriter)(nil)
+
+func uninstallScript(tool string, cred *osuser.Credential) (string, error) {
+	home := "$HOME"
+	if cred != nil && cred.Home != "" {
+		home = shellQuote(cred.Home)
+	}
+	switch tool {
+	case "node":
+		return fmt.Sprintf(`
+set -euo pipefail
+export NVM_DIR=%s/.nvm
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+  . "$NVM_DIR/nvm.sh"
+  nvm deactivate 2>/dev/null || true
+  nvm uninstall --lts 2>/dev/null || true
+  # Drop every installed node version we can see
+  for v in $(ls "$NVM_DIR/versions/node" 2>/dev/null || true); do
+    nvm uninstall "$v" 2>/dev/null || true
+  done
+fi
+rm -rf %s/.nvm
+echo "node/nvm removed from account home"
+`, home, home), nil
+	case "go":
+		return fmt.Sprintf(`
+set -euo pipefail
+rm -f %s/.local/bin/go %s/.local/bin/gofmt
+rm -rf %s/.local/go
+echo "go removed from ~/.local"
+`, home, home, home), nil
+	case "bun":
+		return fmt.Sprintf(`
+set -euo pipefail
+rm -rf %s/.bun
+echo "bun removed from ~/.bun"
+`, home), nil
+	case "pm2", "yarn", "pnpm":
+		return fmt.Sprintf(`
+set -euo pipefail
+if ! command -v npm >/dev/null 2>&1; then
+  echo "npm not found; nothing to uninstall for %s"
+  exit 0
+fi
+npm uninstall -g %s || true
+echo "%s uninstalled via npm -g"
+`, tool, tool, tool), nil
+	case "python":
+		return `
+set -euo pipefail
+if command -v apt-get >/dev/null 2>&1; then
+  if [ "$(id -u)" -eq 0 ]; then
+    DEBIAN_FRONTEND=noninteractive apt-get remove -y python3 python3-pip python3-venv || true
+    echo "attempted apt remove for python3"
+    exit 0
+  fi
+  echo "python was likely installed system-wide; uninstall needs root"
+  exit 1
+elif command -v brew >/dev/null 2>&1; then
+  brew uninstall python || true
+  exit 0
+fi
+echo "no supported uninstall path for python"
+exit 1
+`, nil
+	case "git":
+		return `
+set -euo pipefail
+if command -v apt-get >/dev/null 2>&1; then
+  if [ "$(id -u)" -eq 0 ]; then
+    DEBIAN_FRONTEND=noninteractive apt-get remove -y git || true
+    echo "attempted apt remove for git"
+    exit 0
+  fi
+  echo "git was likely installed system-wide; uninstall needs root"
+  exit 1
+elif command -v brew >/dev/null 2>&1; then
+  brew uninstall git || true
+  exit 0
+fi
+echo "no supported uninstall path for git"
+exit 1
+`, nil
+	default:
+		return "", fmt.Errorf("no uninstaller for %s", tool)
+	}
 }
 
 func probe(ctx context.Context, cred *osuser.Credential, bin string) (path, version string, ok bool) {
