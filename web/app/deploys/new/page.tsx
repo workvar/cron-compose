@@ -527,7 +527,7 @@ export default function NewDeployPage() {
 
   if (created) {
     return (
-      <div className="deploy-flow">
+      <div className="deploy-flow full">
         <div className="deploy-done panel">
           <div className="deploy-done-icon"><IconCheck /></div>
           <h1>Deploying {created.project.name}</h1>
@@ -574,7 +574,7 @@ export default function NewDeployPage() {
           ? "pasted croncompose.yml"
           : spec?.path;
     return (
-      <div className="deploy-flow">
+      <div className="deploy-flow full">
         <button type="button" className="back-link as-button" onClick={() => setPhase("configure")}>
           <IconChevronLeft /> Back
         </button>

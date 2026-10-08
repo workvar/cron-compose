@@ -738,12 +738,17 @@ func runCmd(ctx context.Context, dir string, env map[string]string, name string,
 }
 
 func runCmdAs(ctx context.Context, dir string, env map[string]string, cred *osuser.Credential, tmpDir, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	// Resolve via the deploy user's login PATH (same as Tools / preflight). A raw
+	// exec.Command("pm2") only sees the agent process PATH, so nvm-global pm2
+	// looks "installed" in Tools but fails at start with "executable file not found".
+	resolved := resolveBin(cred, name)
+	cmd := exec.CommandContext(ctx, resolved, args...)
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	if env != nil || cred != nil || tmpDir != "" {
-		cmd.Env = credEnv(cred, tmpDir, env)
+	merged := pathWithBinDir(env, resolved)
+	if merged != nil || cred != nil || tmpDir != "" {
+		cmd.Env = credEnv(cred, tmpDir, merged)
 	}
 	applyCredential(cmd, cred)
 	out, err := cmd.CombinedOutput()

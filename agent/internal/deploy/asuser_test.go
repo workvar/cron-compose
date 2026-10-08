@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -68,5 +69,44 @@ func TestRunTimeoutDefault(t *testing.T) {
 	}
 	if defaultRunTimeout < 60*time.Minute {
 		t.Fatalf("defaultRunTimeout=%v; Pi multi-app builds need at least an hour", defaultRunTimeout)
+	}
+}
+
+func TestPathWithBinDirPrependsNvmSibling(t *testing.T) {
+	t.Setenv("PATH", "/usr/bin:/bin")
+	bin := "/home/pi/.nvm/versions/node/v20.0.0/bin/pm2"
+	got := pathWithBinDir(nil, bin)
+	wantPrefix := filepath.Dir(bin) + string(os.PathListSeparator)
+	if !strings.HasPrefix(got["PATH"], wantPrefix) {
+		t.Fatalf("PATH=%q, want prefix %q", got["PATH"], wantPrefix)
+	}
+	if !strings.Contains(got["PATH"], "/usr/bin") {
+		t.Fatalf("PATH lost system entries: %q", got["PATH"])
+	}
+}
+
+func TestPathWithBinDirPreservesCallerPATH(t *testing.T) {
+	bin := "/opt/tools/bin/pm2"
+	got := pathWithBinDir(map[string]string{"PATH": "/custom/bin", "FOO": "1"}, bin)
+	if got["FOO"] != "1" {
+		t.Fatalf("extra env dropped: %v", got)
+	}
+	if got["PATH"] != "/opt/tools/bin"+string(os.PathListSeparator)+"/custom/bin" {
+		t.Fatalf("PATH=%q", got["PATH"])
+	}
+}
+
+func TestPathWithBinDirIgnoresRelative(t *testing.T) {
+	env := map[string]string{"PATH": "/usr/bin"}
+	got := pathWithBinDir(env, "pm2")
+	if got["PATH"] != "/usr/bin" {
+		t.Fatalf("relative bin should not rewrite PATH: %v", got)
+	}
+}
+
+func TestResolveBinAbsoluteUnchanged(t *testing.T) {
+	abs := "/usr/bin/git"
+	if got := resolveBin(nil, abs); got != abs {
+		t.Fatalf("resolveBin absolute=%q, want %q", got, abs)
 	}
 }

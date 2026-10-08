@@ -94,6 +94,58 @@ func lookPathAs(cred *osuser.Credential, bin string) (string, error) {
 	return path, nil
 }
 
+// resolveBin finds name on the deploy user's login PATH (nvm/fnm/etc.), then falls
+// back to the agent process PATH. Absolute paths are returned unchanged. Callers
+// that exec the result should also pass pathWithBinDir so siblings like npm next
+// to pm2 stay visible to child processes.
+func resolveBin(cred *osuser.Credential, name string) string {
+	if name == "" || filepath.IsAbs(name) {
+		return name
+	}
+	if path, err := lookPathAs(cred, name); err == nil {
+		return path
+	}
+	if path, err := exec.LookPath(name); err == nil {
+		return path
+	}
+	return name
+}
+
+// pathWithBinDir prepends the directory of an absolute binary to PATH so tools
+// installed beside it (e.g. npm next to pm2 under nvm) remain findable when the
+// agent process PATH is a minimal systemd default.
+func pathWithBinDir(env map[string]string, binPath string) map[string]string {
+	if !filepath.IsAbs(binPath) {
+		return env
+	}
+	dir := filepath.Dir(binPath)
+	out := map[string]string{}
+	for k, v := range env {
+		out[k] = v
+	}
+	base := out["PATH"]
+	if base == "" {
+		base = os.Getenv("PATH")
+	}
+	sep := string(os.PathListSeparator)
+	if base == "" {
+		out["PATH"] = dir
+		return out
+	}
+	if base == dir || strings.HasPrefix(base, dir+sep) {
+		out["PATH"] = base
+		return out
+	}
+	for _, p := range strings.Split(base, sep) {
+		if p == dir {
+			out["PATH"] = base
+			return out
+		}
+	}
+	out["PATH"] = dir + sep + base
+	return out
+}
+
 // ensureUserDirs creates the deploy base and the account's ~/tmp (when set), then
 // chowns them to the target user so later git/install steps can write as that user.
 func ensureUserDirs(base, tmpDir string, cred *osuser.Credential) error {
