@@ -13,7 +13,7 @@ export default function ArchitecturePage() {
         <p className="architecture-eyebrow">Runtime map</p>
         <h1>Architecture</h1>
         <p className="architecture-lede">
-          Operator deploy path across the control plane and mTLS agents. Cards hold supporting detail so the diagram stays on the primary path, externals, and trust boundaries.
+          Public marketing surface, signed-in deploy path, and mTLS agents. Cards cover PublicChrome vs AppShell, qualified process names, and connector process logs.
         </p>
       </header>
       <div className="architecture-frame">

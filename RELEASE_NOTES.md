@@ -1,21 +1,31 @@
-# CronCompose v0.0.43
+# CronCompose v0.0.44
 
-Process managers installed under nvm (or similar) now start correctly during
-deploy, and the confirm / post-deploy screens use the full content width.
+Public marketing pages (landing, use cases, docs chrome), process logs from
+connectors, and stable project-qualified process names — plus an updated
+runtime architecture diagram.
 
 ## Highlights
 
-- **PM2 (and friends) on start PATH** — Tools and preflight already found
-  `pm2` via the deploy user's login shell, but `runCmdAs` still exec'd against
-  the agent process PATH. Starting an app then failed with
-  `executable file not found in $PATH` even when Tools showed PM2 installed.
-  Deploy commands now resolve binaries the same way as Tools, and prepend the
-  binary's directory so siblings like `npm` stay visible to `pm2 start`.
-- **Full-width confirm deploy** — Confirm deploy and the post-deploy success
-  panels span the main content area instead of the previous 860px column.
+- **Public site chrome** — Signed-out visitors get a marketing header/footer on
+  landing, `/app/use-cases`, and `/app/docs`, with short links `/docs` and
+  `/use-cases`. The product landing lives at `/` (proxied to `/app/landing`).
+  Signed-in users still see the normal app shell on docs.
+- **Quiet login** — Opening `/login` without a `cc_session` cookie no longer
+  probes `/me`, so the spurious “missing session” error is gone.
+- **Process logs** — Operators can pull recent pm2, journalctl, or docker logs
+  for a connector object (`GET /connectors/:id/objects/:ref/logs`) from the
+  project and Connectors UI without SSHing to the host.
+- **Qualified process names** — Deployed pm2/systemd names are
+  `<project>-<app>` when the names differ, so two projects that both ship
+  `web` do not collide on one host.
+- **Architecture refresh** — The in-app Architecture tab embeds an updated
+  Archify diagram covering the public surface, deploy path, and connector logs.
+- **Docs** — README, `docs/architecture.md`, `docs/connectors.md`, and the
+  in-product `croncompose.yml` reference describe the public routes, process
+  naming, and object logs.
 
 ## Upgrade
 
-Update the **agent** (required for the PM2 start fix) and **web** (layout).
-No control-plane change and no new migration. Restart the agent, then redeploy
-the project that failed at Starting.
+Update **control-plane**, **agent**, and **web**. No new migration. Restart the
+control plane and agents after deploy so connector log handlers and process-name
+qualification are live.
