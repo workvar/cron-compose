@@ -1,36 +1,22 @@
-# CronCompose v0.0.45
+# CronCompose v0.0.46
 
-Agent host networking from the UI: wired IP, Wi‑Fi (including save-without-drop
-and dual-STA when the radio allows), Bluetooth pairing with interactive PIN and
-PAN, plus cellular via ModemManager — with a Networks sidebar tab and jobs
-navigation polish.
+Networks UI redesign: guided setup flows, mode tabs, and expandable actions
+instead of a static dump of tables and misaligned forms.
 
 ## Highlights
 
-- **Networks tab** — New sidebar page to pick a server and manage its links:
-  wired DHCP/static, Wi‑Fi save/connect/password/forget, Bluetooth
-  pair/connect/forget + PAN, and cellular APN/connect when a modem is present.
-- **NetworkManager first** — Agents prefer `nmcli` (typical on Raspberry Pi OS),
-  fall back to netplan when NM is absent, and advertise `network` /
-  `network.bluetooth` / `network.cellular` / `network.dual_wifi` capabilities.
-- **Safer Wi‑Fi changes** — Saving a profile or rotating a PSK does not activate
-  the connection (no drop). Optional **Connect alongside** uses a virtual STA
-  when the phy supports dual-station; otherwise the UI keeps the save-only path.
-- **Bluetooth PIN** — Pairing streams SSE `pin_required` events; the UI modal
-  posts the PIN/passkey back without closing the in-flight pair request.
-- **Privilege / install** — Agent sudoers and priv allowlists cover `nmcli`,
-  `bluetoothctl`, `mmcli`, `netplan`, `iw`, and `ip`. Re-run
-  `install/lib/agent_sudoers.sh` on managed hosts after upgrading the agent.
-- **Jobs UX** — Jobs list is server-card based (`/jobs/servers/:id`); shell
-  chrome is split into `ShellFrame` for clearer auth vs app layouts.
+- **Flow-first Networks** — Wireless uses a Join wizard (pick SSID → password →
+  confirm save / connect). Wired and Bluetooth open in-row drawers so actions
+  sit with the selected interface or device.
+- **Mode tabs** — Wireless, Wired, Bluetooth, and Cellular are separate panels;
+  one connection type at a time.
+- **Less clutter** — Virtual ethernet (`veth*`, bridges, etc.) is hidden by
+  default with a “Show virtual” toggle. The giant decorative title icon is gone;
+  a compact active-link strip shows the current path.
+- **Safer Wi‑Fi copy** — Confirm step still defaults to save-without-drop;
+  connect and alongside remain explicit choices.
 
 ## Upgrade
 
-Update **control-plane**, **agent**, and **web**. No new migration.
-
-1. Deploy the control plane and web UI.
-2. Upgrade agents to this tag (or rebuild from source).
-3. Refresh agent sudoers on each host so network binaries are granted:
-   `sudo ./install/lib/agent_sudoers.sh <agent-user>`
-4. Restart the control plane and agents so `NetworkRequest` handlers and the
-   Networks API are live.
+Update **web** (and redeploy the UI). Control-plane and agent APIs are unchanged
+from v0.0.45. No migration.
