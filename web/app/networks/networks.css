@@ -1,17 +1,98 @@
+/* Networks — guided flows, one mode at a time. */
+
 .networks-page {
-  padding-bottom: 48px;
+  padding-bottom: 64px;
 }
 
-.networks-selectors {
-  width: 100%;
-  max-width: none;
-  margin-bottom: 8px;
-}
-
-.networks-badge {
-  display: inline-flex;
+.networks-page .page-head h1 {
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+  margin: 0;
+}
+
+.networks-page .page-head h1 svg {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+
+.networks-backend {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.networks-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.networks-toolbar .field {
+  flex: 1 1 240px;
+  margin: 0;
+  min-width: 0;
+}
+
+.networks-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding-bottom: 2px;
+}
+
+/* Current link summary — compact, not decorative */
+.networks-link-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  margin-bottom: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 10px);
+  background: var(--panel, var(--surface));
+}
+
+.networks-link-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+
+.networks-link-pulse.on {
+  background: var(--green);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 22%, transparent);
+}
+
+.networks-link-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.networks-link-meta strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.networks-link-meta span {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.networks-link-stat {
+  text-align: right;
+  flex: none;
   font-size: 12px;
   font-weight: 600;
   color: var(--muted);
@@ -19,67 +100,292 @@
   letter-spacing: 0.04em;
 }
 
-.networks-sections {
+/* Mode tabs reuse connector rhythm */
+.networks-tabs {
   display: flex;
-  flex-direction: column;
-  gap: 20px;
-  margin-top: 16px;
+  gap: 4px;
+  margin: 0 0 16px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
 }
 
-.networks-section h3 {
-  margin: 0 0 4px;
+.networks-tab {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 10px 14px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.networks-tab:hover {
+  color: var(--text);
+}
+
+.networks-tab.active {
+  color: var(--green);
+  border-bottom-color: var(--green);
+}
+
+.networks-tab .count {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.networks-tab.active .count {
+  color: var(--green);
+}
+
+/* Mode panel */
+.networks-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 10px);
+  background: var(--panel, var(--surface));
+  overflow: hidden;
+}
+
+.networks-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.networks-panel-head h2 {
+  margin: 0;
   font-size: 15px;
   font-weight: 700;
 }
 
-.networks-section .section-blurb {
-  margin: 0 0 12px;
-  color: var(--muted);
+.networks-panel-head p {
+  margin: 4px 0 0;
   font-size: 13px;
+  color: var(--muted);
+  max-width: 52ch;
 }
 
-.networks-table {
-  width: 100%;
-  border-collapse: collapse;
+.networks-panel-body {
+  padding: 0;
+}
+
+.networks-empty {
+  padding: 28px 18px;
+  text-align: center;
+  color: var(--muted);
   font-size: 13.5px;
 }
 
-.networks-table th,
-.networks-table td {
-  text-align: left;
-  padding: 8px 10px;
+.networks-empty strong {
+  display: block;
+  color: var(--text);
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+/* Selectable list rows */
+.networks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.networks-item {
   border-bottom: 1px solid var(--border);
-  vertical-align: middle;
 }
 
-.networks-table th {
+.networks-item:last-child {
+  border-bottom: 0;
+}
+
+.networks-item-btn {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.12s ease-out;
+}
+
+.networks-item-btn:hover {
+  background: var(--surface-2, color-mix(in srgb, var(--text) 4%, transparent));
+}
+
+.networks-item-btn:active {
+  transform: scale(0.995);
+}
+
+.networks-item.open > .networks-item-btn {
+  background: var(--surface-2, color-mix(in srgb, var(--text) 5%, transparent));
+}
+
+.networks-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.networks-item-main strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.networks-item-main span {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
   color: var(--muted);
-  font-weight: 600;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.networks-row-actions {
+.networks-item-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.networks-signal {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  min-width: 3ch;
+  text-align: right;
+}
+
+.networks-chevron {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  transition: transform 0.15s ease-out;
+}
+
+.networks-item.open .networks-chevron {
+  transform: rotate(90deg);
+}
+
+/* Expanded action drawer under a row */
+.networks-drawer {
+  padding: 0 18px 16px 18px;
+  animation: networks-drawer-in 0.16s ease-out;
+}
+
+@keyframes networks-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .networks-drawer {
+    animation: none;
+  }
+}
+
+.networks-drawer-actions {
   display: flex;
   flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.networks-drawer-note {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* Guided setup strip (Join / Configure) */
+.networks-flow {
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--green) 4%, var(--panel, var(--surface)));
+  padding: 16px 18px 18px;
+}
+
+.networks-flow-steps {
+  display: flex;
   gap: 6px;
-  justify-content: flex-end;
+  margin: 0 0 14px;
+  list-style: none;
+  padding: 0;
 }
 
-.networks-form {
+.networks-flow-steps li {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-2, color-mix(in srgb, var(--text) 6%, transparent));
+}
+
+.networks-flow-steps li.active {
+  color: var(--green-contrast, #fff);
+  background: var(--green);
+}
+
+.networks-flow-steps li.done {
+  color: var(--green);
+}
+
+.networks-flow h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.networks-flow > p {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.networks-flow-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
-  align-items: end;
-  margin-top: 12px;
+  max-width: 420px;
 }
 
-.networks-form .field {
+.networks-flow-fields.two {
+  grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 560px) {
+  .networks-flow-fields.two {
+    grid-template-columns: 1fr;
+  }
+}
+
+.networks-flow-fields .field {
   margin: 0;
 }
 
-.networks-form .field label {
+.networks-flow-fields label {
   display: block;
   font-size: 12px;
   font-weight: 600;
@@ -87,22 +393,99 @@
   margin-bottom: 4px;
 }
 
-.networks-form input,
-.networks-form select {
+.networks-flow-fields input,
+.networks-flow-fields select {
   width: 100%;
 }
 
-.networks-form-actions {
+.networks-flow-footer {
   display: flex;
-  gap: 8px;
-  align-items: center;
   flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  align-items: center;
 }
 
-.networks-empty {
-  color: var(--muted);
+.networks-scan-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel, var(--surface));
+}
+
+.networks-scan-list li button {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.networks-scan-list li:last-child button {
+  border-bottom: 0;
+}
+
+.networks-scan-list li button:hover {
+  background: var(--surface-2, color-mix(in srgb, var(--text) 4%, transparent));
+}
+
+.networks-scan-list li button.picked {
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+}
+
+.networks-scan-list .ssid {
+  flex: 1;
+  font-weight: 600;
   font-size: 13.5px;
-  padding: 8px 0;
+}
+
+.networks-scan-list .sec {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Method segmented control */
+.networks-seg {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--surface-2, color-mix(in srgb, var(--text) 6%, transparent));
+  gap: 2px;
+}
+
+.networks-seg button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--muted);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.networks-seg button.active {
+  background: var(--panel, var(--surface));
+  color: var(--text);
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 8%, transparent);
+}
+
+.networks-seg button:active {
+  transform: scale(0.97);
 }
 
 .networks-pin-overlay {
@@ -117,16 +500,18 @@
 }
 
 .networks-pin-modal {
-  background: var(--panel);
+  background: var(--panel, var(--surface));
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 20px;
+  border-radius: 12px;
+  padding: 22px;
   width: min(400px, 100%);
-  box-shadow: 0 12px 40px color-mix(in srgb, #000 25%, transparent);
+  box-shadow: 0 16px 48px color-mix(in srgb, #000 22%, transparent);
+  animation: networks-drawer-in 0.18s ease-out;
 }
 
 .networks-pin-modal h3 {
   margin: 0 0 6px;
+  font-size: 16px;
 }
 
 .networks-pin-modal p {
@@ -145,12 +530,7 @@
   justify-content: flex-end;
 }
 
-.networks-meta {
+.networks-muted {
   font-size: 12.5px;
   color: var(--muted);
-}
-
-.networks-active {
-  color: var(--green, #1a7f37);
-  font-weight: 600;
 }
