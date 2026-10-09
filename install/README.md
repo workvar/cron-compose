@@ -205,7 +205,8 @@ control plane only; run agents on Linux/macOS hosts and point them at this contr
 plane (see `scripts/install-agent.sh`).
 
 On Linux, installers also write `/etc/sudoers.d/croncompose-agent` so the agent can
-inspect listen sockets (Ports page), drive connectors (`systemctl`, `nginx`, …), and
+inspect listen sockets (Ports page), drive connectors (`systemctl`, `nginx`, …), manage
+Networks (`nmcli`, `bluetoothctl`, `mmcli`, `netplan`, `iw`, `ip` when present), and
 run the root helper at `/usr/libexec/croncompose/agent-privctl`. The helper is
 allowlisted as two argv forms only — never `NOPASSWD: ALL`:
 

@@ -52,6 +52,7 @@ type Gateway struct {
 	pending     *PendingRequests
 	users       *PendingUserRequests
 	tools       *PendingToolRequests
+	network     *PendingNetworkRequests
 	logMaxBytes int
 	update      UpdatePolicy
 	resolver    SecretResolver
@@ -78,6 +79,7 @@ func New(addr string, log *slog.Logger, pool *pgxpool.Pool, bundle *pki.Bundle, 
 		pending:   NewPendingRequests(),
 		users:     NewPendingUserRequests(),
 		tools:     NewPendingToolRequests(),
+		network:   NewPendingNetworkRequests(),
 		progress:  NewUpdateProgressTracker(),
 		rootSent:  newRootDelivery(),
 		resolver:  resolver,
@@ -150,6 +152,9 @@ func (g *Gateway) Users() *PendingUserRequests { return g.users }
 // Tools exposes the host-tools request/response correlation registry.
 func (g *Gateway) Tools() *PendingToolRequests { return g.tools }
 
+// Network exposes the network request/response correlation registry.
+func (g *Gateway) Network() *PendingNetworkRequests { return g.network }
+
 // Start binds and serves over mTLS.
 func (g *Gateway) Start(ctx context.Context) error {
 	if g.bundle == nil {
@@ -190,7 +195,7 @@ func (g *Gateway) Start(ctx context.Context) error {
 
 	creds := credentials.NewTLS(tlsCfg)
 	g.grpc = grpc.NewServer(grpc.Creds(creds))
-	svc := newService(g.log, g.pool, g.registry, g.broker, g.terminals, g.pending, g.users, g.tools, g.logMaxBytes, g.update, g.resolver, g.onFailed, g.onDeployFin, g.progress)
+	svc := newService(g.log, g.pool, g.registry, g.broker, g.terminals, g.pending, g.users, g.tools, g.network, g.logMaxBytes, g.update, g.resolver, g.onFailed, g.onDeployFin, g.progress)
 	svc.rootSent = g.rootSent
 	agentv1.RegisterAgentServiceServer(g.grpc, svc)
 	if err := g.startEdge(svc); err != nil {

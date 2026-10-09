@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { apiGet } from "@/lib/api";
 import type { Job, ListResponse, Server } from "@/lib/types";
-import { JobRow } from "@/components/JobRow";
 import { IconPlus } from "@/components/icons";
+import { JobServerCards } from "@/components/jobs/JobServerCards";
 
 export default async function JobsPage() {
   let jobs: Job[] = [];
@@ -26,7 +26,7 @@ export default async function JobsPage() {
       <div className="page-head">
         <div>
           <h1>Jobs</h1>
-          <p className="subtle">Every scheduled job across your fleet.</p>
+          <p className="subtle">Pick a server to view scheduled jobs, or create a new one.</p>
         </div>
         <div className="page-head-actions">
           <Link href={newJobHref} className="button"><IconPlus /> New job</Link>
@@ -37,20 +37,7 @@ export default async function JobsPage() {
         <div className="form-error">Could not load jobs: <code>{error}</code></div>
       )}
 
-      {!error && jobs.length === 0 && (
-        <div className="panel">
-          <div className="empty">
-            No jobs yet.{" "}
-            {servers.length > 0
-              ? <Link href={newJobHref}>Create your first job</Link>
-              : <Link href="/servers/new">Add a server</Link>} to get started.
-          </div>
-        </div>
-      )}
-
-      <div className="stack">
-        {jobs.map((j) => <JobRow key={j.id} job={j} />)}
-      </div>
+      {!error && <JobServerCards servers={servers} jobs={jobs} />}
     </>
   );
 }

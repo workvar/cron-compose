@@ -12,7 +12,7 @@ import (
 // here, and only for a fixed set of binaries: an operator opts in by granting
 // passwordless sudo for exactly these, e.g. in /etc/sudoers.d/croncompose:
 //
-//	croncompose ALL=(root) NOPASSWD: /usr/bin/systemctl, /usr/bin/systemd-analyze, /usr/sbin/nginx, /usr/bin/tee, /usr/bin/ss, /usr/bin/lsof
+//	croncompose ALL=(root) NOPASSWD: /usr/bin/systemctl, /usr/bin/systemd-analyze, /usr/sbin/nginx, /usr/bin/tee, /usr/bin/ss, /usr/bin/lsof, /usr/bin/nmcli, /usr/bin/bluetoothctl, /usr/bin/mmcli, /usr/sbin/netplan, /usr/sbin/iw, /usr/sbin/ip
 //
 // If sudo is not available or not passwordless, privileged commands simply fail and
 // the operation is reported as `unauthorized` rather than half-applied.
@@ -30,6 +30,12 @@ var privBinaries = map[string]bool{
 	"ufw":             true,
 	"ss":              true,
 	"lsof":            true,
+	"nmcli":           true,
+	"bluetoothctl":    true,
+	"mmcli":           true,
+	"netplan":         true,
+	"iw":              true,
+	"ip":              true,
 }
 
 // needsPriv reports whether this process must escalate to touch root-owned state.

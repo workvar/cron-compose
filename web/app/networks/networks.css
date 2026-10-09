@@ -1,0 +1,156 @@
+.networks-page {
+  padding-bottom: 48px;
+}
+
+.networks-selectors {
+  width: 100%;
+  max-width: none;
+  margin-bottom: 8px;
+}
+
+.networks-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.networks-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-top: 16px;
+}
+
+.networks-section h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.networks-section .section-blurb {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.networks-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.networks-table th,
+.networks-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.networks-table th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.networks-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.networks-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  align-items: end;
+  margin-top: 12px;
+}
+
+.networks-form .field {
+  margin: 0;
+}
+
+.networks-form .field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.networks-form input,
+.networks-form select {
+  width: 100%;
+}
+
+.networks-form-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.networks-empty {
+  color: var(--muted);
+  font-size: 13.5px;
+  padding: 8px 0;
+}
+
+.networks-pin-overlay {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, #000 45%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 80;
+  padding: 16px;
+}
+
+.networks-pin-modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  width: min(400px, 100%);
+  box-shadow: 0 12px 40px color-mix(in srgb, #000 25%, transparent);
+}
+
+.networks-pin-modal h3 {
+  margin: 0 0 6px;
+}
+
+.networks-pin-modal p {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.networks-pin-modal .field {
+  margin-bottom: 14px;
+}
+
+.networks-pin-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.networks-meta {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.networks-active {
+  color: var(--green, #1a7f37);
+  font-weight: 600;
+}

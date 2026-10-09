@@ -48,6 +48,8 @@ drops. One stream carries both directions.
 | `LogChunk`    | Output: run_id, stream (stdout/stderr), seq, data.                 |
 | `RunFinished` | A run ended: run_id, status, exit_code, finished_at, duration_ms.  |
 | `DeployEvent` | Git deploy progress: run_id, kind (log/started/finished), data. Clone tokens must never appear in logs. |
+| `NetworkResult` | Reply to a `NetworkRequest`: status, error, `result_json` snapshot. |
+| `NetworkEvent` | Live network progress (`log` / `progress`) or Bluetooth `pin_required` challenge during pairing. |
 
 ### Control plane to agent (`ServerMessage`)
 
@@ -58,6 +60,7 @@ drops. One stream carries both directions.
 | `CancelRun`  | Cancel a running job by run_id.                                     |
 | `UpdateAgent`| Request the agent self-update to a target version (later phase).    |
 | `DeployCommand` | Clone + install on this host: op start/stdin/cancel. `clone_token` is never logged. After install, `process_manager` is `none`, `pm2` (ecosystem or `npm start`), `systemd` (user unit), or `docker` (`compose up -d`). |
+| `NetworkRequest` | Host networking: wired/Wi‑Fi/Bluetooth/cellular via NetworkManager (`nmcli`), netplan, `bluetoothctl`, or ModemManager (`mmcli`). |
 
 ### Why bidi gRPC
 
@@ -144,3 +147,25 @@ message ServerMessage {
   }
 }
 ```
+
+## Network control
+
+`NetworkRequest` carries `op` and `args_json`. The agent prefers **NetworkManager**
+(`nmcli`) — the usual stack on Raspberry Pi OS — and falls back to **netplan** when NM
+is absent. Bluetooth uses `bluetoothctl` (with interactive PIN via `NetworkEvent`);
+cellular uses ModemManager (`mmcli`) plus NM GSM connections.
+
+Common ops: `status`, `wired_set`, `wifi_scan` / `wifi_save` / `wifi_update_psk` /
+`wifi_connect` (optional `alongside` for dual-STA) / `wifi_disconnect` / `wifi_forget`,
+`bt_scan` / `bt_pair` / `bt_connect` / `bt_disconnect` / `bt_forget` / `bt_pin_reply` /
+`bt_pan_connect` / `bt_pan_disconnect`, `cell_modems` / `cell_connect` /
+`cell_disconnect` / `cell_set_apn`.
+
+Hello may advertise `network`, `network.bluetooth`, `network.cellular`, and
+`network.dual_wifi` when the corresponding tools/hardware are present. Dual-STA is
+hardware-dependent; when unsupported the agent returns `dual_wifi_unsupported` and the
+UI keeps the save-without-activate workflow.
+
+REST surface (session auth): `/api/v1/servers/:id/network…` — viewers can read/scan;
+admins mutate. Pairing streams SSE events including `pin_required`; the UI posts
+`/network/bluetooth/pin` with the pair `request_id`.

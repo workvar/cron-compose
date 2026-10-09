@@ -54,6 +54,8 @@ message AgentMessage {
     UpdateProgress  update_progress   = 12; // self-update / stack rebuild stage
     HostToolsResult host_tools_result = 13; // reply to a HostToolsRequest
     HostToolsEvent  host_tools_event  = 14; // streaming install/uninstall log chunks
+    NetworkResult   network_result    = 15; // reply to a NetworkRequest
+    NetworkEvent    network_event     = 16; // live network op progress / PIN challenge
   }
 }
 
@@ -69,6 +71,7 @@ message ServerMessage {
     ListUsersRequest list_users_request = 8; // web terminal: who can this box switch to?
     AgentRootCommand agent_root_command = 9; // elevate or demote the agent process
     HostToolsRequest host_tools_request = 10; // detect / install host toolchains
+    NetworkRequest   network_request    = 11; // wired / wifi / bluetooth / cellular
   }
 }
 
@@ -412,6 +415,38 @@ message HostToolsEvent {
   bytes  data       = 3; // utf-8 log fragment when kind=log
   int32  percent    = 4; // 0–100 hint; 0 means unknown
   int32  seq        = 5;
+}
+
+// NetworkRequest drives NetworkManager (nmcli), netplan, bluetoothctl, and
+// ModemManager on the agent. Ops are documented in docs/agent-protocol.md.
+// args_json is a JSON object whose fields depend on op (ssid, psk, address, …).
+message NetworkRequest {
+  string request_id = 1;
+  string op         = 2;
+  string args_json  = 3;
+}
+
+// NetworkResult closes a NetworkRequest. result_json carries the structured
+// snapshot or op-specific payload (interfaces, scan rows, devices, …).
+message NetworkResult {
+  string request_id  = 1;
+  string status      = 2; // succeeded | failed
+  string error       = 3;
+  string result_json = 4;
+}
+
+// NetworkEvent streams progress or an interactive PIN/passkey challenge during
+// pairing. The control plane forwards these over SSE; NetworkResult still closes
+// the request. For pin_required, the UI posts bt_pin_reply with the same request_id.
+message NetworkEvent {
+  string request_id = 1;
+  string kind       = 2; // log | progress | pin_required
+  bytes  data       = 3;
+  int32  percent    = 4;
+  int32  seq        = 5;
+  string pin_device = 6; // MAC / address when kind=pin_required
+  string pin_method = 7; // pin | passkey | confirm
+  string pin_prompt = 8;
 }
 
 // HealthCheck is the opt-in "is it actually up" probe run after the process manager

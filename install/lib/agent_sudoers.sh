@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Install passwordless sudo grants so the CronCompose agent can inspect listen
-# sockets (Ports page), drive connectors (systemctl, nginx, …), and invoke the
-# agent-privctl elevate/demote helper. Never grants NOPASSWD: ALL.
+# sockets (Ports page), drive connectors (systemctl, nginx, …), manage Networks
+# (nmcli, bluetoothctl, mmcli, netplan, iw, ip), and invoke the agent-privctl
+# elevate/demote helper. Never grants NOPASSWD: ALL.
 #
 # Usage:
 #   source this file, then:  install_agent_sudoers <unix-user>
@@ -50,7 +51,7 @@ _agent_sudoers_bin() {
 # Comma-separated absolute paths for the agent priv allowlist (see agent privexec.go).
 agent_sudoers_path_list() {
   local paths="" name p
-  for name in systemctl systemd-analyze ss lsof nginx tee cp mv install ufw; do
+  for name in systemctl systemd-analyze ss lsof nginx tee cp mv install ufw nmcli bluetoothctl mmcli netplan iw ip; do
     p="$(_agent_sudoers_bin "$name" || true)"
     [ -n "$p" ] || continue
     case ",$paths," in
@@ -65,7 +66,7 @@ agent_sudoers_content() {
   local user="$1" paths privctl="${AGENT_PRIVCTL_BIN}"
   paths="$(agent_sudoers_path_list)"
   printf '%s\n' "$AGENT_SUDOERS_MARKER"
-  printf '%s\n' "# Socket inspection (Ports page) and connector lifecycle for user $user."
+  printf '%s\n' "# Socket inspection (Ports), connectors, and Networks (NM/netplan/BT/cellular) for user $user."
   if [ -n "$paths" ]; then
     printf '%s ALL=(root) NOPASSWD: %s\n' "$user" "$paths"
   fi

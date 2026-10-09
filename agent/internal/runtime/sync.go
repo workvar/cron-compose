@@ -35,6 +35,9 @@ func (r *Runtime) handleServerMessage(ctx context.Context, msg *agentv1.ServerMe
 	case *agentv1.ServerMessage_HostToolsRequest:
 		// Installs can take minutes (nvm, go tarball); keep them off the receive loop.
 		go r.handleHostToolsRequest(body.HostToolsRequest)
+	case *agentv1.ServerMessage_NetworkRequest:
+		// Scans, pairing, and dual-wifi can take tens of seconds; keep off the receive loop.
+		go r.handleNetworkRequest(body.NetworkRequest)
 	case *agentv1.ServerMessage_AgentRootCommand:
 		// Helper restarts the unit; keep it off the receive loop.
 		go r.handleAgentRootCommand(body.AgentRootCommand.GetEnabled())

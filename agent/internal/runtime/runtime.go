@@ -21,6 +21,7 @@ import (
 	"github.com/croncompose/croncompose/agent/internal/connectors"
 	"github.com/croncompose/croncompose/agent/internal/deploy"
 	"github.com/croncompose/croncompose/agent/internal/identity"
+	"github.com/croncompose/croncompose/agent/internal/network"
 	"github.com/croncompose/croncompose/agent/internal/outbox"
 	"github.com/croncompose/croncompose/agent/internal/scheduler"
 	"github.com/croncompose/croncompose/agent/internal/store"
@@ -48,6 +49,7 @@ type Runtime struct {
 	exec      *connectors.Executor
 	terminals *terminal.Manager
 	deploys   *deploy.Manager
+	network   *network.Manager
 
 	sched *scheduler.Scheduler
 
@@ -89,6 +91,7 @@ func New(cfg config.Config, log *slog.Logger, st *store.Store, ident identity.Id
 	}
 	r.sched = scheduler.New(r.onSchedulerFire)
 	r.exec = connectors.NewExecutor(log, r.conns)
+	r.network = network.NewManager()
 	r.initTerminals()
 	r.initDeploys()
 	return r
@@ -243,11 +246,13 @@ func (r *Runtime) drainLoop(ctx context.Context, stream agentv1.AgentService_Age
 }
 
 func (r *Runtime) newHello() *agentv1.Hello {
+	caps := []string{"terminal", "connectors.lifecycle", "connectors.config", "deploys"}
+	caps = append(caps, network.ProbeCapabilities(context.Background())...)
 	return &agentv1.Hello{
 		AgentVersion: r.cfg.AgentVersion,
 		Os:           runtime.GOOS,
 		Arch:         runtime.GOARCH,
-		Capabilities: []string{"terminal", "connectors.lifecycle", "connectors.config", "deploys"},
+		Capabilities: caps,
 		EuidRoot:     os.Geteuid() == 0,
 		ServiceUser:  serviceUser(r.cfg.DataDir),
 	}

@@ -4,7 +4,15 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Brand } from "@/components/Brand";
 import { LoginShowcase } from "@/components/login/LoginShowcase";
+import { ControlPlaneError } from "@/lib/agent-root";
 import { loginWithPasskey, supportsConditionalMediation } from "@/lib/webauthn";
+
+/** Auth-noise from signed-out probes — never paint under the form. */
+function isSessionNoise(err: unknown): boolean {
+  if (err instanceof ControlPlaneError && err.code === "unauthenticated") return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /missing session|unauthenticated|invalid session/i.test(msg);
+}
 
 type AuthConfig = {
   password_login: boolean;
@@ -58,12 +66,11 @@ function LoginForm() {
       try {
         await loginWithPasskey({ mediation: "conditional", signal: ac.signal });
         if (ac.signal.aborted) return;
-        router.push(next);
-        router.refresh();
-      } catch (e) {
-        if (ac.signal.aborted) return;
-        if (e instanceof DOMException && (e.name === "NotAllowedError" || e.name === "AbortError")) return;
-        setError((e as Error).message);
+        const dest = next.startsWith("/app") ? next : next === "/" ? "/app" : `/app${next}`;
+        window.location.assign(dest);
+      } catch {
+        // Conditional UI is ambient autofill — never surface errors under the form
+        // (including 401 "missing session" from a signed-out probe race).
       }
     })();
     return () => ac.abort();
@@ -84,8 +91,8 @@ function LoginForm() {
         if (res.status === 401) throw new Error("Wrong email or password");
         throw new Error(`Sign-in failed (HTTP ${res.status})`);
       }
-      router.push(next);
-      router.refresh();
+      const dest = next.startsWith("/app") ? next : next === "/" ? "/app" : `/app${next}`;
+      window.location.assign(dest);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -107,15 +114,23 @@ function LoginForm() {
 
   async function signInWithPasskey() {
     condAbort.current?.abort();
+    // Let the aborted conditional ceremony settle before starting a modal one.
+    await new Promise((r) => setTimeout(r, 50));
     setPasskeyBusy(true);
     setError(null);
     try {
       await loginWithPasskey();
-      router.push(next);
-      router.refresh();
+      // Hard navigate so the app shell mounts with a fresh session (soft nav can
+      // keep stale chrome after logout → login).
+      const dest = next.startsWith("/app") ? next : next === "/" ? "/app" : `/app${next}`;
+      window.location.assign(dest);
     } catch (e) {
       setCondGen((n) => n + 1);
       if (e instanceof DOMException && (e.name === "NotAllowedError" || e.name === "AbortError")) return;
+      if (isSessionNoise(e)) {
+        setError("Passkey sign-in failed. Try again, or use email and password.");
+        return;
+      }
       setError((e as Error).message);
     } finally {
       setPasskeyBusy(false);

@@ -3,7 +3,7 @@ import { apiGet } from "@/lib/api";
 import type { Job, ListResponse, Me, Passkey, Server, UpdateStatus } from "@/lib/types";
 import { AgentRootToggle } from "@/components/AgentRootToggle";
 import { ReinstallAsRoot } from "@/components/ReinstallAsRoot";
-import { JobRow } from "@/components/JobRow";
+import { JobCard } from "@/components/jobs/JobCard";
 import { UpdateServerButton } from "@/components/UpdateServerButton";
 import { ServerActions } from "@/components/ServerActions";
 import { ServerEmojiPicker } from "@/components/ServerEmoji";
@@ -98,11 +98,16 @@ export default async function ServerDetailPage({ params }: Props) {
         />
       )}
 
-      <h2>Jobs</h2>
+      <div className="row" style={{ marginTop: 8, marginBottom: 12 }}>
+        <h2 style={{ margin: 0 }}>Jobs</h2>
+        <Link href={`/jobs/servers/${server.id}`} className="button ghost sm">View in Jobs</Link>
+      </div>
       {jobs.length === 0 ? (
         <div className="panel"><div className="empty">No jobs yet on this server.</div></div>
       ) : (
-        <div className="stack">{jobs.map((j) => <JobRow key={j.id} job={j} />)}</div>
+        <div className="deploy-project-grid">
+          {jobs.map((j) => <JobCard key={j.id} job={j} />)}
+        </div>
       )}
     </>
   );

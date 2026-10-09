@@ -3,13 +3,15 @@ import { ServerEmojiBadge } from "@/components/ServerEmoji";
 import { serverEmojiOrFallback } from "@/lib/server-emoji";
 import type { Server } from "@/lib/types";
 
-/** Sticky chip showing which server the current deploy targets. */
+/** Sticky chip showing which server the current deploy (or job) targets. */
 export function DeployServerChip({
   server,
   onChange,
+  label = "Deploying to",
 }: {
   server: Server | null | undefined;
   onChange?: () => void;
+  label?: string;
 }) {
   if (!server) {
     return (
@@ -28,7 +30,7 @@ export function DeployServerChip({
     <div className="deploy-server-chip">
       <ServerEmojiBadge emoji={serverEmojiOrFallback(server)} size="sm" />
       <div className="deploy-server-chip-text">
-        <span className="deploy-server-chip-label">Deploying to</span>
+        <span className="deploy-server-chip-label">{label}</span>
         <strong>{server.name}</strong>
       </div>
       <span className={`status ${server.status === "online" ? "ok" : server.status === "offline" ? "danger" : "neutral"}`}>

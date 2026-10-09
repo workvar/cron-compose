@@ -65,6 +65,13 @@ export const IconPorts = (p: P) => (
     <path d="M7 9h.01M12 9h.01M17 9h.01M7 13h10M7 17h6" />
   </svg>
 );
+export const IconNetwork = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="2" />
+    <path d="M16.24 7.76a6 6 0 0 1 0 8.48M7.76 16.24a6 6 0 0 1 0-8.48" />
+    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14" />
+  </svg>
+);
 export const IconCheck = (p: P) => (
   <svg {...base(p)}><path d="M20 6 9 17l-5-5" /></svg>
 );
