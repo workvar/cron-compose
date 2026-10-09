@@ -5,6 +5,7 @@ import type { Me } from "@/lib/types";
 import { Brand } from "./Brand";
 import { NavLink } from "./NavLink";
 import { useSidebar } from "./AppShell";
+import { ThemeToggle } from "./ThemeToggle";
 import { shouldShowServerPromo } from "@/lib/ui-helpers";
 import {
   IconDashboard, IconServer, IconJobs, IconKey, IconShield,
@@ -52,8 +53,8 @@ export function Sidebar({ me, serverCount }: { me: Me; serverCount: number }) {
         <NavLink href="/settings" icon={<IconSettings />}>Settings</NavLink>
       </div>
 
-      {showPromo && (
-        <div className="sidebar-foot">
+      <div className="sidebar-foot">
+        {showPromo && (
           <div className="promo">
             <span className="promo-icon"><IconZap /></span>
             <h4>Offline-first agents</h4>
@@ -62,8 +63,9 @@ export function Sidebar({ me, serverCount }: { me: Me; serverCount: number }) {
               <IconPlus /> Add server
             </Link>
           </div>
-        </div>
-      )}
+        )}
+        <ThemeToggle />
+      </div>
     </aside>
   );
 }

@@ -91,6 +91,8 @@ type Proc = {
 
 const PHASE_RE = /^(preflight|clone|install|release|start|health):\s*(.*)$/;
 const START_RE = /^(pm2|systemd|docker compose|systemctl|process_manager=none)\b/;
+/** Parallel multi-app PTY lines are tagged `[in <workDir>] …` for pane routing. */
+const IN_PREFIX_RE = /^\[in\s+([^\]]+)\]\s?(.*)$/;
 
 function labelFor(kind: string, name: string, cmd: string): string {
   switch (kind) {
@@ -256,10 +258,33 @@ export function buildDeployLive(input: LiveInput): LiveView {
   let pane = "shared";
   const lines: LiveLogLine[] = [];
 
+  function ownerOf(step: Mutable): Proc | undefined {
+    return processes.find(
+      (p) =>
+        p.commandSteps.includes(step) ||
+        p.cleanup === step ||
+        p.start === step ||
+        p.health === step,
+    );
+  }
+
+  function isShared(step: Mutable): boolean {
+    return step === shared.preflight || step === shared.clone || step === shared.release;
+  }
+
   function activate(step: Mutable | undefined) {
     if (!step || failed) return;
     if (step.state === "done" || step.state === "skipped" || step.state === "failed") return;
-    if (cur.step && cur.step !== step && cur.step.state === "active") cur.step.state = "done";
+    // Parallel installs keep multiple apps active. Auto-complete the previous step
+    // only within one process, or when leaving shared prepare steps for an app.
+    if (cur.step && cur.step !== step && cur.step.state === "active") {
+      const prevOwner = ownerOf(cur.step);
+      const nextOwner = ownerOf(step);
+      const sameProc = Boolean(prevOwner && nextOwner && prevOwner === nextOwner);
+      const leaveShared = isShared(cur.step) && !isShared(step);
+      const withinShared = isShared(cur.step) && isShared(step);
+      if (sameProc || leaveShared || withinShared) cur.step.state = "done";
+    }
     if (step.state === "pending") step.state = "active";
     cur.step = step;
   }
@@ -343,23 +368,31 @@ export function buildDeployLive(input: LiveInput): LiveView {
 
   function paneFor(step: Mutable): string {
     if (step === shared.preflight || step === shared.clone || step === shared.release) return "shared";
-    const owner = processes.find(
-      (p) => p.commandSteps.includes(step) || p.cleanup === step || p.start === step || p.health === step,
-    );
-    return owner?.id || pane;
+    return ownerOf(step)?.id || pane;
   }
 
   function claimStart(line: string): Proc | undefined {
     const named = line.match(/--name\s+(\S+)/);
     if (named) {
-      const hit = processes.find((p) => p.name === named[1] && p.start);
+      const pmName = named[1];
+      const hit = processes.find((p) => {
+        if (!p.start) return false;
+        if (p.name === pmName) return true;
+        // Project-prefixed pm2 names: "shop-web" matches app "web".
+        if (pmName.endsWith("-" + p.name)) return true;
+        return false;
+      });
       if (hit) return hit;
     }
     const unit = line.match(/enable --now\s+(\S+)/);
     if (unit) {
-      const hit = processes.find(
-        (p) => p.start && (unit[1] === p.name || unit[1] === `${p.name}.service` || unit[1].startsWith(`${p.name}.`)),
-      );
+      const u = unit[1].replace(/\.service$/, "");
+      const hit = processes.find((p) => {
+        if (!p.start) return false;
+        if (u === p.name || unit[1] === `${p.name}.service` || unit[1].startsWith(`${p.name}.`)) return true;
+        if (u.endsWith("-" + p.name)) return true;
+        return false;
+      });
       if (hit) return hit;
     }
     return processes.find((p) => p.start && p.start.state === "pending");
@@ -375,10 +408,23 @@ export function buildDeployLive(input: LiveInput): LiveView {
   if (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
 
   for (const raw of parts) {
-    const line = raw.trim();
+    let line = raw.trim();
     if (!line) {
       lines.push({ pane, text: "" });
       continue;
+    }
+
+    const tagged = line.match(IN_PREFIX_RE);
+    if (tagged) {
+      const dir = tagged[1].trim();
+      const body = tagged[2] ?? "";
+      const proc = ensure(dir);
+      pane = proc.id;
+      line = body.trim();
+      if (!line) {
+        lines.push({ pane, text: "" });
+        continue;
+      }
     }
 
     const failedLine = line.startsWith("FAILED —") || line.startsWith("FAILED -");
@@ -419,14 +465,16 @@ export function buildDeployLive(input: LiveInput): LiveView {
           const dir = work[3].trim();
           const proc = ensure(dir);
           if (isCleanup) {
-            for (const p of processes) completeCommands(p);
+            completeCommands(proc);
             if (!proc.cleanup) {
               proc.cleanup = makeStep(`${proc.id}-cleanup`, `Cleaning ${proc.name}`, "cleanup", script);
               refresh(proc);
             }
             activate(proc.cleanup);
+          } else if (script === "done") {
+            completeCommands(proc);
           } else {
-            for (const p of processes) if (p !== proc) completeCommands(p);
+            // Do not complete sibling apps: installs run in parallel.
             setCommands(proc, script);
             if (proc.commandSteps[0]) activate(proc.commandSteps[0]);
           }

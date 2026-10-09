@@ -125,6 +125,42 @@ func (h *handler) action(c fiber.Ctx) error {
 	})
 }
 
+// objectLogs: GET /connectors/:id/objects/:ref/logs. Operator and above.
+// Returns recent process output (pm2 logs / journalctl / docker logs).
+func (h *handler) objectLogs(c fiber.Ctx) error {
+	conn, err := h.store.Get(c.Context(), c.Params("id"))
+	if errors.Is(err, ErrNotFound) {
+		return jsonError(c, fiber.StatusNotFound, "not_found", err)
+	}
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "get_failed", err)
+	}
+	ref := c.Params("ref")
+	if ref == "" {
+		return jsonError(c, fiber.StatusBadRequest, "invalid_params", errors.New("ref is required"))
+	}
+
+	res, opID, err := h.dispatch(c, conn, &agentv1.ConnectorCommand{
+		Op:            "logs",
+		ConnectorKind: conn.Kind,
+		ConnectorId:   conn.Instance,
+		Ref:           ref,
+	}, "connector.logs")
+	if err != nil {
+		return h.dispatchError(c, err, opID)
+	}
+	if res.GetStatus() != "succeeded" {
+		return jsonError(c, statusToHTTP(res.GetStatus()), res.GetStatus(), errors.New(res.GetMessage()))
+	}
+	return c.JSON(fiber.Map{
+		"operation_id": opID,
+		"status":       res.GetStatus(),
+		"message":      res.GetMessage(),
+		"logs":         string(res.GetContent()),
+		"steps":        stepsFromProto(res.GetSteps()),
+	})
+}
+
 // readConfig: GET /connectors/:id/config?path=... Admin only.
 //
 // Reading a config file is admin-gated rather than viewer-gated because config files

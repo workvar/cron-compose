@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -215,8 +216,8 @@ func (m *Manager) start(cmd *agentv1.DeployCommand) {
 // Pipeline:
 //  1. clone the full repo into a disposable tmp directory
 //  2. cherry-pick each app's root folder into <clone_path>/releases/…
-//  3. build (install script) inside that release folder
-//  4. cleanup non-runtime files
+//  3. build (install scripts) in parallel inside that release folder
+//  4. cleanup non-runtime files (also in parallel across apps)
 //  5. activate release, start process manager, persist boot config
 //  6. delete the tmp clone
 func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error {
@@ -405,12 +406,22 @@ func (m *Manager) materializeRelease(_ context.Context, cmd *agentv1.DeployComma
 	return release, nil
 }
 
+// appScript is one install or cleanup job scoped to an app work directory.
+type appScript struct {
+	label  string // shown on failure ("npm ci…" or "cleanup")
+	work   string
+	script string
+	env    map[string]string
+	phase  string // phase line body before " (in …)"; empty skips the start line
+	done   string // phase line body on success; empty skips the done line
+}
+
 // installApps runs each app's install script inside the new release directory.
+// Independent apps run concurrently so a Next.js build and a Go compile overlap
+// instead of waiting on each other.
 func (m *Manager) installApps(ctx context.Context, cmd *agentv1.DeployCommand, release string, cred *osuser.Credential, tmpDir string) error {
-	runID := cmd.GetRunId()
-	token := cmd.GetCloneToken()
+	var jobs []appScript
 	for _, app := range appsOf(cmd, release) {
-		work := appWorkDir(release, cmd, app)
 		script := app.GetInstallScript()
 		if script == "" {
 			script = cmd.GetInstallScript()
@@ -418,39 +429,113 @@ func (m *Manager) installApps(ctx context.Context, cmd *agentv1.DeployCommand, r
 		if script == "" {
 			continue
 		}
-		m.phaseLine(runID, token, phaseInstall, script+" (in "+work+")")
-		if err := m.runPTY(ctx, runID, token, work, script, appEnv(cmd, app), cred, tmpDir); err != nil {
-			return fmt.Errorf("%s: %w", script, err)
-		}
+		work := appWorkDir(release, cmd, app)
+		jobs = append(jobs, appScript{
+			label:  script,
+			work:   work,
+			script: script,
+			env:    appEnv(cmd, app),
+			phase:  script,
+			done:   "done",
+		})
 	}
-	return nil
+	return m.runAppScripts(ctx, cmd.GetRunId(), cmd.GetCloneToken(), cred, tmpDir, jobs)
 }
 
 // cleanupApps runs each app's cleanup script after a successful build so the
 // release keeps runtime artifacts and drops source / caches.
 func (m *Manager) cleanupApps(ctx context.Context, cmd *agentv1.DeployCommand, release string, cred *osuser.Credential, tmpDir string) error {
-	runID := cmd.GetRunId()
-	token := cmd.GetCloneToken()
+	var jobs []appScript
 	for _, app := range appsOf(cmd, release) {
 		script := cleanupScriptFor(app.GetCleanupScript(), app.GetLanguage())
 		if script == "" {
 			continue
 		}
 		work := appWorkDir(release, cmd, app)
-		m.phaseLine(runID, token, phaseInstall, "cleanup: "+script+" (in "+work+")")
-		if err := m.runPTY(ctx, runID, token, work, script, appEnv(cmd, app), cred, tmpDir); err != nil {
-			return fmt.Errorf("cleanup: %w", err)
-		}
+		jobs = append(jobs, appScript{
+			label:  "cleanup",
+			work:   work,
+			script: script,
+			env:    appEnv(cmd, app),
+			phase:  "cleanup: " + script,
+		})
 	}
-	return nil
+	return m.runAppScripts(ctx, cmd.GetRunId(), cmd.GetCloneToken(), cred, tmpDir, jobs)
+}
+
+// runAppScripts runs one or more app scripts. A single job stays sequential (and
+// keeps stdin attached for interactive installers). Two or more run in parallel.
+// Apps are independent: one failure does not cancel siblings. All errors are
+// collected and returned together. PTY log lines are tagged with their work
+// directory so the UI can route interleaved output.
+func (m *Manager) runAppScripts(ctx context.Context, runID, token string, cred *osuser.Credential, tmpDir string, jobs []appScript) error {
+	if len(jobs) == 0 {
+		return nil
+	}
+	if len(jobs) == 1 {
+		j := jobs[0]
+		if j.phase != "" {
+			m.phaseLine(runID, token, phaseInstall, j.phase+" (in "+j.work+")")
+		}
+		if err := m.runPTY(ctx, runID, token, j.work, j.script, j.env, cred, tmpDir, false); err != nil {
+			return fmt.Errorf("%s: %w", j.label, err)
+		}
+		if j.done != "" {
+			m.phaseLine(runID, token, phaseInstall, j.done+" (in "+j.work+")")
+		}
+		return nil
+	}
+
+	var (
+		wg   sync.WaitGroup
+		mu   sync.Mutex
+		errs []error
+	)
+	for _, j := range jobs {
+		wg.Add(1)
+		go func(j appScript) {
+			defer wg.Done()
+			if j.phase != "" {
+				m.phaseLine(runID, token, phaseInstall, j.phase+" (in "+j.work+")")
+			}
+			if err := m.runPTY(ctx, runID, token, j.work, j.script, j.env, cred, tmpDir, true); err != nil {
+				mu.Lock()
+				errs = append(errs, fmt.Errorf("%s: %w", j.label, err))
+				mu.Unlock()
+				return
+			}
+			if j.done != "" {
+				m.phaseLine(runID, token, phaseInstall, j.done+" (in "+j.work+")")
+			}
+		}(j)
+	}
+	wg.Wait()
+	return joinErrors(errs)
+}
+
+func joinErrors(errs []error) error {
+	if len(errs) == 0 {
+		return nil
+	}
+	if len(errs) == 1 {
+		return errs[0]
+	}
+	parts := make([]string, 0, len(errs))
+	for _, e := range errs {
+		parts = append(parts, e.Error())
+	}
+	return errors.New(strings.Join(parts, "; "))
 }
 
 // startApps hands each app to its process manager. Working directories go through the
 // current symlink, never a release directory, so a pm2 or systemd entry written today
-// still points at live code after the next deploy.
+// still points at live code after the next deploy. Apps are independent: one start
+// failure does not skip the others.
 func (m *Manager) startApps(ctx context.Context, cmd *agentv1.DeployCommand, layout Layout, cred *osuser.Credential, tmpDir string) error {
 	runID := cmd.GetRunId()
 	token := cmd.GetCloneToken()
+	project := cmd.GetProjectName()
+	var errs []error
 	for _, app := range appsOf(cmd, layout.Current) {
 		work := appWorkDir(layout.Current, cmd, app)
 		pm := app.GetProcessManager()
@@ -461,11 +546,12 @@ func (m *Manager) startApps(ctx context.Context, cmd *agentv1.DeployCommand, lay
 		if name == "" {
 			name = filepath.Base(work)
 		}
+		name = QualifyProcessName(project, name)
 		if err := m.startProcess(ctx, runID, token, work, pm, name, app.GetLanguage(), app.GetRunScript(), appEnv(cmd, app), cred, tmpDir); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return joinErrors(errs)
 }
 
 // persistProcessManagers runs the boot-persistence step once per distinct process
@@ -493,12 +579,13 @@ func (m *Manager) persistProcessManagers(ctx context.Context, cmd *agentv1.Deplo
 // check when it set one, otherwise the project's shared check. This lets a monorepo
 // give each process a different path (a Go API's /healthz is not a Next.js
 // frontend's) while a project that never set per-app checks keeps behaving exactly
-// as before.
+// as before. Apps are independent: one failed probe does not skip the others.
 func (m *Manager) checkHealth(ctx context.Context, cmd *agentv1.DeployCommand) error {
 	runID := cmd.GetRunId()
 	token := cmd.GetCloneToken()
 	checked := false
 	anyConfigured := cmd.GetHealth().GetPath() != ""
+	var errs []error
 	for _, app := range appsOf(cmd, "") {
 		port := app.GetPort()
 		if port == 0 {
@@ -515,13 +602,13 @@ func (m *Manager) checkHealth(ctx context.Context, cmd *agentv1.DeployCommand) e
 		}
 		checked = true
 		if err := m.waitHealthy(ctx, runID, token, cfg); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
 	if !checked && anyConfigured {
 		m.phaseLine(runID, token, phaseHealth, "skipped: no port configured to probe")
 	}
-	return nil
+	return joinErrors(errs)
 }
 
 // appsOf returns the command's apps, or one synthesized app for a single-app project.
@@ -664,7 +751,11 @@ func isGitDir(dir string) bool {
 	return err == nil && st.IsDir()
 }
 
-func (m *Manager) runPTY(ctx context.Context, runID, token, dir, script string, env map[string]string, cred *osuser.Credential, tmpDir string) error {
+// runPTY runs script in dir under a PTY. When tagLogs is true (parallel multi-app
+// installs), each complete log line is prefixed with `[in <dir>]` so the UI can
+// attribute interleaved output, and stdin is not attached — only one PTY can own
+// interactive input per run, and CI installers do not need it.
+func (m *Manager) runPTY(ctx context.Context, runID, token, dir, script string, env map[string]string, cred *osuser.Credential, tmpDir string, tagLogs bool) error {
 	// Wrap so nvm/fnm under the deploy user are on PATH (non-interactive bash -lc
 	// otherwise skips ~/.bashrc and npm "disappears").
 	cmd := exec.CommandContext(ctx, "/bin/bash", "-lc", osuser.WrapScript(script))
@@ -688,33 +779,23 @@ func (m *Manager) runPTY(ctx context.Context, runID, token, dir, script string, 
 	if err != nil {
 		return err
 	}
-	m.mu.Lock()
-	m.stdin[runID] = ptmx
-	m.mu.Unlock()
-	defer func() {
+	if !tagLogs {
 		m.mu.Lock()
-		if m.stdin[runID] == ptmx {
-			delete(m.stdin, runID)
-		}
+		m.stdin[runID] = ptmx
 		m.mu.Unlock()
+	}
+	defer func() {
+		if !tagLogs {
+			m.mu.Lock()
+			if m.stdin[runID] == ptmx {
+				delete(m.stdin, runID)
+			}
+			m.mu.Unlock()
+		}
 		_ = ptmx.Close()
 	}()
 
-	go func() {
-		r := bufio.NewReader(ptmx)
-		buf := make([]byte, 4096)
-		for {
-			n, err := r.Read(buf)
-			if n > 0 {
-				m.emit(runID, token, &agentv1.DeployEvent{
-					RunId: runID, Kind: "log", Phase: phaseInstall, Data: append([]byte(nil), buf[:n]...),
-				})
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
+	go m.pumpPTY(runID, token, dir, ptmx, tagLogs)
 	waitErr := cmd.Wait()
 	// Give the PTY reader a beat to flush the installer’s final lines (npm ERR!,
 	// stack traces) before the caller emits FAILED — otherwise the UI often shows
@@ -731,6 +812,60 @@ func (m *Manager) runPTY(ctx context.Context, runID, token, dir, script string, 
 		return fmt.Errorf("script exited %d", ee.ExitCode())
 	}
 	return waitErr
+}
+
+// pumpPTY streams PTY output into deploy log events. When tag is set, complete
+// lines are prefixed with `[in <dir>]` for multi-app pane routing.
+func (m *Manager) pumpPTY(runID, token, dir string, ptmx *os.File, tag bool) {
+	r := bufio.NewReader(ptmx)
+	prefix := ""
+	if tag && dir != "" {
+		prefix = "[in " + dir + "] "
+	}
+	var pending []byte
+	buf := make([]byte, 4096)
+	emit := func(chunk []byte) {
+		if len(chunk) == 0 {
+			return
+		}
+		m.emit(runID, token, &agentv1.DeployEvent{
+			RunId: runID, Kind: "log", Phase: phaseInstall, Data: chunk,
+		})
+	}
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			if prefix == "" {
+				emit(append([]byte(nil), buf[:n]...))
+			} else {
+				pending = append(pending, buf[:n]...)
+				for {
+					i := bytes.IndexByte(pending, '\n')
+					if i < 0 {
+						break
+					}
+					line := pending[:i+1]
+					pending = pending[i+1:]
+					tagged := make([]byte, 0, len(prefix)+len(line))
+					tagged = append(tagged, prefix...)
+					tagged = append(tagged, line...)
+					emit(tagged)
+				}
+			}
+		}
+		if err != nil {
+			if prefix != "" && len(pending) > 0 {
+				tagged := make([]byte, 0, len(prefix)+len(pending)+1)
+				tagged = append(tagged, prefix...)
+				tagged = append(tagged, pending...)
+				if tagged[len(tagged)-1] != '\n' {
+					tagged = append(tagged, '\n')
+				}
+				emit(tagged)
+			}
+			return
+		}
+	}
 }
 
 func runCmd(ctx context.Context, dir string, env map[string]string, name string, args ...string) error {

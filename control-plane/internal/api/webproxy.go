@@ -31,9 +31,10 @@ func apiPrefixRewrite() fiber.Handler {
 	}
 }
 
-// mountWeb reverse-proxies the Next.js UI under /app and bounces the bare root into
-// it. upstream is the internal Next.js address (e.g. http://web:3000); when empty,
-// / still serves a small nginx-style welcome page so the HTTP port is not a 404.
+// mountWeb reverse-proxies the Next.js UI under /app and serves the marketing
+// landing at the bare root. upstream is the internal Next.js address
+// (e.g. http://web:3000); when empty, / still serves a small nginx-style welcome
+// page so the HTTP port is not a 404.
 func mountWeb(app *fiber.App, upstream string) {
 	if upstream == "" {
 		app.Get("/", welcomeRoot)
@@ -41,8 +42,13 @@ func mountWeb(app *fiber.App, upstream string) {
 	}
 	upstream = strings.TrimRight(upstream, "/")
 
+	// Product landing lives at the true site root; Next serves it at /app/landing.
 	app.Get("/", func(c fiber.Ctx) error {
-		return c.Redirect().Status(fiber.StatusFound).To("/app")
+		dest := upstream + "/app/landing"
+		if q := c.Request().URI().QueryString(); len(q) > 0 {
+			dest += "?" + string(q)
+		}
+		return proxy.Do(c, dest)
 	})
 	// Public docs live in the UI; /docs is the short link people share.
 	app.Get("/docs", func(c fiber.Ctx) error {
@@ -50,6 +56,13 @@ func mountWeb(app *fiber.App, upstream string) {
 	})
 	app.Get("/docs/*", func(c fiber.Ctx) error {
 		return c.Redirect().Status(fiber.StatusFound).To("/app/docs/" + c.Params("*"))
+	})
+	// Use-case guides; /use-cases is the short marketing link.
+	app.Get("/use-cases", func(c fiber.Ctx) error {
+		return c.Redirect().Status(fiber.StatusFound).To("/app/use-cases")
+	})
+	app.Get("/use-cases/*", func(c fiber.Ctx) error {
+		return c.Redirect().Status(fiber.StatusFound).To("/app/use-cases/" + c.Params("*"))
 	})
 	// Forward /app and everything under it to Next, preserving path + query. The UI
 	// uses basePath:/app, so all its assets and routes already live under this prefix.

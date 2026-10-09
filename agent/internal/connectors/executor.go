@@ -73,6 +73,16 @@ func (e *Executor) Execute(ctx context.Context, cmd Command) Result {
 		}
 		return actor.Lifecycle(ctx, inst, cmd.Ref, cmd.Action)
 
+	case "logs":
+		reader, okAssert := prov.(LogReader)
+		if !okAssert {
+			return fail(StatusUnsupported, cmd.Kind+" does not support process logs")
+		}
+		if strings.TrimSpace(cmd.Ref) == "" {
+			return fail(StatusFailed, "logs requires a ref")
+		}
+		return reader.Logs(ctx, inst, cmd.Ref, 200)
+
 	case "read":
 		cm, okAssert := prov.(ConfigManager)
 		if !okAssert {

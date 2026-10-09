@@ -22,7 +22,7 @@
 |                        Control Plane                          |
 |                                                               |
 |   Next.js UI  --REST/SSE-->  Fiber API  <-->  PostgreSQL      |
-|                                  ^                            |
+|   (/ landing, public docs)       ^                            |
 |                                  | gRPC bidi stream (mTLS)    |
 +----------------------------------|----------------------------+
                                    |  (agents always dial OUT)
@@ -39,14 +39,30 @@ The agent is always the dialer. The control plane never needs inbound access to 
 target server, which is what makes home Raspberry Pi devices behind a consumer router
 work without port forwarding.
 
+## Public vs signed-in web
+
+The Next.js app uses `basePath: /app`. The control plane proxies `/` to the marketing
+landing (`/app/landing`), redirects `/docs` to `/app/docs`, and forwards `/app/*` to
+Next. Routes under landing, docs, and use-cases are public. Everything else requires a
+`cc_session` cookie.
+
+Anonymous visitors render inside **PublicChrome** (marketing header/footer). Signed-in
+users get the sidebar **AppShell**. Login is full-bleed and never probes `/me` unless a
+session cookie is present, so opening `/login` signed-out does not surface a 401
+“missing session” banner.
+
+Interactive runtime map: the in-app **Architecture** page embeds the Archify diagram
+from `web/public/architecture/runtime.html`.
+
 ## Components
 
 ### Web UI (Next.js 16, App Router)
 
 Server-rendered React app. Talks to the Fiber API over REST for reads and writes, and
-subscribes to Server-Sent Events (SSE) for live run logs and status changes. Main
-screens: servers list and detail, job editor (script + schedule), run history, live
-run view, secrets, settings.
+subscribes to Server-Sent Events (SSE) for live run logs and status changes. Public
+screens: product landing, use-case guides, `croncompose.yml` docs, login. Signed-in
+screens: dashboard, servers, deploys, jobs, connectors (including process logs), tools,
+secrets, settings, architecture.
 
 ### Control-plane API (Go 1.25, Fiber v3)
 
@@ -133,6 +149,13 @@ them to Postgres (capped) and simultaneously fans them out to any subscribed bro
 over SSE at `GET /api/v1/runs/:id/logs/stream`. SSE is chosen over WebSocket for the
 browser side because it is one-directional (server to browser), auto-reconnects, and is
 trivial to serve from Fiber.
+
+Deployed process output (pm2 / journalctl / docker) is a separate path: operators call
+`GET /api/v1/connectors/:id/objects/:ref/logs`, which dispatches a `ConnectorCommand`
+with `op=logs` over the same mTLS stream. See [connectors.md](connectors.md).
+
+Deploy process names are qualified as `<project>-<app>` (unless they already match) so
+two projects that both ship a `web` app do not collide in pm2 or systemd.
 
 ## Deployment shape
 

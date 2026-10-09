@@ -370,6 +370,9 @@ message DeployCommand {
   // agent can switch to pi/deploy/… so the login PATH (nvm, etc.) and home
   // directories of that account are used.
   string run_as_user = 17;
+  // Deploy project display name. Used to prefix pm2/systemd process names
+  // (e.g. "shop-web") so multiple projects on one host do not collide.
+  string project_name = 18;
 }
 
 // ---- Host tools (node, go, python, pm2, …) ----

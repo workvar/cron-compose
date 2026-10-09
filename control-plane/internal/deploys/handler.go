@@ -756,6 +756,7 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 		InstallScript: p.InstallScript, RootDirectory: p.RootDirectory,
 		Env: p.Env, Port: int32(p.Port), ProcessManager: p.ProcessManager,
 		RunAsUser:      p.RunAsUser,
+		ProjectName:    p.Name,
 		RollbackSha:    pinSHA,
 		Health:         healthCheckFor(p),
 		TimeoutSeconds: int32(p.DeployTimeoutSeconds),

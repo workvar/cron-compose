@@ -19,6 +19,8 @@ required, so the same Raspberry-Pi-behind-NAT story still holds.
   writing, roll back on failure.
 - Drive lifecycle actions (start / stop / restart / reload / enable / disable) on units,
   containers, and processes.
+- Fetch recent process logs (pm2 logs, journalctl, docker logs) for an object without
+  SSHing to the host.
 - Keep the agent unprivileged by default; privileged actions go through a narrow,
   explicit, per-connector allowlist.
 - Reuse the existing transport, audit log, and roles. Add no new daemons.
@@ -215,8 +217,14 @@ type Provider interface {
 
     // Lifecycle drives an object: start|stop|restart|reload|enable|disable.
     Lifecycle(ctx context.Context, ref, action string) (Step, error)
+
+    // Logs returns recent output for one object (pm2 / journalctl / docker).
+    // Optional on providers that implement LogReader.
 }
 ```
+
+Log readers are a narrow extra interface on pm2, systemd, and Docker providers. The
+control plane exposes them at `GET /connectors/:id/objects/:ref/logs` (operator+).
 
 ### Safety pipeline (apply)
 
@@ -284,7 +292,7 @@ message AgentMessage {
 
 message ConnectorCommand {
   string request_id     = 1;  // ULID, correlates the reply
-  string op             = 2;  // discover|status|list|read|validate|apply|lifecycle|rollback
+  string op             = 2;  // discover|status|list|read|validate|apply|lifecycle|rollback|logs
   string connector_kind = 3;  // empty for discover-all
   string connector_id   = 4;  // control-plane id for a targeted op
   string ref            = 5;  // path | unit | container | pm2 id | rule number
@@ -370,6 +378,7 @@ output, audit on mutations).
 | POST | `/connectors/:id/validate` | Validate proposed content. Body: `ref`, `content`. |
 | POST | `/connectors/:id/apply` | Back up, validate, write, activate. Body: `ref`, `content`, `base_checksum`, `dry_run`. |
 | POST | `/connectors/:id/actions` | Lifecycle action. Body: `ref`, `action`, `dry_run`. |
+| GET  | `/connectors/:id/objects/:ref/logs` | Recent process logs (operator+). |
 | GET  | `/connectors/:id/snapshots` | List config backups. |
 | POST | `/connectors/:id/snapshots/:sid/rollback` | Restore a backup and reactivate. |
 | GET  | `/connectors/:id/operations` | Operation history (paginated). |
@@ -432,6 +441,7 @@ follow-up.
   |------------|:------:|:--------:|:-----:|:-----:|
   | View status / config, list operations | yes | yes | yes | yes |
   | Lifecycle actions (start/stop/restart/reload) | no | yes | yes | yes |
+  | Object process logs | no | yes | yes | yes |
   | Edit and apply config, enable/disable, rollback | no | no | yes | yes |
   | ufw / firewall changes | no | no | yes | yes |
 

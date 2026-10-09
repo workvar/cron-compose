@@ -141,7 +141,7 @@ func New(d Deps) *fiber.App {
 	// Backstop for a run whose agent died mid-deploy and will never report an outcome.
 	go deployH.StartSweeper(context.Background())
 
-	// Single entry point: serve the UI under /app (and bounce / into it) when an
+	// Single entry point: serve the UI under /app (and the landing at /) when an
 	// upstream is configured. With no upstream, / is an nginx-style welcome page.
 	// Registered last so it never shadows API routes.
 	mountWeb(app, d.WebUpstream)

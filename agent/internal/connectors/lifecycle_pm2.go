@@ -1,34 +1,61 @@
 package connectors
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
-// Lifecycle drives one pm2 process. pm2 runs as the agent's own user against that
-// user's daemon, so there is nothing to escalate: if the agent can see the process it
-// can act on it.
+// Lifecycle drives one pm2 process, or a daemon-wide action (save / startup).
 //
-// enable/disable map to the process list pm2 resurrects on boot. `pm2 save` after a
-// stop is what actually makes the process stay down across a reboot, which is why
-// disable is stop-then-save rather than a flag.
+// enable/disable keep their historical meaning (save the boot list / stop+save).
+// save and startup are the explicit pm2 commands operators expect from the UI.
 func (p *pm2Provider) Lifecycle(ctx context.Context, inst Instance, ref, action string) Result {
-	if ref == "" {
-		return fail(StatusFailed, "no pm2 process given")
-	}
 	switch action {
-	case "start", "stop", "restart", "reload":
-		out, err := run(ctx, "pm2", action, ref)
-		s := step("pm2 "+action+" "+ref, err == nil, out)
-		if err != nil {
-			return fail(StatusFailed, "pm2 "+action+" failed: "+trimOutput(out), s)
-		}
-		return ok("process "+ref+" "+action+"ed", s)
-
-	case "enable":
+	case "save", "enable":
 		out, err := run(ctx, "pm2", "save")
 		s := step("pm2 save", err == nil, out)
 		if err != nil {
 			return fail(StatusFailed, "pm2 save failed: "+trimOutput(out), s)
 		}
 		return ok("current process list saved; it will be resurrected on boot", s)
+
+	case "startup":
+		out, err := run(ctx, "pm2", "startup")
+		s := step("pm2 startup", err == nil, out)
+		if err != nil {
+			return fail(StatusFailed, "pm2 startup failed (may need sudo once on this host): "+trimOutput(out), s)
+		}
+		msg := strings.TrimSpace(out)
+		if msg == "" {
+			msg = "pm2 startup configured"
+		}
+		return ok(msg, s)
+	}
+
+	if ref == "" {
+		return fail(StatusFailed, "no pm2 process given")
+	}
+
+	switch action {
+	case "start", "stop", "restart", "reload", "delete":
+		out, err := run(ctx, "pm2", action, ref)
+		s := step("pm2 "+action+" "+ref, err == nil, out)
+		if err != nil {
+			return fail(StatusFailed, "pm2 "+action+" failed: "+trimOutput(out), s)
+		}
+		verb := action + "ed"
+		if action == "delete" {
+			verb = "deleted"
+		}
+		return ok("process "+ref+" "+verb, s)
+
+	case "flush":
+		out, err := run(ctx, "pm2", "flush", ref)
+		s := step("pm2 flush "+ref, err == nil, out)
+		if err != nil {
+			return fail(StatusFailed, "pm2 flush failed: "+trimOutput(out), s)
+		}
+		return ok("logs flushed for "+ref, s)
 
 	case "disable":
 		stopOut, err := run(ctx, "pm2", "stop", ref)

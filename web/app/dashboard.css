@@ -27,10 +27,10 @@
 }
 .stat.green {
   border-color: transparent;
-  color: var(--green-contrast);
+  color: #fff;
   background:
-    radial-gradient(120% 130% at 0% 0%, #34b06f 0%, #1c8a4f 46%, #136b3c 100%);
-  box-shadow: 0 10px 26px rgba(20, 107, 60, 0.28);
+    radial-gradient(120% 130% at 0% 0%, #34b06f 0%, #1a5d38 46%, #0d2f23 100%);
+  box-shadow: 0 10px 26px var(--accent-glow);
 }
 .stat-top { display: flex; align-items: flex-start; justify-content: space-between; }
 .stat-label { font-size: 14px; font-weight: 600; color: var(--muted); }
@@ -42,9 +42,9 @@
   transition: background 0.15s ease, color 0.15s ease;
 }
 .stat-arrow svg { width: 16px; height: 16px; }
-a.stat:hover .stat-arrow { background: var(--green); border-color: var(--green); color: #fff; }
+a.stat:hover .stat-arrow { background: var(--green); border-color: var(--green); color: var(--green-contrast); }
 .stat.green .stat-arrow { border-color: rgba(255, 255, 255, 0.4); color: #fff; }
-a.stat.green:hover .stat-arrow { background: #fff; color: var(--green); border-color: #fff; }
+a.stat.green:hover .stat-arrow { background: #fff; color: var(--green-deep); border-color: #fff; }
 a.stat { text-decoration: none; transition: transform 0.15s ease, box-shadow 0.15s ease; }
 a.stat:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); }
 
@@ -124,7 +124,7 @@ a.stat:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); }
   content: "";
   position: absolute; inset: 0;
   background:
-    radial-gradient(80% 80% at 90% 110%, rgba(52, 176, 111, 0.35), transparent 60%),
+    radial-gradient(80% 80% at 90% 110%, rgba(43, 231, 198, 0.28), transparent 60%),
     repeating-linear-gradient(115deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 9px);
   pointer-events: none;
 }
@@ -147,7 +147,7 @@ a.stat:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); }
 }
 .host-meter-track > span {
   display: block; height: 100%; border-radius: inherit;
-  background: linear-gradient(90deg, var(--green-mint), #34b06f);
+  background: linear-gradient(90deg, var(--green-mint), var(--green));
 }
 
 /* Extra chart types */

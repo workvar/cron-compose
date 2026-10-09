@@ -7,10 +7,10 @@ import "context"
 // package stays free of any wire dependency (same reason discoveredToProto lives in
 // runtime rather than here).
 type Command struct {
-	Op           string // discover|status|list|inspect|read|validate|apply|lifecycle|rollback|ports
+	Op           string // discover|status|list|inspect|read|validate|apply|lifecycle|rollback|ports|logs
 	Kind         string // nginx|systemd|docker|pm2|...
 	Instance     string // provider instance discriminator; empty for singletons
-	Ref          string // path | unit | container id | pm2 id
+	Ref          string // path | unit | container id | pm2 id | process name
 	Action       string // lifecycle: start|stop|restart|reload|enable|disable
 	Content      []byte // apply/rollback: the bytes to write
 	BaseChecksum string // apply: optimistic concurrency against the last read
@@ -75,6 +75,12 @@ type Actor interface {
 	Lifecycle(ctx context.Context, inst Instance, ref, action string) Result
 }
 
+// LogReader is implemented by providers that can return recent stdout/stderr for one
+// object (pm2 logs, journalctl, docker logs). Optional.
+type LogReader interface {
+	Logs(ctx context.Context, inst Instance, ref string, lines int) Result
+}
+
 // ConfigManager is implemented by providers that own text configuration files and
 // can validate them before they take effect. Optional, like Actor.
 type ConfigManager interface {
@@ -113,6 +119,11 @@ var allowedActions = map[string]bool{
 	"reload":  true,
 	"enable":  true,
 	"disable": true,
+	// pm2 daemon / process extras
+	"save":    true, // pm2 save — persist process list for reboot
+	"startup": true, // pm2 startup — install boot hook
+	"delete":  true, // pm2 delete — remove process from list
+	"flush":   true, // pm2 flush — clear log files
 }
 
 // ValidAction reports whether an action is in the allowlist.

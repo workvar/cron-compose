@@ -2,9 +2,9 @@
 // happens server-side; this just keeps the UI from rendering forbidden pages.
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login"];
-// Docs are readable signed out so they can be linked from READMEs and repos.
-const PUBLIC_PREFIXES = ["/docs"];
+const PUBLIC_PATHS = ["/login", "/landing"];
+// Marketing + docs are readable signed out.
+const PUBLIC_PREFIXES = ["/docs", "/landing", "/use-cases"];
 
 function isPublic(pathname: string) {
   return (

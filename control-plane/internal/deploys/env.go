@@ -152,7 +152,7 @@ func RedactEnv(vars []EnvVar) []EnvVar {
 
 // RedactProject returns a copy safe to JSON to the browser.
 func RedactProject(p Project) Project {
-	p.Apps = RedactApps(p.Apps)
+	p.Apps = EnrichProcessNames(p.Name, RedactApps(p.Apps))
 	return p
 }
 

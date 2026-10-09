@@ -32,7 +32,7 @@ export function DeployReview({ repo, branch, serverName, specPath, plan, issues 
             from <code>{specPath}</code>
           </>
         ) : null}
-        . Each app directory is its own block: install and build first, then after the
+        . Each app directory is its own block: installs build in parallel, then after the
         release is activated, env → start → health.
       </p>
       <div className="cluster" style={{ marginTop: 12, marginBottom: 4 }}>

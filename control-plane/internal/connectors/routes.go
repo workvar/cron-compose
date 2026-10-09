@@ -41,6 +41,7 @@ func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, gw *agentgw.
 
 	// Lifecycle: operator and above.
 	r.Post("/connectors/:id/actions", auth.RequireRole("operator"), h.action)
+	r.Get("/connectors/:id/objects/:ref/logs", auth.RequireRole("operator"), h.objectLogs)
 
 	// Inspect (env): admin + passkey step-up.
 	r.Post("/connectors/:id/objects/:ref/inspect", auth.RequireRole("admin"), h.inspectObject)

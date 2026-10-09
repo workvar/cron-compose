@@ -13,6 +13,9 @@ const config: NextConfig = {
   // Standalone output for tiny production Docker images.
   output: "standalone",
 
+  // Allow the browser pane / tunnel hosts to hit Turbopack HMR in dev.
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
+
   // Parent repo lockfile would make Turbopack treat the monorepo root as the
   // app root and 404 every App Router page.
   turbopack: { root: __dirname },
@@ -30,13 +33,12 @@ const config: NextConfig = {
   // basePath: false keeps the source at the real root (/api/*, not /app/api/*).
   //
   // The UI lives under /app, so a bare / would 404. Next only allows rewrites
-  // outside basePath to an http(s) URL, so we loop back to this process for the
-  // nginx-style welcome page at public/index.html (exposed as /app/index.html).
+  // outside basePath to an http(s) URL — loop back to the marketing landing.
   async rewrites() {
     const self = `http://127.0.0.1:${process.env.PORT || "3000"}`;
     return {
       beforeFiles: [
-        { source: "/", destination: `${self}/app/index.html`, basePath: false },
+        { source: "/", destination: `${self}/app/landing`, basePath: false },
       ],
       afterFiles: [
         // More specific first: agents/docs often use …/api/v1 as AGENT_ENROLL_HTTP.

@@ -87,23 +87,53 @@ added 32 packages
     logs: lines(`preflight: git: ok
 clone: tmp clone ready (abc1234)
 install: npm ci && npm run build (in /opt/releases/r1/apps/web)
-added 10 packages
-> web@1.0.0 build
-> next build
-✓ Compiled successfully in 12s
 install: go mod download && go build -o api . (in /opt/releases/r1/apps/api)
-go: downloading example.com/mod v1.2.3
+[in /opt/releases/r1/apps/web] added 10 packages
+[in /opt/releases/r1/apps/web] > web@1.0.0 build
+[in /opt/releases/r1/apps/web] > next build
+[in /opt/releases/r1/apps/api] go: downloading example.com/mod v1.2.3
+[in /opt/releases/r1/apps/web] ✓ Compiled successfully in 12s
 `),
   });
   assert.equal(view.processes.length, 2);
   const webProc = view.processes[0];
   const apiProc = view.processes[1];
-  assert.equal(webProc.steps.find((s) => s.kind === "build")?.state, "done");
+  // Parallel installs: both stay active; a sibling starting must not finish the other.
+  assert.equal(webProc.steps.find((s) => s.kind === "build")?.state, "active");
   assert.equal(apiProc.steps.find((s) => s.kind === "install")?.state, "active");
   assert.ok(view.lines.some((l) => l.pane === webProc.id && l.text.includes("next build")));
   assert.ok(view.lines.some((l) => l.pane === apiProc.id && l.text.includes("downloading")));
   assert.ok(view.lines.some((l) => l.pane === "shared" && l.text.includes("tmp clone ready")));
-  assert.equal(view.headline, "Installing api");
+  assert.ok(view.headline.includes("Building web") || view.headline.includes("Installing api"));
+}
+
+{
+  const apps: ProgressApp[] = [
+    { name: "web", root: "apps/web", language: "node", install: "npm ci && npm run build", processManager: "pm2" },
+    {
+      name: "api",
+      root: "apps/api",
+      language: "go",
+      install: "go build -o api .",
+      processManager: "systemd",
+    },
+  ];
+  const view = buildDeployLive({
+    status: "running",
+    apps,
+    logs: lines(`clone: tmp clone ready (abc1234)
+install: npm ci && npm run build (in /opt/releases/r1/apps/web)
+install: go build -o api . (in /opt/releases/r1/apps/api)
+[in /opt/releases/r1/apps/web] > next build
+[in /opt/releases/r1/apps/api] go: building
+install: done (in /opt/releases/r1/apps/api)
+install: done (in /opt/releases/r1/apps/web)
+`),
+  });
+  const webProc = view.processes[0];
+  const apiProc = view.processes[1];
+  assert.ok(webProc.steps.filter((s) => s.kind === "install" || s.kind === "build").every((s) => s.state === "done"));
+  assert.ok(apiProc.steps.filter((s) => s.kind === "install" || s.kind === "build").every((s) => s.state === "done"));
 }
 
 {

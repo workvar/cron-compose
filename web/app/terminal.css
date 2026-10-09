@@ -187,6 +187,75 @@
   font: inherit;
 }
 
+/* Deploy run finished summary */
+.deploy-result-banner {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  background: var(--surface-2);
+}
+.deploy-result-banner.is-ok {
+  border-color: color-mix(in srgb, var(--ok, var(--green)) 45%, transparent);
+  background: var(--ok-bg, var(--green-soft));
+}
+.deploy-result-banner.is-bad {
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+  background: var(--danger-bg);
+}
+.deploy-result-banner-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.deploy-result-banner-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.deploy-result-banner.is-ok .deploy-result-banner-dot {
+  background: var(--ok, var(--green));
+}
+.deploy-result-banner.is-bad .deploy-result-banner-dot {
+  background: var(--danger);
+}
+.deploy-result-banner-head strong {
+  display: block;
+  font-size: 15px;
+  color: var(--text);
+}
+.deploy-result-banner-head p {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.deploy-result-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px 14px;
+  margin: 14px 0 0;
+}
+.deploy-result-stat dt {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 3px;
+}
+.deploy-result-stat dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-all;
+}
+.deploy-result-stat code {
+  font-size: 12.5px;
+}
+
 /* Deploy run: step rail + one terminal per process */
 .deploy-live {
   display: grid;

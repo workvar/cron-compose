@@ -65,6 +65,9 @@ type SpecApp struct {
 	// app that doesn't set its own keeps behaving exactly as it did before this
 	// existed.
 	Health *SpecHealth `yaml:"health,omitempty" json:"health,omitempty"`
+	// ProcessName is the pm2/systemd name on the host (project-app). Computed for
+	// API responses; not stored in croncompose.yml.
+	ProcessName string `yaml:"-" json:"process_name,omitempty"`
 }
 
 // MarshalSpec renders croncompose.yml.

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import CopyButton from "@/components/CopyButton";
+import { DocsToc } from "@/components/docs/DocsToc";
 import { SPEC_TEMPLATE } from "@/lib/deploy-spec";
 import "./docs.css";
 
@@ -73,7 +74,7 @@ const TOP_KEYS: Row[] = [
 ];
 
 const APP_KEYS: Row[] = [
-  { key: "name", type: "string", def: "folder name", desc: "Unique per project. Used for pm2 and systemd unit names and the deploy folder label." },
+  { key: "name", type: "string", def: "folder name", desc: <>Unique per project. Becomes the pm2 / systemd process name, qualified as <code>&lt;project&gt;-&lt;app&gt;</code> when the app name differs from the project (so two repos that both ship <code>web</code> do not collide).</> },
   { key: "root", type: "relative path", def: ".", desc: <>Folder inside the repo. No leading <code>/</code>, no <code>..</code>. Unique per project.</> },
   { key: "install", type: "shell command", def: "top-level, else detected", desc: "Build script for this app." },
   { key: "run", type: "shell command", def: "top-level, else from language", desc: "Start command for this app (cwd = activated deploy folder)." },
@@ -197,14 +198,7 @@ const SECTIONS = [
 export default function DocsPage() {
   return (
     <div className="docs">
-      <nav className="docs-toc" aria-label="On this page">
-        <div className="docs-toc-label">croncompose.yml</div>
-        {SECTIONS.map(([id, label]) => (
-          <a key={id} href={`#${id}`}>{label}</a>
-        ))}
-        <div className="docs-toc-label" style={{ marginTop: 18 }}>Use it</div>
-        <Link href="/deploys/new">Import a project →</Link>
-      </nav>
+      <DocsToc sections={SECTIONS} />
 
       <article className="docs-body">
         <header className="docs-hero">
@@ -326,9 +320,9 @@ export default function DocsPage() {
 
         <h2 id="apps">apps</h2>
         <p>
-          Use <code>apps</code> when one repo holds more than one thing to run. Each app is built in its own folder and
-          started on its own. Any top-level <code>install</code>, <code>run</code>, <code>language</code>,{" "}
-          <code>process_manager</code> and <code>env</code> act as defaults.
+          Use <code>apps</code> when one repo holds more than one thing to run. Each app is built in its own folder
+          (install scripts run in parallel) and started on its own. Any top-level <code>install</code>,{" "}
+          <code>run</code>, <code>language</code>, <code>process_manager</code> and <code>env</code> act as defaults.
         </p>
         <KeyTable rows={APP_KEYS} />
 
@@ -371,6 +365,13 @@ apps:
             </tbody>
           </table>
         </div>
+        <p>
+          After a deploy, the project page and Connectors can pull recent process output
+          (pm2 logs, journalctl, or docker logs) without SSHing to the host. Process
+          names are stable across redeploys: <code>QualifyProcessName(project, app)</code>{" "}
+          yields <code>shop-web</code> for project <code>shop</code> and app <code>web</code>,
+          or just <code>shop</code> when the names match.
+        </p>
 
         <h2 id="examples">Examples</h2>
         {EXAMPLES.map((ex) => (

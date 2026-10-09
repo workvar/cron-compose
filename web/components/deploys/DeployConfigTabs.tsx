@@ -385,8 +385,10 @@ function BuildRunTab({ blocks, onBlocks, clonePath, projectName }: Props) {
           <em>build script</em> runs inside that release folder; <em>cleanup</em> then drops
           source and caches. After activation, the <em>run script</em> starts the process
           (pm2 / systemd / docker) from that folder — for example <code>./app</code> or{" "}
-          <code>npm start</code>. With pm2, CronCompose also runs <code>pm2 save</code> and
-          best-effort <code>pm2 startup</code> so the app returns after reboot.
+          <code>npm start</code>. Process names are prefixed with the project name (e.g.{" "}
+          <code>shop-web</code>) so apps from different projects do not collide. With pm2,
+          CronCompose also runs <code>pm2 save</code> and best-effort <code>pm2 startup</code> so
+          the app returns after reboot.
         </p>
       </div>
       <div className="stack">

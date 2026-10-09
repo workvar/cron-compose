@@ -433,6 +433,8 @@ export type DeployApp = {
   env?: DeployEnvVar[];
   /** Per-app health check path. Unset falls back to the project's shared check. */
   health?: DeployAppHealth;
+  /** pm2/systemd name on the host (project-app). Computed by the API. */
+  process_name?: string;
 };
 
 export type ToolStatus = {

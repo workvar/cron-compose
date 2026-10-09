@@ -1,16 +1,6 @@
 import type { ConnectorResource } from "@/lib/types";
 import { ObjectActions } from "./ObjectActions";
-
-const stateTone: Record<string, string> = {
-  running: "ok",
-  active: "ok",
-  online: "ok",
-  enabled: "info",
-  stopped: "danger",
-  failed: "danger",
-  errored: "danger",
-  inactive: "neutral",
-};
+import { ProcessStateBadge } from "./ProcessStateBadge";
 
 /**
  * The objects table with a lifecycle control per row. Rendered instead of the plain
@@ -44,9 +34,7 @@ export function ObjectTable({
             <tr key={r.id}>
               <td style={{ fontWeight: 600 }}>{r.name}</td>
               <td>
-                <span className={`status ${stateTone[r.state ?? ""] ?? "neutral"}`}>
-                  {r.state || "unknown"}
-                </span>
+                <ProcessStateBadge state={r.state} />
               </td>
               <td className="mono subtle" style={{ fontSize: 12 }}>{r.ref}</td>
               <td>

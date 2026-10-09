@@ -46,9 +46,9 @@ func TestAPIPrefixRewrite(t *testing.T) {
 	}
 }
 
-// mountWeb bounces / into /app and reverse-proxies /app/* to the upstream with the
-// path preserved.
-func TestMountWebRedirectAndProxy(t *testing.T) {
+// mountWeb serves the marketing landing at / (proxied to /app/landing) and
+// reverse-proxies /app/* to the upstream with the path preserved.
+func TestMountWebLandingAndProxy(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "upstream:"+r.URL.Path)
 	}))
@@ -57,15 +57,16 @@ func TestMountWebRedirectAndProxy(t *testing.T) {
 	app := fiber.New()
 	mountWeb(app, upstream.URL)
 
-	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/", nil))
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/", nil), fiber.TestConfig{Timeout: 5 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode != fiber.StatusFound {
-		t.Fatalf("/ status=%d want=302", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("/ status=%d want=200", resp.StatusCode)
 	}
-	if loc := resp.Header.Get("Location"); loc != "/app" {
-		t.Errorf("/ location=%q want=/app", loc)
+	b, _ := io.ReadAll(resp.Body)
+	if string(b) != "upstream:/app/landing" {
+		t.Fatalf("/ body=%q want upstream:/app/landing", b)
 	}
 
 	resp2, err := app.Test(httptest.NewRequest(http.MethodGet, "/app/jobs", nil), fiber.TestConfig{Timeout: 5 * time.Second})
@@ -75,9 +76,27 @@ func TestMountWebRedirectAndProxy(t *testing.T) {
 	if resp2.StatusCode != http.StatusOK {
 		t.Fatalf("/app/jobs status=%d", resp2.StatusCode)
 	}
-	b, _ := io.ReadAll(resp2.Body)
-	if string(b) != "upstream:/app/jobs" {
-		t.Errorf("/app/jobs body=%q want upstream:/app/jobs", b)
+	b2, _ := io.ReadAll(resp2.Body)
+	if string(b2) != "upstream:/app/jobs" {
+		t.Fatalf("/app/jobs body=%q want upstream:/app/jobs", b2)
+	}
+
+	for _, tc := range []struct{ path, wantLoc string }{
+		{"/docs", "/app/docs"},
+		{"/docs/guide", "/app/docs/guide"},
+		{"/use-cases", "/app/use-cases"},
+		{"/use-cases/fleet", "/app/use-cases/fleet"},
+	} {
+		r, err := app.Test(httptest.NewRequest(http.MethodGet, tc.path, nil), fiber.TestConfig{Timeout: 5 * time.Second})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.path, err)
+		}
+		if r.StatusCode != http.StatusFound {
+			t.Fatalf("%s status=%d want=302", tc.path, r.StatusCode)
+		}
+		if loc := r.Header.Get("Location"); loc != tc.wantLoc {
+			t.Fatalf("%s Location=%q want %q", tc.path, loc, tc.wantLoc)
+		}
 	}
 }
 

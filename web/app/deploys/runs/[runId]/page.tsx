@@ -6,6 +6,7 @@ import type { DeployProject, DeployRun, LogLine } from "@/lib/types";
 import { IconChevronLeft } from "@/components/icons";
 import { HostThisApp } from "@/components/deploys/HostThisApp";
 import { DeployRunBoard } from "@/components/deploys/DeployRunBoard";
+import { DeployResultBanner } from "@/components/deploys/DeployResultBanner";
 
 type Props = { params: Promise<{ runId: string }> };
 
@@ -102,7 +103,8 @@ export default function DeployRunPage({ params }: Props) {
           ...prev,
           status: data.status,
           exit_code: data.exit_code,
-          error: data.error || prev.error,
+          // Success messages must not land in error (older agents sent "deploy finished").
+          error: data.status === "succeeded" ? undefined : (data.error || prev.error),
         } : prev));
       } catch { /* ignore */ }
       // Refetch so error/exit_code match the DB even if the done payload was sparse.
@@ -152,7 +154,7 @@ export default function DeployRunPage({ params }: Props) {
         </div>
       </div>
 
-      {run.error && <p className="form-error">{run.error}</p>}
+      <DeployResultBanner run={run} project={project} />
 
       <DeployRunBoard logs={logs} project={project} status={run.status} live={live} />
 

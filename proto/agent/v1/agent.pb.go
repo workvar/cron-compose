@@ -2752,7 +2752,10 @@ type DeployCommand struct {
 	// OS account to clone/install/start as. Empty = the agent's own user. A root
 	// agent can switch to pi/deploy/… so the login PATH (nvm, etc.) and home
 	// directories of that account are used.
-	RunAsUser     string `protobuf:"bytes,17,opt,name=run_as_user,json=runAsUser,proto3" json:"run_as_user,omitempty"`
+	RunAsUser string `protobuf:"bytes,17,opt,name=run_as_user,json=runAsUser,proto3" json:"run_as_user,omitempty"`
+	// Deploy project display name. Used to prefix pm2/systemd process names
+	// (e.g. "shop-web") so multiple projects on one host do not collide.
+	ProjectName   string `protobuf:"bytes,18,opt,name=project_name,json=projectName,proto3" json:"project_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2902,6 +2905,13 @@ func (x *DeployCommand) GetTimeoutSeconds() int32 {
 func (x *DeployCommand) GetRunAsUser() string {
 	if x != nil {
 		return x.RunAsUser
+	}
+	return ""
+}
+
+func (x *DeployCommand) GetProjectName() string {
+	if x != nil {
+		return x.ProjectName
 	}
 	return ""
 }
@@ -3640,7 +3650,7 @@ const file_agent_proto_rawDesc = "" +
 	" \x01(\tR\rcleanupScript\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9e\x05\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc1\x05\n" +
 	"\rDeployCommand\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x0e\n" +
 	"\x02op\x18\x02 \x01(\tR\x02op\x12\x1b\n" +
@@ -3660,7 +3670,8 @@ const file_agent_proto_rawDesc = "" +
 	"\frollback_sha\x18\x0e \x01(\tR\vrollbackSha\x129\n" +
 	"\x06health\x18\x0f \x01(\v2!.croncompose.agent.v1.HealthCheckR\x06health\x12'\n" +
 	"\x0ftimeout_seconds\x18\x10 \x01(\x05R\x0etimeoutSeconds\x12\x1e\n" +
-	"\vrun_as_user\x18\x11 \x01(\tR\trunAsUser\x1a6\n" +
+	"\vrun_as_user\x18\x11 \x01(\tR\trunAsUser\x12!\n" +
+	"\fproject_name\x18\x12 \x01(\tR\vprojectName\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"l\n" +

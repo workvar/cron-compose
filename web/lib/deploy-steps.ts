@@ -170,8 +170,8 @@ function rootLabel(root: string): string {
 
 /**
  * Hierarchical plan for the confirmation screen. Main blocks are prepare, each
- * app directory (install → build → … → start), the atomic release swap, then
- * optional policies.
+ * app directory (install/build run in parallel across apps), the atomic release
+ * swap, then start/health and optional policies.
  */
 export function buildDeployPlan(input: DeployStepsInput): DeployPlanBlock[] {
   const branch = input.branch.trim() || "main";

@@ -7,6 +7,7 @@ import { RedeployButton } from "@/components/deploys/RedeployButton";
 import { HostThisApp } from "@/components/deploys/HostThisApp";
 import { ProjectActions } from "@/components/deploys/ProjectActions";
 import { ProjectEnvPanel } from "@/components/deploys/ProjectEnvPanel";
+import { ProjectProcesses } from "@/components/deploys/ProjectProcesses";
 import { DeployServerChip } from "@/components/deploys/DeployServerChip";
 import { HealthBadge } from "@/components/deploys/HealthBadge";
 
@@ -136,6 +137,7 @@ export default async function DeployDetailPage({ params }: { params: Promise<{ i
       )}
 
       <HostThisApp project={p} />
+      <ProjectProcesses project={p} />
 
       <h2>Environment</h2>
       <p className="subtle" style={{ marginTop: -6, marginBottom: 0 }}>

@@ -52,7 +52,7 @@ func TestCloseAllCancelsInstall(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- m.runPTY(ctx, "run", "", t.TempDir(), "sleep 30", nil, nil, "")
+		errCh <- m.runPTY(ctx, "run", "", t.TempDir(), "sleep 30", nil, nil, "", false)
 	}()
 	time.Sleep(300 * time.Millisecond)
 	m.CloseAll()

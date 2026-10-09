@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Brand } from "@/components/Brand";
+import { LoginShowcase } from "@/components/login/LoginShowcase";
 import { loginWithPasskey, supportsConditionalMediation } from "@/lib/webauthn";
 
 type AuthConfig = {
@@ -16,10 +17,17 @@ type AuthConfig = {
   passkey_login?: boolean;
 };
 
+function safeNext(raw: string | null): string {
+  const next = raw || "/";
+  // Only allow in-app relative paths (avoid open redirects).
+  if (!next.startsWith("/") || next.startsWith("//")) return "/";
+  return next;
+}
+
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get("next") || "/";
+  const next = safeNext(params.get("next"));
 
   const [authCfg, setAuthCfg] = useState<AuthConfig | null>(null);
   const [email, setEmail] = useState("");
@@ -31,6 +39,7 @@ function LoginForm() {
   const condAbort = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    // Quiet session probe (401 is expected when signed out; never surface it).
     fetch("/api/me", { credentials: "include" })
       .then((r) => { if (r.ok) router.replace(next); })
       .catch(() => {});
@@ -114,78 +123,100 @@ function LoginForm() {
   }
 
   return (
-    <div className="auth-card">
-        <Brand />
-        <h1 style={{ marginTop: 18 }}>Sign in</h1>
-        <p className="subtle" style={{ margin: "0 0 4px" }}>
-          Welcome back to your control plane.
-        </p>
+    <div className="login-split">
+      <LoginShowcase />
+      <section className="login-panel">
+        <div className="login-panel-inner">
+          <Brand />
+          <h1>Sign in</h1>
+          <p className="subtle login-lede">Welcome back to your control plane.</p>
 
-        {(authCfg?.oidc_enabled || authCfg?.github_enabled || authCfg?.gitlab_enabled || authCfg?.passkey_login) && (
-          <div className="stack" style={{ marginTop: 20 }}>
-            {authCfg.passkey_login && (
-              <button className="button block secondary" onClick={() => void signInWithPasskey()} type="button" disabled={busy || passkeyBusy}>
-                {passkeyBusy ? "Waiting for passkey…" : "Sign in with passkey"}
-              </button>
-            )}
-            {authCfg.oidc_enabled && (
-              <button className="button block secondary" onClick={startSSO} type="button">
-                Sign in with SSO
-              </button>
-            )}
-            {authCfg.github_enabled && (
-              <button className="button block secondary" onClick={() => startOAuth(authCfg.github_start_url)} type="button">
-                Sign in with GitHub
-              </button>
-            )}
-            {authCfg.gitlab_enabled && (
-              <button className="button block secondary" onClick={() => startOAuth(authCfg.gitlab_start_url)} type="button">
-                Sign in with GitLab
-              </button>
-            )}
-            <div className="divider">or with email</div>
-          </div>
-        )}
+          {(authCfg?.oidc_enabled || authCfg?.github_enabled || authCfg?.gitlab_enabled || authCfg?.passkey_login) && (
+            <div className="stack" style={{ marginTop: 20 }}>
+              {authCfg.passkey_login && (
+                <button className="button block secondary" onClick={() => void signInWithPasskey()} type="button" disabled={busy || passkeyBusy}>
+                  {passkeyBusy ? "Waiting for passkey…" : "Sign in with passkey"}
+                </button>
+              )}
+              {authCfg.oidc_enabled && (
+                <button className="button block secondary" onClick={startSSO} type="button">
+                  Sign in with SSO
+                </button>
+              )}
+              {authCfg.github_enabled && (
+                <button className="button block secondary" onClick={() => startOAuth(authCfg.github_start_url)} type="button">
+                  Sign in with GitHub
+                </button>
+              )}
+              {authCfg.gitlab_enabled && (
+                <button className="button block secondary" onClick={() => startOAuth(authCfg.gitlab_start_url)} type="button">
+                  Sign in with GitLab
+                </button>
+              )}
+              <div className="divider">or with email</div>
+            </div>
+          )}
 
-        <form onSubmit={submit} className="stack" style={{ marginTop: 16 }}>
-          <div>
-            <label htmlFor="email">Email</label>
-            <input
-              id="email"
-              type="email"
-              autoComplete={authCfg?.passkey_login ? "username webauthn" : "email"}
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="password">Password</label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
-          {error && <p className="form-error">{error}</p>}
-          <button type="submit" className="button block" disabled={busy || passkeyBusy || !email || !password}>
-            {busy ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
+          <form onSubmit={submit} className="stack" style={{ marginTop: 16 }}>
+            <div>
+              <label htmlFor="email">Email</label>
+              <input
+                id="email"
+                type="email"
+                autoComplete={authCfg?.passkey_login ? "username webauthn" : "email"}
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="password">Password</label>
+              <input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+            {error && <p className="form-error">{error}</p>}
+            <button type="submit" className="button block" disabled={busy || passkeyBusy || !email || !password}>
+              {busy ? "Signing in…" : "Sign in"}
+            </button>
+          </form>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function LoginFallback() {
+  return (
+    <div className="login-split">
+      <aside className="login-showcase" aria-hidden>
+        <div className="login-showcase-glow" />
+        <div className="login-showcase-grid" />
+      </aside>
+      <section className="login-panel">
+        <div className="login-panel-inner">
+          <Brand />
+          <h1>Sign in</h1>
+          <p className="subtle login-lede">Welcome back to your control plane.</p>
+        </div>
+      </section>
     </div>
   );
 }
 
 // useSearchParams() must sit inside a Suspense boundary or Next.js 16 fails to
-// statically prerender /login (CSR bailout). The boundary keeps the build happy.
+// statically prerender /login (CSR bailout). Matching fallback prevents the
+// blank flash when arriving via ?next= redirect.
 export default function LoginPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<LoginFallback />}>
       <LoginForm />
     </Suspense>
   );

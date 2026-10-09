@@ -340,6 +340,13 @@ func (s *service) onDeployEvent(ctx context.Context, serverID string, ev *agentv
 				status = "succeeded"
 			}
 		}
+		// Message is a human summary ("deploy finished") on success and the failure
+		// reason on failure. Only the latter belongs in the error column — storing the
+		// success message made the UI paint "deploy finished" as a red form-error.
+		errMsg := ""
+		if status != "succeeded" {
+			errMsg = ev.GetMessage()
+		}
 		_, err := s.pool.Exec(ctx, `
 			update deploy_runs set
 			  status = $2,
@@ -348,12 +355,12 @@ func (s *service) onDeployEvent(ctx context.Context, serverID string, ev *agentv
 			  started_at = coalesce(started_at, now()),
 			  finished_at = now()
 			where id = $1
-		`, runID, status, ev.GetExitCode(), ev.GetMessage())
+		`, runID, status, ev.GetExitCode(), errMsg)
 		s.broker.PublishFinished(runID, &agentv1.RunFinished{
 			RunId:    runID,
 			Status:   status,
 			ExitCode: ev.GetExitCode(),
-			Error:    ev.GetMessage(),
+			Error:    errMsg,
 		})
 		if err == nil {
 			var projectID, branch, trigger string
@@ -363,7 +370,7 @@ func (s *service) onDeployEvent(ctx context.Context, serverID string, ev *agentv
 			// state and may start a rollback, and the notification reads that state to
 			// say what is running now. Firing them concurrently would race, and the
 			// message would report the state from before this run.
-			go s.afterDeployRun(serverID, projectID, runID, status, branch, trigger, ev.GetPhase(), ev.GetExitCode(), ev.GetMessage())
+			go s.afterDeployRun(serverID, projectID, runID, status, branch, trigger, ev.GetPhase(), ev.GetExitCode(), errMsg)
 		}
 		return err
 	}

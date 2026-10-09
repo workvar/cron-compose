@@ -208,7 +208,7 @@ export default async function DashboardPage() {
             <>
               <div className="dc-value" style={{ fontSize: 22, marginTop: 8 }}>
                 {host.hostname || "localhost"}
-                <span style={{ fontSize: 13, fontWeight: 600, color: "#9fc6b1", marginLeft: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--green-mint)", marginLeft: 8 }}>
                   {host.os}/{host.arch} · {host.cpus} CPU
                 </span>
               </div>
@@ -243,7 +243,7 @@ export default async function DashboardPage() {
             </>
           ) : (
             <>
-              <div className="dc-value">{d.serverCounts.online}<span style={{ fontSize: 16, fontWeight: 600, color: "#9fc6b1" }}> / {d.serverCounts.total}</span></div>
+              <div className="dc-value">{d.serverCounts.online}<span style={{ fontSize: 16, fontWeight: 600, color: "var(--green-mint)" }}> / {d.serverCounts.total}</span></div>
               <div className="dc-sub">agents online and syncing</div>
             </>
           )}
