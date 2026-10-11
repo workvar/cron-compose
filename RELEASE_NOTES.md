@@ -1,22 +1,26 @@
-# CronCompose v0.0.46
+# CronCompose v0.0.47
 
-Networks UI redesign: guided setup flows, mode tabs, and expandable actions
-instead of a static dump of tables and misaligned forms.
+Shareable deploy configs, per-process pre-start scripts, deploy analytics, and
+cleaner routing so logged-in users land on the app instead of the marketing page.
 
 ## Highlights
 
-- **Flow-first Networks** — Wireless uses a Join wizard (pick SSID → password →
-  confirm save / connect). Wired and Bluetooth open in-row drawers so actions
-  sit with the selected interface or device.
-- **Mode tabs** — Wireless, Wired, Bluetooth, and Cellular are separate panels;
-  one connection type at a time.
-- **Less clutter** — Virtual ethernet (`veth*`, bridges, etc.) is hidden by
-  default with a “Show virtual” toggle. The giant decorative title icon is gone;
-  a compact active-link strip shows the current path.
-- **Safer Wi‑Fi copy** — Confirm step still defaults to save-without-drop;
-  connect and alongside remain explicit choices.
+- **Share / Import YAML** — Download or copy a project’s `croncompose.yml`, then
+  import it on New Deploy (edit, then deploy). Project menus and Share match the
+  familiar deploy-platform pattern.
+- **Pre-start scripts** — Each process can run a `pre_start` command after
+  release and before start (for example `npx prisma migrate deploy`). Shown in
+  the deploy board and progress stream.
+- **Deploy analytics** — Agents report phase timings and release size on finish.
+  Project and dashboard views show duration/size trends, success rate, and
+  phase averages (with duration fallback when metrics are missing).
+- **Root routing** — Bare `/` sends signed-in users to `/app/` and signed-out
+  users to the public landing, so the marketing site no longer renders inside
+  the AppShell.
 
 ## Upgrade
 
-Update **web** (and redeploy the UI). Control-plane and agent APIs are unchanged
-from v0.0.45. No migration.
+1. Apply migration **0023** (`deploy_runs.metrics` JSONB).
+2. Update **control-plane**, **agent**, and **web** together (proto + metrics
+   stream + UI). Older agents still finish deploys; analytics stay empty until
+   agents are upgraded.
