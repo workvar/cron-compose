@@ -54,6 +54,13 @@ const (
 	HealthRolledBack = "rolled_back"
 )
 
+// RunMetrics is agent-reported analytics for one deploy run.
+type RunMetrics struct {
+	PhaseMs       map[string]int64 `json:"phase_ms,omitempty"`
+	ReleaseBytes  int64            `json:"release_bytes,omitempty"`
+	FreeDiskBytes int64            `json:"free_disk_bytes,omitempty"`
+}
+
 // Run is one clone+install attempt.
 type Run struct {
 	ID        string `json:"id"`
@@ -65,12 +72,13 @@ type Run struct {
 	// CommitSha is filled in once the agent reports the commit it checked out (see
 	// agent/internal/deploy/runner.go); empty until then, and always empty for a run
 	// that never got that far (agent_offline).
-	CommitSha  string     `json:"commit_sha,omitempty"`
-	ExitCode   *int       `json:"exit_code,omitempty"`
-	Error      string     `json:"error,omitempty"`
-	StartedAt  *time.Time `json:"started_at,omitempty"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
+	CommitSha  string      `json:"commit_sha,omitempty"`
+	ExitCode   *int        `json:"exit_code,omitempty"`
+	Error      string      `json:"error,omitempty"`
+	Metrics    *RunMetrics `json:"metrics,omitempty"`
+	StartedAt  *time.Time  `json:"started_at,omitempty"`
+	FinishedAt *time.Time  `json:"finished_at,omitempty"`
+	CreatedAt  time.Time   `json:"created_at"`
 }
 
 // LogLine is one chunk of a deploy run.

@@ -19,6 +19,11 @@ export type ProjectBlock = {
    * presets fill this automatically.
    */
   cleanup: string;
+  /**
+   * One-shot shell after the release is activated and before the process
+   * starts — migrations, seed data, cache warmers. Empty = skip.
+   */
+  preStart: string;
   port: string;
   processManager: string;
   /**
@@ -80,6 +85,7 @@ export function seedBlockFromInspect(inspect: DeployInspect, repoFullName: strin
     install: inspect.install_script || preset?.install || "",
     run: defaultRunForLanguage(language),
     cleanup: preset?.cleanup || "",
+    preStart: "",
     port: preset?.port || "",
     processManager: pm,
     autoDetect: true,
@@ -139,6 +145,7 @@ export function emptyBlock(): ProjectBlock {
     install: preset.install,
     run: preset.run,
     cleanup: preset.cleanup,
+    preStart: "",
     port: preset.port,
     processManager: preset.processManager,
     autoDetect: true,
@@ -185,6 +192,7 @@ export function blocksToDeployApps(
     install: block.install,
     run: block.run.trim() || undefined,
     cleanup: block.cleanup.trim() || undefined,
+    pre_start: block.preStart.trim() || undefined,
     process_manager: block.processManager,
     port: block.port ? Number(block.port) : undefined,
     env: appEnv[block.name] ?? [],
@@ -228,6 +236,7 @@ export function blocksFromProject(project: DeployProject): ProjectBlock[] {
     install: app.install || project.install_script || "",
     run: app.run || "",
     cleanup: app.cleanup || "",
+    preStart: app.pre_start || "",
     port: app.port ? String(app.port) : project.port ? String(project.port) : "",
     processManager: app.process_manager || project.process_manager || "none",
     autoDetect: false,

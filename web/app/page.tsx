@@ -11,6 +11,7 @@ import { BubbleChart } from "@/components/charts/BubbleChart";
 import { RadarChart } from "@/components/charts/RadarChart";
 import { Treemap } from "@/components/charts/Treemap";
 import { IconPlus, IconJobs, IconServer, IconChevronRight } from "@/components/icons";
+import { DeployAnalyticsPanel } from "@/components/deploys/DeployAnalyticsPanel";
 import type { Server } from "@/lib/types";
 
 const deployHref = "/deploys/new";
@@ -309,6 +310,10 @@ export default async function DashboardPage() {
           </div>
           {d.treemap.length === 0 ? <div className="empty">No servers yet.</div> : <Treemap nodes={d.treemap} />}
         </section>
+      </div>
+
+      <div style={{ marginTop: 28 }}>
+        <DeployAnalyticsPanel title="Fleet deploy analytics" compact />
       </div>
     </>
   );

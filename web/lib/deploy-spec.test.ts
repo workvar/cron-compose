@@ -106,6 +106,8 @@ assert.equal(yamlScalar(""), '""');
       language: "node",
       install: "npm ci",
       run: "npm start",
+      cleanup: "",
+      preStart: "npx prisma migrate deploy",
       port: "3000",
       processManager: "pm2",
       autoDetect: false,
@@ -128,10 +130,24 @@ assert.equal(yamlScalar(""), '""');
   assert.match(yml, /\nauto_rollback: true\n/);
   assert.match(yml, /\nenv:\n  NODE_ENV: production\n/);
   assert.match(yml, /\n    install: npm ci\n/);
+  assert.match(yml, /\n    pre_start: npx prisma migrate deploy\n/);
   assert.match(yml, /\n    port: 3000\n/);
   assert.match(yml, /\n      PORT_HINT: "3000"\n/);
   assert.doesNotMatch(yml, /DB_PASSWORD/);
   assert.match(yml, /1 sensitive variable left out/);
+}
+
+{
+  const d = specToDraft(
+    {
+      provider: "github",
+      repo: "acme/shop",
+      pre_start: "alembic upgrade head",
+      apps: [{ name: "api", root: ".", pre_start: "npx prisma migrate deploy" }],
+    },
+    servers,
+  );
+  assert.equal(d.blocks[0].preStart, "npx prisma migrate deploy");
 }
 
 // File overrides detection; unset fields fall back to it. A single app inherits port.

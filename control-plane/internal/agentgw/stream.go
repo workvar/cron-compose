@@ -2,6 +2,7 @@ package agentgw
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"math"
@@ -353,15 +354,34 @@ func (s *service) onDeployEvent(ctx context.Context, serverID string, ev *agentv
 		if status != "succeeded" {
 			errMsg = ev.GetMessage()
 		}
+		metricsJSON := "{}"
+		if met := ev.GetMetrics(); met != nil {
+			payload := map[string]any{}
+			if len(met.GetPhaseMs()) > 0 {
+				payload["phase_ms"] = met.GetPhaseMs()
+			}
+			if met.GetReleaseBytes() > 0 {
+				payload["release_bytes"] = met.GetReleaseBytes()
+			}
+			if met.GetFreeDiskBytes() > 0 {
+				payload["free_disk_bytes"] = met.GetFreeDiskBytes()
+			}
+			if len(payload) > 0 {
+				if raw, err := json.Marshal(payload); err == nil {
+					metricsJSON = string(raw)
+				}
+			}
+		}
 		_, err := s.pool.Exec(ctx, `
 			update deploy_runs set
 			  status = $2,
 			  exit_code = $3,
 			  error = nullif($4, ''),
+			  metrics = case when $5::text = '{}' then metrics else $5::jsonb end,
 			  started_at = coalesce(started_at, now()),
 			  finished_at = now()
 			where id = $1
-		`, runID, status, ev.GetExitCode(), errMsg)
+		`, runID, status, ev.GetExitCode(), errMsg, metricsJSON)
 		s.broker.PublishFinished(runID, &agentv1.RunFinished{
 			RunId:    runID,
 			Status:   status,

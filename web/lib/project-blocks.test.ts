@@ -23,6 +23,7 @@ const base = {
   install: "",
   run: "",
   cleanup: "",
+  preStart: "",
   port: "",
   processManager: "none",
   autoDetect: true,
@@ -90,6 +91,7 @@ assert.equal(
       install: "old",
       run: "old",
       cleanup: "",
+      preStart: "",
       port: "",
       processManager: "none",
       autoDetect: true,
@@ -124,6 +126,7 @@ assert.equal(
       install: "npm ci",
       run: "npm start",
       cleanup: "rm -rf .git",
+      preStart: "npx prisma migrate deploy",
       port: "3000",
       processManager: "pm2",
       autoDetect: true,
@@ -138,6 +141,7 @@ assert.equal(
   assert.equal(apps[0].root, "apps/web");
   assert.equal(apps[0].port, 3000);
   assert.equal(apps[0].run, "npm start");
+  assert.equal(apps[0].pre_start, "npx prisma migrate deploy");
   assert.equal(apps[0].process_manager, "pm2");
   assert.deepEqual(apps[0].env, [{ key: "PORT", value: "3000", sensitive: false }]);
 }

@@ -46,8 +46,7 @@ func TestAPIPrefixRewrite(t *testing.T) {
 	}
 }
 
-// mountWeb serves the marketing landing at / (proxied to /app/landing) and
-// reverse-proxies /app/* to the upstream with the path preserved.
+// mountWeb redirects / by session (dashboard vs landing) and reverse-proxies /app/*.
 func TestMountWebLandingAndProxy(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "upstream:"+r.URL.Path)
@@ -61,12 +60,24 @@ func TestMountWebLandingAndProxy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("/ status=%d want=200", resp.StatusCode)
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("/ status=%d want=302", resp.StatusCode)
 	}
-	b, _ := io.ReadAll(resp.Body)
-	if string(b) != "upstream:/app/landing" {
-		t.Fatalf("/ body=%q want upstream:/app/landing", b)
+	if loc := resp.Header.Get("Location"); loc != "/app/landing" {
+		t.Fatalf("/ Location=%q want /app/landing", loc)
+	}
+
+	reqAuthed := httptest.NewRequest(http.MethodGet, "/", nil)
+	reqAuthed.AddCookie(&http.Cookie{Name: "cc_session", Value: "signed"})
+	respAuthed, err := app.Test(reqAuthed, fiber.TestConfig{Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if respAuthed.StatusCode != http.StatusFound {
+		t.Fatalf("/+cookie status=%d want=302", respAuthed.StatusCode)
+	}
+	if loc := respAuthed.Header.Get("Location"); loc != "/app/" {
+		t.Fatalf("/+cookie Location=%q want /app/", loc)
 	}
 
 	resp2, err := app.Test(httptest.NewRequest(http.MethodGet, "/app/jobs", nil), fiber.TestConfig{Timeout: 5 * time.Second})

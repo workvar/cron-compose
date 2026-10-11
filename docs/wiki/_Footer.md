@@ -1,0 +1,1 @@
+CronCompose is self-hosted and open source. [Source](https://github.com/workvar/cron-compose) · [Releases](https://github.com/workvar/cron-compose/releases) · [Issues](https://github.com/workvar/cron-compose/issues)

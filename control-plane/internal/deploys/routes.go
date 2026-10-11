@@ -44,9 +44,11 @@ func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, gw *agentgw.
 
 	r.Post("/deploys/spec/validate", h.validateSpec)
 	r.Get("/deploys", h.list)
+	r.Get("/deploys/analytics", h.fleetAnalytics)
 	r.Get("/deploys/:id", h.get)
 	r.Get("/deploys/:id/workflow", h.workflow)
 	r.Get("/deploys/:id/runs", h.listRuns)
+	r.Get("/deploys/:id/analytics", h.projectAnalytics)
 	r.Post("/deploys", auth.RequireRole("operator"), h.create)
 	r.Patch("/deploys/:id", auth.RequireRole("operator"), h.patch)
 	r.Delete("/deploys/:id", auth.RequireRole("operator"), h.remove)

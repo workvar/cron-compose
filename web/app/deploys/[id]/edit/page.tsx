@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { DeployConfigTabs } from "@/components/deploys/DeployConfigTabs";
 import { RedeployButton } from "@/components/deploys/RedeployButton";
-import { IconChevronLeft } from "@/components/icons";
+import { IconChevronLeft, IconDownload } from "@/components/icons";
 import {
   blocksFromProject,
   blocksReady,
@@ -16,6 +16,8 @@ import {
   type RedeployMode,
 } from "@/lib/project-blocks";
 import {
+  draftToYaml,
+  downloadYaml,
   emptyAdvanced,
   type AdvancedSettings,
 } from "@/lib/deploy-spec";
@@ -131,6 +133,29 @@ export default function EditDeployPage() {
     return out;
   }, [name, blocks]);
 
+  const exportYaml = useMemo(() => {
+    if (!project) return "";
+    return draftToYaml({
+      name: name.trim() || project.name,
+      provider: project.provider,
+      repo: project.repo_full_name,
+      branch: branch || project.default_branch,
+      server: project.server_id,
+      clonePath: clonePath || undefined,
+      blocks: ensureUniqueBlockNames(blocks),
+      globalEnv,
+      appEnv,
+      advanced,
+      redeployOn,
+    });
+  }, [project, name, branch, clonePath, blocks, globalEnv, appEnv, advanced, redeployOn]);
+
+  function shareYaml() {
+    if (!project || !exportYaml) return;
+    const safe = (name || project.name || "deploy").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-|-$/g, "") || "deploy";
+    downloadYaml(`croncompose-${safe}.yml`, exportYaml);
+  }
+
   async function save() {
     if (!project || problems.length) return;
     setBusy(true);
@@ -234,6 +259,9 @@ export default function EditDeployPage() {
       {error && <p className="form-error">{error}</p>}
 
       <div className="deploy-bar">
+        <button type="button" className="button ghost sm" onClick={shareYaml}>
+          <IconDownload /> Export croncompose.yml
+        </button>
         <span className="subtle deploy-bar-hint">
           {problems[0] || (saved ? "Saved. Redeploy to apply on the server." : "Save updates the project; redeploy applies them.")}
         </span>

@@ -27,6 +27,7 @@ const (
 	phaseClone     = "clone"
 	phaseInstall   = "install"
 	phaseRelease   = "release"
+	phasePreStart  = "pre_start"
 	phaseStart     = "start"
 	phaseHealth    = "health"
 )
@@ -78,6 +79,7 @@ type Manager struct {
 	seq      map[string]*atomic.Int32
 	logged   map[string]*atomic.Int64 // bytes of log streamed per run, for the cap
 	capNoted map[string]bool          // whether the "truncated" notice was already sent
+	metrics  map[string]*runMetrics   // per-run analytics for the finished event
 }
 
 // NewManager wires a Manager.
@@ -90,6 +92,7 @@ func NewManager(log *slog.Logger, send Sender) *Manager {
 		seq:      map[string]*atomic.Int32{},
 		logged:   map[string]*atomic.Int64{},
 		capNoted: map[string]bool{},
+		metrics:  map[string]*runMetrics{},
 	}
 }
 
@@ -176,6 +179,7 @@ func (m *Manager) start(cmd *agentv1.DeployCommand) {
 	m.cancel[runID] = cancel
 	m.seq[runID] = &atomic.Int32{}
 	m.logged[runID] = &atomic.Int64{}
+	m.metrics[runID] = newRunMetrics()
 	m.mu.Unlock()
 	defer func() {
 		m.mu.Lock()
@@ -183,6 +187,7 @@ func (m *Manager) start(cmd *agentv1.DeployCommand) {
 		delete(m.seq, runID)
 		delete(m.logged, runID)
 		delete(m.capNoted, runID)
+		delete(m.metrics, runID)
 		if f := m.stdin[runID]; f != nil {
 			_ = f.Close()
 			delete(m.stdin, runID)
@@ -207,6 +212,7 @@ func (m *Manager) start(cmd *agentv1.DeployCommand) {
 	}
 	m.emit(runID, token, &agentv1.DeployEvent{
 		RunId: runID, Kind: "finished", Status: "succeeded", Message: "deploy finished",
+		Metrics: m.metricsFor(runID),
 	})
 }
 
@@ -218,7 +224,7 @@ func (m *Manager) start(cmd *agentv1.DeployCommand) {
 //  2. cherry-pick each app's root folder into <clone_path>/releases/…
 //  3. build (install scripts) in parallel inside that release folder
 //  4. cleanup non-runtime files (also in parallel across apps)
-//  5. activate release, start process manager, persist boot config
+//  5. activate release, run pre-start (migrations), start process manager
 //  6. delete the tmp clone
 func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error {
 	runID := cmd.GetRunId()
@@ -266,6 +272,9 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 				return phaseError{phaseRelease, fmt.Errorf("activate release: %w", err)}
 			}
 			m.phaseLine(runID, token, phaseRelease, "current -> "+filepath.Base(dir))
+			if err := m.preStartApps(ctx, cmd, layout, cred, tmpDir); err != nil {
+				return phaseError{phasePreStart, err}
+			}
 			if err := m.startApps(ctx, cmd, layout, cred, tmpDir); err != nil {
 				return phaseError{phaseStart, err}
 			}
@@ -308,6 +317,11 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 		return phaseError{phaseInstall, err}
 	}
 
+	if size := dirSize(release); size > 0 {
+		m.setReleaseBytes(runID, size)
+		m.phaseLine(runID, token, phaseInstall, "release size: "+humanBytes(uint64(size)))
+	}
+
 	// Nothing serves from the new release until this point, which is what makes a
 	// deploy atomic: a failed install leaves the previous release live.
 	if err := layout.Swap(release); err != nil {
@@ -316,6 +330,9 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 	_ = chownTree(base, cred)
 	m.phaseLine(runID, token, phaseRelease, "current -> "+filepath.Base(release))
 
+	if err := m.preStartApps(ctx, cmd, layout, cred, tmpDir); err != nil {
+		return phaseError{phasePreStart, err}
+	}
 	if err := m.startApps(ctx, cmd, layout, cred, tmpDir); err != nil {
 		return phaseError{phaseStart, err}
 	}
@@ -439,7 +456,7 @@ func (m *Manager) installApps(ctx context.Context, cmd *agentv1.DeployCommand, r
 			done:   "done",
 		})
 	}
-	return m.runAppScripts(ctx, cmd.GetRunId(), cmd.GetCloneToken(), cred, tmpDir, jobs)
+	return m.runAppScripts(ctx, cmd.GetRunId(), cmd.GetCloneToken(), cred, tmpDir, phaseInstall, jobs)
 }
 
 // cleanupApps runs each app's cleanup script after a successful build so the
@@ -460,28 +477,32 @@ func (m *Manager) cleanupApps(ctx context.Context, cmd *agentv1.DeployCommand, r
 			phase:  "cleanup: " + script,
 		})
 	}
-	return m.runAppScripts(ctx, cmd.GetRunId(), cmd.GetCloneToken(), cred, tmpDir, jobs)
+	return m.runAppScripts(ctx, cmd.GetRunId(), cmd.GetCloneToken(), cred, tmpDir, phaseInstall, jobs)
 }
 
 // runAppScripts runs one or more app scripts. A single job stays sequential (and
 // keeps stdin attached for interactive installers). Two or more run in parallel.
 // Apps are independent: one failure does not cancel siblings. All errors are
 // collected and returned together. PTY log lines are tagged with their work
-// directory so the UI can route interleaved output.
-func (m *Manager) runAppScripts(ctx context.Context, runID, token string, cred *osuser.Credential, tmpDir string, jobs []appScript) error {
+// directory so the UI can route interleaved output. logPhase is the DeployEvent
+// phase label (install, pre_start, …).
+func (m *Manager) runAppScripts(ctx context.Context, runID, token string, cred *osuser.Credential, tmpDir, logPhase string, jobs []appScript) error {
 	if len(jobs) == 0 {
 		return nil
+	}
+	if logPhase == "" {
+		logPhase = phaseInstall
 	}
 	if len(jobs) == 1 {
 		j := jobs[0]
 		if j.phase != "" {
-			m.phaseLine(runID, token, phaseInstall, j.phase+" (in "+j.work+")")
+			m.phaseLine(runID, token, logPhase, j.phase+" (in "+j.work+")")
 		}
 		if err := m.runPTY(ctx, runID, token, j.work, j.script, j.env, cred, tmpDir, false); err != nil {
 			return fmt.Errorf("%s: %w", j.label, err)
 		}
 		if j.done != "" {
-			m.phaseLine(runID, token, phaseInstall, j.done+" (in "+j.work+")")
+			m.phaseLine(runID, token, logPhase, j.done+" (in "+j.work+")")
 		}
 		return nil
 	}
@@ -496,7 +517,7 @@ func (m *Manager) runAppScripts(ctx context.Context, runID, token string, cred *
 		go func(j appScript) {
 			defer wg.Done()
 			if j.phase != "" {
-				m.phaseLine(runID, token, phaseInstall, j.phase+" (in "+j.work+")")
+				m.phaseLine(runID, token, logPhase, j.phase+" (in "+j.work+")")
 			}
 			if err := m.runPTY(ctx, runID, token, j.work, j.script, j.env, cred, tmpDir, true); err != nil {
 				mu.Lock()
@@ -505,7 +526,7 @@ func (m *Manager) runAppScripts(ctx context.Context, runID, token string, cred *
 				return
 			}
 			if j.done != "" {
-				m.phaseLine(runID, token, phaseInstall, j.done+" (in "+j.work+")")
+				m.phaseLine(runID, token, logPhase, j.done+" (in "+j.work+")")
 			}
 		}(j)
 	}
@@ -525,6 +546,29 @@ func joinErrors(errs []error) error {
 		parts = append(parts, e.Error())
 	}
 	return errors.New(strings.Join(parts, "; "))
+}
+
+// preStartApps runs each app's one-shot pre-start script (migrations, etc.) after
+// the release is activated and before the process manager starts. Empty scripts
+// are skipped. Apps with a script run in parallel when there is more than one.
+func (m *Manager) preStartApps(ctx context.Context, cmd *agentv1.DeployCommand, layout Layout, cred *osuser.Credential, tmpDir string) error {
+	var jobs []appScript
+	for _, app := range appsOf(cmd, layout.Current) {
+		script := strings.TrimSpace(app.GetPreStartScript())
+		if script == "" {
+			continue
+		}
+		work := appWorkDir(layout.Current, cmd, app)
+		jobs = append(jobs, appScript{
+			label:  "pre-start",
+			work:   work,
+			script: script,
+			env:    appEnv(cmd, app),
+			phase:  script,
+			done:   "done",
+		})
+	}
+	return m.runAppScripts(ctx, cmd.GetRunId(), cmd.GetCloneToken(), cred, tmpDir, phasePreStart, jobs)
 }
 
 // startApps hands each app to its process manager. Working directories go through the
@@ -943,6 +987,7 @@ func (m *Manager) fail(runID, token, phase, msg string) {
 	})
 	m.emit(runID, token, &agentv1.DeployEvent{
 		RunId: runID, Kind: "finished", Status: "failed", ExitCode: 1, Phase: phase, Message: msg,
+		Metrics: m.metricsFor(runID),
 	})
 }
 
@@ -952,9 +997,47 @@ func (m *Manager) logLine(runID, token, msg string) {
 
 // phaseLine is logLine with a stage attached, for the structured phases above.
 func (m *Manager) phaseLine(runID, token, phase, msg string) {
+	m.notePhase(runID, phase)
 	m.emit(runID, token, &agentv1.DeployEvent{
 		RunId: runID, Kind: "log", Phase: phase, Data: []byte(phase + ": " + msg + "\n"),
 	})
+}
+
+func (m *Manager) notePhase(runID, phase string) {
+	m.mu.Lock()
+	rm := m.metrics[runID]
+	m.mu.Unlock()
+	if rm != nil {
+		rm.notePhase(phase)
+	}
+}
+
+func (m *Manager) setReleaseBytes(runID string, n int64) {
+	m.mu.Lock()
+	rm := m.metrics[runID]
+	m.mu.Unlock()
+	if rm != nil {
+		rm.setReleaseBytes(n)
+	}
+}
+
+func (m *Manager) setFreeDisk(runID string, n int64) {
+	m.mu.Lock()
+	rm := m.metrics[runID]
+	m.mu.Unlock()
+	if rm != nil {
+		rm.setFreeDisk(n)
+	}
+}
+
+func (m *Manager) metricsFor(runID string) *agentv1.DeployMetrics {
+	m.mu.Lock()
+	rm := m.metrics[runID]
+	m.mu.Unlock()
+	if rm == nil {
+		return nil
+	}
+	return rm.snapshot()
 }
 
 // overLogCap reports whether this run has already streamed its budget of output, and

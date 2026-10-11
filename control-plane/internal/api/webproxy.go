@@ -42,13 +42,15 @@ func mountWeb(app *fiber.App, upstream string) {
 	}
 	upstream = strings.TrimRight(upstream, "/")
 
-	// Product landing lives at the true site root; Next serves it at /app/landing.
+	// Bare / must redirect (not reverse-proxy). Proxying / → /app/landing left the
+	// browser URL at / while Next rendered landing HTML; the client then mounted
+	// AppShell because usePathname() saw "/", which looked cheap for signed-in users.
+	// Cookie present → dashboard; signed out → marketing landing (PublicChrome).
 	app.Get("/", func(c fiber.Ctx) error {
-		dest := upstream + "/app/landing"
-		if q := c.Request().URI().QueryString(); len(q) > 0 {
-			dest += "?" + string(q)
+		if strings.TrimSpace(c.Cookies("cc_session")) != "" {
+			return c.Redirect().Status(fiber.StatusFound).To("/app/")
 		}
-		return proxy.Do(c, dest)
+		return c.Redirect().Status(fiber.StatusFound).To("/app/landing")
 	})
 	// Public docs live in the UI; /docs is the short link people share.
 	app.Get("/docs", func(c fiber.Ctx) error {

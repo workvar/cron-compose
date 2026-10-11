@@ -26,6 +26,9 @@ type Spec struct {
 	Run            string            `yaml:"run,omitempty" json:"run,omitempty"`
 	// Cleanup drops non-runtime files after install (see SpecApp.Cleanup).
 	Cleanup        string            `yaml:"cleanup,omitempty" json:"cleanup,omitempty"`
+	// PreStart is a one-shot script after activation, before the process starts
+	// (migrations, seed, etc.). See SpecApp.PreStart.
+	PreStart       string            `yaml:"pre_start,omitempty" json:"pre_start,omitempty"`
 	Root           string            `yaml:"root,omitempty" json:"root,omitempty"`
 	Port           int               `yaml:"port,omitempty" json:"port,omitempty"`
 	ProcessManager string            `yaml:"process_manager,omitempty" json:"process_manager,omitempty"`
@@ -57,6 +60,9 @@ type SpecApp struct {
 	// Cleanup is a shell snippet run after install to drop source/caches from the
 	// release. Empty lets the agent apply a framework default.
 	Cleanup        string   `yaml:"cleanup,omitempty" json:"cleanup,omitempty"`
+	// PreStart runs once after the release symlink is swapped and before the
+	// process manager starts — typically migrations. Empty = skip.
+	PreStart       string   `yaml:"pre_start,omitempty" json:"pre_start,omitempty"`
 	Port           int      `yaml:"port,omitempty" json:"port,omitempty"`
 	ProcessManager string   `yaml:"process_manager,omitempty" json:"process_manager,omitempty"`
 	Env            []EnvVar `yaml:"env,omitempty" json:"env,omitempty"`
@@ -132,6 +138,13 @@ func SpecForProject(p Project) Spec {
 		Apps: appsForSpec(p.Apps), Env: p.Env,
 		DeployTimeout: p.DeployTimeoutSeconds, AutoRollback: p.AutoRollback,
 		RedeployOn: NormalizeRedeployOn(p.RedeployOn),
+	}
+	// Single-app projects also expose run / cleanup / pre_start at the top level so
+	// a shared croncompose.yml stays easy to read and re-import.
+	if len(p.Apps) == 1 {
+		s.Run = p.Apps[0].Run
+		s.Cleanup = p.Apps[0].Cleanup
+		s.PreStart = p.Apps[0].PreStart
 	}
 	if p.HealthPath != "" {
 		s.Health = &SpecHealth{Path: p.HealthPath, Port: p.HealthPort, Timeout: p.HealthTimeoutSeconds}

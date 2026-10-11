@@ -45,6 +45,8 @@ production only those two ports are published in
 
 ## Documentation
 
+- Wiki (architecture, diagrams, design decisions): [`docs/wiki/`](docs/wiki/) — also at
+  https://github.com/workvar/cron-compose/wiki
 - In-product: [`/app/docs`](web/app/docs/page.tsx) — `croncompose.yml` reference.
 - Design / ops specs in this repo:
 

@@ -504,6 +504,22 @@ func (h *handler) listRuns(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"items": items})
 }
 
+func (h *handler) projectAnalytics(c fiber.Ctx) error {
+	a, err := h.store.ProjectAnalytics(c.Context(), c.Params("id"), 40)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "analytics_failed", err)
+	}
+	return c.JSON(a)
+}
+
+func (h *handler) fleetAnalytics(c fiber.Ctx) error {
+	a, err := h.store.FleetAnalytics(c.Context(), 80)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "analytics_failed", err)
+	}
+	return c.JSON(a)
+}
+
 func (h *handler) getRun(c fiber.Ctx) error {
 	r, err := h.store.GetRun(c.Context(), c.Params("runId"))
 	if errors.Is(err, ErrNotFound) {
@@ -787,7 +803,8 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 		}
 		cmd.Apps = append(cmd.Apps, &agentv1.DeployApp{
 			Name: a.Name, RootDirectory: a.Root, InstallScript: a.Install,
-			RunScript: a.Run, CleanupScript: cleanup, Language: lang, Port: int32(a.Port), ProcessManager: pm, Env: merged,
+			RunScript: a.Run, CleanupScript: cleanup, PreStartScript: a.PreStart,
+			Language: lang, Port: int32(a.Port), ProcessManager: pm, Env: merged,
 			Health: healthCheckForApp(a),
 		})
 	}

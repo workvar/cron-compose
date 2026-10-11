@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { LogoMark } from "@/components/LogoMark";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
+// Home uses a bare "/" (site root). The control plane redirects signed-out
+// visitors to /app/landing and signed-in visitors to the dashboard.
 const NAV = [
   { href: "/", label: "Home", external: true },
   { href: "/use-cases", label: "Use cases" },

@@ -87,6 +87,7 @@ type specFile struct {
 	Install        string            `yaml:"install"`
 	Run            string            `yaml:"run"`
 	Cleanup        string            `yaml:"cleanup"`
+	PreStart       string            `yaml:"pre_start"`
 	Root           string            `yaml:"root"`
 	Port           int               `yaml:"port"`
 	ProcessManager string            `yaml:"process_manager"`
@@ -106,6 +107,7 @@ type specFileApp struct {
 	Install        string    `yaml:"install"`
 	Run            string    `yaml:"run"`
 	Cleanup        string    `yaml:"cleanup"`
+	PreStart       string    `yaml:"pre_start"`
 	Port           int       `yaml:"port"`
 	ProcessManager string    `yaml:"process_manager"`
 	Env            yaml.Node `yaml:"env"`
@@ -148,6 +150,7 @@ func ParseSpecFile(raw []byte) SpecResult {
 		Repo: strings.TrimSpace(f.Repo), Branch: strings.TrimSpace(f.Branch), Server: strings.TrimSpace(f.Server),
 		Language: strings.ToLower(strings.TrimSpace(f.Language)), Install: strings.TrimSpace(f.Install),
 		Run: strings.TrimSpace(f.Run), Cleanup: strings.TrimSpace(f.Cleanup),
+		PreStart: strings.TrimSpace(f.PreStart),
 		Root: f.Root, Port: f.Port, ProcessManager: strings.ToLower(strings.TrimSpace(f.ProcessManager)),
 		ClonePath: strings.TrimSpace(f.ClonePath), Env: f.Env, Health: f.Health,
 		DeployTimeout: f.DeployTimeout, AutoRollback: f.AutoRollback,
@@ -221,7 +224,8 @@ func ParseSpecFile(raw []byte) SpecResult {
 		app := SpecApp{
 			Name: strings.TrimSpace(a.Name), Language: strings.ToLower(strings.TrimSpace(a.Language)),
 			Install: strings.TrimSpace(a.Install), Run: strings.TrimSpace(a.Run),
-			Cleanup: strings.TrimSpace(a.Cleanup), Port: a.Port,
+			Cleanup: strings.TrimSpace(a.Cleanup), PreStart: strings.TrimSpace(a.PreStart),
+			Port: a.Port,
 			ProcessManager: strings.ToLower(strings.TrimSpace(a.ProcessManager)),
 		}
 		root, err := cleanSpecRoot(a.Root)

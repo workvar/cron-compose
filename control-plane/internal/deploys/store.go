@@ -269,16 +269,34 @@ func (s *Store) InsertRun(ctx context.Context, projectID, serverID, trigger, bra
 
 const runCols = `
   id, project_id, server_id, trigger, status, branch, coalesce(commit_sha,''),
-  exit_code, coalesce(error,''), started_at, finished_at, created_at
+  exit_code, coalesce(error,''), coalesce(metrics::text, '{}'),
+  started_at, finished_at, created_at
 `
 
 func scanRun(row pgx.Row) (Run, error) {
 	var r Run
 	var exit *int
+	var metricsJSON string
 	err := row.Scan(&r.ID, &r.ProjectID, &r.ServerID, &r.Trigger, &r.Status, &r.Branch, &r.CommitSha,
-		&exit, &r.Error, &r.StartedAt, &r.FinishedAt, &r.CreatedAt)
+		&exit, &r.Error, &metricsJSON, &r.StartedAt, &r.FinishedAt, &r.CreatedAt)
 	r.ExitCode = exit
+	if metricsJSON != "" && metricsJSON != "{}" {
+		var m RunMetrics
+		if json.Unmarshal([]byte(metricsJSON), &m) == nil {
+			r.Metrics = &m
+		}
+	}
 	return r, err
+}
+
+// SetRunMetrics stores agent-reported analytics for a finished run.
+func (s *Store) SetRunMetrics(ctx context.Context, runID string, m RunMetrics) error {
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `update deploy_runs set metrics = $2::jsonb where id = $1`, runID, string(raw))
+	return err
 }
 
 // GetRun loads one run.

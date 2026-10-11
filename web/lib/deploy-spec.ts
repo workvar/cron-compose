@@ -1,9 +1,10 @@
 // croncompose.yml <-> the import form. The control plane parses and validates the
 // file (POST /deploys/spec/validate, GET /git/inspect); this module only maps the
 // parsed result onto the form, and renders the form back out as YAML for "Export".
-import type { DeployEnvVar, DeploySpec, Server } from "./types";
+import type { DeployEnvVar, DeployProject, DeploySpec, Server } from "./types";
 import { frameworkPreset } from "./frameworks";
 import {
+  blocksFromProject,
   defaultRunForLanguage,
   type ProjectBlock,
   type RedeployMode,
@@ -106,6 +107,7 @@ export function specToDraft(
         install: spec.install,
         run: spec.run,
         cleanup: spec.cleanup,
+        pre_start: spec.pre_start,
         port: spec.port,
         process_manager: spec.process_manager,
         env: [] as DeployEnvVar[],
@@ -126,6 +128,7 @@ export function specToDraft(
       install: app.install || spec.install || detected?.install || "",
       run: app.run || spec.run || defaultRunForLanguage(language),
       cleanup: app.cleanup || spec.cleanup || frameworkPreset(language)?.cleanup || "",
+      preStart: app.pre_start || spec.pre_start || "",
       port: port ? String(port) : "",
       processManager: app.process_manager || spec.process_manager || "none",
       // Came from an explicit croncompose.yml (or a pasted one): never let a later
@@ -263,6 +266,7 @@ export function draftToYaml(d: ExportInput): string {
     line("install", b.install, "    ");
     line("run", b.run, "    ");
     line("cleanup", b.cleanup, "    ");
+    line("pre_start", b.preStart, "    ");
     line("port", Number(b.port) || 0, "    ");
     line("process_manager", b.processManager === "none" ? "" : b.processManager, "    ");
     if (b.healthPath.trim()) {
@@ -295,6 +299,7 @@ server: my-server            # server name or id in CronCompose
 install: npm ci && npm run build
 run: npm start               # cwd = activated folder under /opt/…
 cleanup: rm -rf .git node_modules/.cache   # after build; frameworks set this
+pre_start: npx prisma migrate deploy       # after every deploy, before start
 port: 3000
 process_manager: pm2         # none | pm2 | systemd | docker
 redeploy_on: [branch]        # branch | tag | release
@@ -306,3 +311,48 @@ health:
   path: /healthz
 auto_rollback: true
 `;
+
+/** Download helper for Share / Export buttons. */
+export function downloadYaml(filename: string, yaml: string) {
+  const blob = new Blob([yaml], { type: "text/yaml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename.endsWith(".yml") || filename.endsWith(".yaml") ? filename : `${filename}.yml`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** Turn a saved project into ExportInput for draftToYaml (share between servers). */
+export function projectToExportInput(
+  project: DeployProject,
+  opts?: { serverName?: string },
+): ExportInput {
+  const blocks = blocksFromProject(project);
+  const appEnv: Record<string, DeployEnvVar[]> = {};
+  for (const app of project.apps || []) {
+    if (app.env?.length) appEnv[app.name] = app.env;
+  }
+  const modes = (project.redeploy_on || []).filter(
+    (m): m is RedeployMode => m === "branch" || m === "tag" || m === "release",
+  );
+  return {
+    name: project.name,
+    provider: project.provider,
+    repo: project.repo_full_name,
+    branch: project.default_branch,
+    server: opts?.serverName || project.server_id,
+    clonePath: project.clone_path,
+    blocks,
+    globalEnv: recordToEnvVars(project.env),
+    appEnv,
+    advanced: {
+      healthPath: project.health_path || "",
+      healthPort: project.health_port ? String(project.health_port) : "",
+      healthTimeout: project.health_timeout_seconds ? String(project.health_timeout_seconds) : "",
+      deployTimeout: project.deploy_timeout_seconds ? String(project.deploy_timeout_seconds) : "",
+      autoRollback: !!project.auto_rollback,
+    },
+    redeployOn: modes.length ? modes : [...DEFAULT_REDEPLOY_ON],
+  };
+}

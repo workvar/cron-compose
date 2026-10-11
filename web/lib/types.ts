@@ -361,6 +361,8 @@ export type DeploySpecApp = {
   /** Start command after the release is live (cwd = app folder under the deploy path). */
   run?: string;
   cleanup?: string;
+  /** One-shot script after activation, before process start (e.g. migrations). */
+  pre_start?: string;
   port?: number;
   process_manager?: string;
   env?: DeployEnvVar[];
@@ -379,6 +381,8 @@ export type DeploySpec = {
   install?: string;
   run?: string;
   cleanup?: string;
+  /** One-shot script after activation, before process start (e.g. migrations). */
+  pre_start?: string;
   root?: string;
   port?: number;
   process_manager?: string;
@@ -428,6 +432,8 @@ export type DeployApp = {
   run?: string;
   /** Post-build cleanup shell (drop source/caches from the release). */
   cleanup?: string;
+  /** One-shot script after activation, before process start (e.g. migrations). */
+  pre_start?: string;
   port?: number;
   process_manager?: string;
   env?: DeployEnvVar[];
@@ -488,6 +494,12 @@ export type DeployProject = {
   deploy_token?: string;
 };
 
+export type DeployRunMetrics = {
+  phase_ms?: Record<string, number>;
+  release_bytes?: number;
+  free_disk_bytes?: number;
+};
+
 export type DeployRun = {
   id: string;
   project_id: string;
@@ -499,6 +511,7 @@ export type DeployRun = {
   commit_sha?: string;
   exit_code?: number;
   error?: string;
+  metrics?: DeployRunMetrics;
   started_at?: string;
   finished_at?: string;
   created_at: string;

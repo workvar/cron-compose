@@ -72,6 +72,8 @@ func statusFor(p Project, run Run, status, phase string) (state, description str
 		return stateError, "Could not check out this commit on " + serverLabel(p)
 	case "install":
 		return stateFailure, "Install or build failed on " + serverLabel(p)
+	case "pre_start":
+		return stateFailure, "Built fine, but the pre-start script failed on " + serverLabel(p)
 	case "release", "start":
 		return stateFailure, "Built fine, but the app could not be started"
 	default:

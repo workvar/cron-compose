@@ -44,6 +44,7 @@ export type ProgressApp = {
   language?: string;
   install?: string;
   cleanup?: string;
+  preStart?: string;
   processManager?: string;
   healthPath?: string;
 };
@@ -63,6 +64,7 @@ type Kind =
   | "command"
   | "cleanup"
   | "release"
+  | "pre_start"
   | "start"
   | "health";
 
@@ -84,12 +86,13 @@ type Proc = {
   boundDir?: string;
   commandSteps: Mutable[];
   cleanup?: Mutable;
+  preStart?: Mutable;
   start?: Mutable;
   health?: Mutable;
   steps: Mutable[];
 };
 
-const PHASE_RE = /^(preflight|clone|install|release|start|health):\s*(.*)$/;
+const PHASE_RE = /^(preflight|clone|install|release|pre_start|start|health):\s*(.*)$/;
 const START_RE = /^(pm2|systemd|docker compose|systemctl|process_manager=none)\b/;
 /** Parallel multi-app PTY lines are tagged `[in <workDir>] …` for pane routing. */
 const IN_PREFIX_RE = /^\[in\s+([^\]]+)\]\s?(.*)$/;
@@ -102,6 +105,8 @@ function labelFor(kind: string, name: string, cmd: string): string {
       return `Building ${name}`;
     case "cleanup":
       return `Cleaning ${name}`;
+    case "pre_start":
+      return `Pre-start ${name}`;
     case "start":
       return `Starting ${name}`;
     case "health":
@@ -118,6 +123,7 @@ function makeStep(id: string, label: string, kind: Kind, detail?: string): Mutab
 function refresh(p: Proc) {
   p.steps = [...p.commandSteps];
   if (p.cleanup) p.steps.push(p.cleanup);
+  if (p.preStart) p.steps.push(p.preStart);
   if (p.start) p.steps.push(p.start);
   if (p.health) p.steps.push(p.health);
 }
@@ -155,6 +161,9 @@ function makeProcess(app: ProgressApp, index: number): Proc {
   }
   if ((app.cleanup || "").trim()) {
     proc.cleanup = makeStep(`${id}-cleanup`, `Cleaning ${name}`, "cleanup", app.cleanup);
+  }
+  if ((app.preStart || "").trim()) {
+    proc.preStart = makeStep(`${id}-prestart`, `Pre-start ${name}`, "pre_start", app.preStart);
   }
   if (pm === "pm2" || pm === "systemd" || pm === "docker") {
     proc.start = makeStep(`${id}-start`, `Starting ${name}`, "start");
@@ -246,6 +255,7 @@ export function buildDeployLive(input: LiveInput): LiveView {
     for (const p of processes) out.push(...p.commandSteps);
     for (const p of processes) if (p.cleanup) out.push(p.cleanup);
     out.push(shared.release);
+    for (const p of processes) if (p.preStart) out.push(p.preStart);
     for (const p of processes) if (p.start) out.push(p.start);
     for (const p of processes) if (p.health) out.push(p.health);
     return out;
@@ -263,9 +273,17 @@ export function buildDeployLive(input: LiveInput): LiveView {
       (p) =>
         p.commandSteps.includes(step) ||
         p.cleanup === step ||
+        p.preStart === step ||
         p.start === step ||
         p.health === step,
     );
+  }
+
+  function completePreStart(proc: Proc) {
+    if (proc.preStart && (proc.preStart.state === "pending" || proc.preStart.state === "active")) {
+      proc.preStart.state = "done";
+      if (cur.step === proc.preStart) cur.step = null;
+    }
   }
 
   function isShared(step: Mutable): boolean {
@@ -496,6 +514,30 @@ export function buildDeployLive(input: LiveInput): LiveView {
           activate(shared.release);
           shared.release.ticks++;
         }
+      } else if (kind === "pre_start") {
+        const work = msg.match(/^(.*)\s+\(in\s+([^)]+)\)\s*$/);
+        if (work) {
+          const script = work[1].trim();
+          const dir = work[2].trim();
+          const proc = ensure(dir);
+          if (shared.release.state === "active") {
+            shared.release.state = "done";
+            if (cur.step === shared.release) cur.step = null;
+          }
+          if (!proc.preStart) {
+            proc.preStart = makeStep(`${proc.id}-prestart`, `Pre-start ${proc.name}`, "pre_start", script === "done" ? undefined : script);
+            refresh(proc);
+          }
+          if (script === "done") {
+            completePreStart(proc);
+          } else {
+            activate(proc.preStart);
+            proc.preStart.ticks++;
+          }
+          pane = proc.id;
+        } else {
+          pane = "shared";
+        }
       } else if (kind === "health") {
         const healths = processes.map((p) => p.health).filter((s): s is Mutable => Boolean(s));
         const open = healths.find((s) => s.state === "pending" || s.state === "active");
@@ -536,6 +578,7 @@ export function buildDeployLive(input: LiveInput): LiveView {
           shared.release.state = "done";
           if (cur.step === shared.release) cur.step = null;
         }
+        completePreStart(proc);
         if (line.startsWith("process_manager=none")) {
           proc.start.state = "skipped";
         } else {

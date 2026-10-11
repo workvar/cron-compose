@@ -47,6 +47,7 @@ func (m *Manager) preflight(runID, token, base, installScript, processManager st
 	case free < minFreeBytes:
 		return fmt.Errorf("only %s free on %s, need at least %s", humanBytes(free), base, humanBytes(minFreeBytes))
 	default:
+		m.setFreeDisk(runID, int64(free))
 		m.phaseLine(runID, token, phasePreflight, "disk space: "+humanBytes(free)+" free")
 	}
 

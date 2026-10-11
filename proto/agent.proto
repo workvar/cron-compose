@@ -344,6 +344,9 @@ message DeployApp {
   // and other non-runtime files (e.g. rm -rf src .git). Empty = agent framework
   // default when language is known, otherwise skip.
   string cleanup_script    = 10;
+  // One-shot shell run after the release is activated and before the process
+  // manager starts (e.g. database migrations). Empty = skip.
+  string pre_start_script  = 11;
 }
 
 message DeployCommand {
@@ -458,6 +461,15 @@ message HealthCheck {
   int32  timeout_seconds = 3; // total budget to become healthy; 0 = agent default
 }
 
+message DeployMetrics {
+  // Milliseconds spent in each coarse phase (preflight, clone, install, …).
+  map<string, int64> phase_ms = 1;
+  // Bytes on disk for the activated release after install/cleanup.
+  int64 release_bytes = 2;
+  // Free disk bytes on the deploy volume at preflight (0 if unknown).
+  int64 free_disk_bytes = 3;
+}
+
 message DeployEvent {
   string run_id      = 1;
   string kind        = 2; // log | started | finished | error
@@ -472,5 +484,7 @@ message DeployEvent {
   // Coarse stage this event belongs to: preflight | clone | install | release |
   // start | health. Purely for readable logs and UI grouping.
   string phase        = 9;
+  // Filled on finished events so the control plane can chart deploy analytics.
+  DeployMetrics metrics = 10;
 }
 

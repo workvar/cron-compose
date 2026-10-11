@@ -38,6 +38,18 @@ export function proxy(req: NextRequest) {
   }
 
   const hasSession = req.cookies.has("cc_session");
+
+  // Site root (outside basePath /app). Redirect so the browser URL matches the
+  // chrome: dashboard when signed in, marketing landing when signed out. Never
+  // reverse-proxy / → landing (that left AppShell wrapped around landing HTML).
+  // Use an absolute /app/… path — nextUrl.pathname is basePath-relative for
+  // in-app routes and would otherwise turn "/landing" into a wrong location.
+  if (pathname === "/") {
+    return NextResponse.redirect(
+      new URL(hasSession ? "/app/" : "/app/landing", req.url),
+    );
+  }
+
   if (!hasSession && !isPublic(pathname)) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";

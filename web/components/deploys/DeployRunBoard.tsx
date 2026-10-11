@@ -28,6 +28,7 @@ function appsOf(project: DeployProject | null): ProgressApp[] {
       language: a.language || project.language,
       install: a.install || project.install_script,
       cleanup: a.cleanup,
+      preStart: a.pre_start,
       processManager: a.process_manager || project.process_manager,
       healthPath: a.health?.path || (apps.length === 1 ? project.health_path : ""),
     }));

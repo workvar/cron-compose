@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { apiGet } from "@/lib/api";
 import type { DeployInventory, DeployProject, ListResponse, Server } from "@/lib/types";
-import { IconChevronLeft, IconPlus } from "@/components/icons";
+import { IconChevronLeft, IconPlus, IconUpload } from "@/components/icons";
 import { ServerEmojiBadge } from "@/components/ServerEmoji";
 import { serverEmojiOrFallback } from "@/lib/server-emoji";
 import { ProcessManagerTabs } from "@/components/deploys/ProcessManagerTabs";
+import { ProjectCardMenu } from "@/components/deploys/ProjectCardMenu";
 
 const tone: Record<Server["status"], string> = {
   online: "ok",
@@ -57,6 +58,9 @@ export default async function DeployServerPage({ params }: Props) {
         </div>
         <div className="page-head-actions">
           <Link href={`/servers/${server.id}`} className="button secondary">Server details</Link>
+          <Link href="/deploys/new?import=yml" className="button secondary">
+            <IconUpload /> Import YAML
+          </Link>
           <Link href="/deploys/new" className="button"><IconPlus /> New project</Link>
         </div>
       </div>
@@ -68,22 +72,27 @@ export default async function DeployServerPage({ params }: Props) {
           <div className="card-title" style={{ marginBottom: 12 }}>Projects on this server</div>
           <div className="deploy-project-grid">
             {projects.map((p) => (
-              <Link key={p.id} href={`/deploys/${p.id}`} className="deploy-project-card">
-                <div className="deploy-project-card-name">{p.name}</div>
-                <div className="subtle" style={{ fontSize: 13 }}>
-                  {p.provider}/{p.repo_full_name}
-                </div>
-                <div className="subtle" style={{ fontSize: 12 }}>
-                  {p.language || "unknown"} · {p.default_branch}
+              <div key={p.id} className="deploy-project-card">
+                <div className="row" style={{ alignItems: "flex-start", gap: 8 }}>
+                  <Link href={`/deploys/${p.id}`} className="deploy-project-card-main">
+                    <div className="deploy-project-card-name">{p.name}</div>
+                    <div className="subtle" style={{ fontSize: 13 }}>
+                      {p.provider}/{p.repo_full_name}
+                    </div>
+                    <div className="subtle" style={{ fontSize: 12 }}>
+                      {p.language || "unknown"} · {p.default_branch}
+                    </div>
+                  </Link>
+                  <ProjectCardMenu project={p} serverName={server.name} />
                 </div>
                 <div className="deploy-project-card-foot">
                   <span className="pill">{p.process_manager}</span>
                   {p.port > 0 && <span className="pill">PORT {p.port}</span>}
-                  <span className="button ghost sm" style={{ marginLeft: "auto" }}>
+                  <Link href={`/deploys/${p.id}`} className="button ghost sm" style={{ marginLeft: "auto" }}>
                     Open
-                  </span>
+                  </Link>
                 </div>
-              </Link>
+              </div>
             ))}
           </div>
         </div>

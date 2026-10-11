@@ -383,10 +383,10 @@ function BuildRunTab({ blocks, onBlocks, clonePath, projectName }: Props) {
           CronCompose clones the repo into a temporary folder, then cherry-picks only each
           process&apos;s root directory into the release under <code>{deployHint}</code>. The{" "}
           <em>build script</em> runs inside that release folder; <em>cleanup</em> then drops
-          source and caches. After activation, the <em>run script</em> starts the process
-          (pm2 / systemd / docker) from that folder — for example <code>./app</code> or{" "}
-          <code>npm start</code>. Process names are prefixed with the project name (e.g.{" "}
-          <code>shop-web</code>) so apps from different projects do not collide. With pm2,
+          source and caches. After activation, optional <em>pre-start</em> runs once (migrations),
+          then the <em>run script</em> starts the process (pm2 / systemd / docker) — for example{" "}
+          <code>./app</code> or <code>npm start</code>. Process names are prefixed with the project
+          name (e.g. <code>shop-web</code>) so apps from different projects do not collide. With pm2,
           CronCompose also runs <code>pm2 save</code> and best-effort <code>pm2 startup</code> so
           the app returns after reboot.
         </p>
@@ -408,23 +408,7 @@ function BuildRunTab({ blocks, onBlocks, clonePath, projectName }: Props) {
                 spellCheck={false}
               />
               <p className="field-hint">
-                Install deps, compile, migrate — anything that prepares artifacts before the process starts.
-              </p>
-            </div>
-            <div className="field">
-              <label htmlFor={`block-run-${block.id}`}>Run script</label>
-              <input
-                id={`block-run-${block.id}`}
-                value={block.run}
-                onChange={(e) =>
-                  onBlocks(blocks.map((b) => (b.id === block.id ? { ...b, run: e.target.value } : b)))
-                }
-                placeholder="./app"
-                spellCheck={false}
-              />
-              <p className="field-hint">
-                Executed with cwd set to the activated deploy folder. Keep it short — the binary or
-                start command only.
+                Install deps and compile — anything that prepares artifacts before the process starts.
               </p>
             </div>
             <div className="field">
@@ -442,6 +426,39 @@ function BuildRunTab({ blocks, onBlocks, clonePath, projectName }: Props) {
               <p className="field-hint">
                 Removes source and other non-runtime files from the release after a successful build.
                 Framework presets fill this automatically; leave blank to skip.
+              </p>
+            </div>
+            <div className="field">
+              <label htmlFor={`block-prestart-${block.id}`}>Pre-start (after every deploy)</label>
+              <textarea
+                id={`block-prestart-${block.id}`}
+                rows={2}
+                value={block.preStart}
+                onChange={(e) =>
+                  onBlocks(blocks.map((b) => (b.id === block.id ? { ...b, preStart: e.target.value } : b)))
+                }
+                placeholder="npx prisma migrate deploy"
+                spellCheck={false}
+              />
+              <p className="field-hint">
+                One-time script run after the release is activated and before the process starts —
+                database migrations, cache warmers, and similar. Leave blank to skip.
+              </p>
+            </div>
+            <div className="field">
+              <label htmlFor={`block-run-${block.id}`}>Run script</label>
+              <input
+                id={`block-run-${block.id}`}
+                value={block.run}
+                onChange={(e) =>
+                  onBlocks(blocks.map((b) => (b.id === block.id ? { ...b, run: e.target.value } : b)))
+                }
+                placeholder="./app"
+                spellCheck={false}
+              />
+              <p className="field-hint">
+                Executed with cwd set to the activated deploy folder. Keep it short — the binary or
+                start command only.
               </p>
             </div>
           </div>

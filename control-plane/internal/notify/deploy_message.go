@@ -17,6 +17,8 @@ func phaseLabel(phase string) string {
 		return "Install / build"
 	case "release":
 		return "Release activation"
+	case "pre_start":
+		return "Pre-start (migrations / one-shot)"
 	case "start":
 		return "Process start"
 	case "health":

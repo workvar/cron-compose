@@ -32,14 +32,10 @@ const config: NextConfig = {
   // Next is hit directly (e.g. `next dev`, or a Cloudflare Tunnel aimed at :3000).
   // basePath: false keeps the source at the real root (/api/*, not /app/api/*).
   //
-  // The UI lives under /app, so a bare / would 404. Next only allows rewrites
-  // outside basePath to an http(s) URL — loop back to the marketing landing.
+  // Bare / is redirected by proxy.ts / the control plane (session → /app/, else
+  // → /app/landing). Rewrites only proxy /api onto the control plane.
   async rewrites() {
-    const self = `http://127.0.0.1:${process.env.PORT || "3000"}`;
     return {
-      beforeFiles: [
-        { source: "/", destination: `${self}/app/landing`, basePath: false },
-      ],
       afterFiles: [
         // More specific first: agents/docs often use …/api/v1 as AGENT_ENROLL_HTTP.
         { source: "/api/v1/:path*", destination: `${apiOrigin}/api/v1/:path*`, basePath: false },

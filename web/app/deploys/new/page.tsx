@@ -3,8 +3,9 @@
 // Vercel-style import: pick a source (connected repo, public URL, or a pasted
 // croncompose.yml), configure (including which repo croncompose.yml to use),
 // review the steps that YAML implies, then confirm.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { GitConnections } from "@/components/deploys/GitConnections";
 import { DeployConfigTabs } from "@/components/deploys/DeployConfigTabs";
 import { DeployReview } from "@/components/deploys/DeployReview";
@@ -19,6 +20,7 @@ import {
   IconSearch,
 } from "@/components/icons";
 import {
+  blocksFromProject,
   blocksReady,
   blocksToDeployApps,
   emptyBlock,
@@ -32,9 +34,11 @@ import {
 import {
   SPEC_TEMPLATE,
   draftToYaml,
+  downloadYaml,
   emptyAdvanced,
   envVarsToRecord,
   parseRepoUrl,
+  recordToEnvVars,
   specToDraft,
   type AdvancedSettings,
 } from "@/lib/deploy-spec";
@@ -108,7 +112,11 @@ async function errorText(res: Response): Promise<string> {
   }
 }
 
-export default function NewDeployPage() {
+function NewDeployForm() {
+  const searchParams = useSearchParams();
+  const copyFromId = searchParams.get("from") || "";
+  const wantYamlImport = searchParams.get("import") === "yml";
+
   const [phase, setPhase] = useState<"server" | "import" | "configure" | "review">("server");
   const [conns, setConns] = useState<GitConnection[] | null>(null);
   const [provider, setProvider] = useState("github");
@@ -130,6 +138,7 @@ export default function NewDeployPage() {
   const [selectedSpecPath, setSelectedSpecPath] = useState(SPEC_NONE);
   const [form, setForm] = useState<Form>(emptyForm);
   const [showYaml, setShowYaml] = useState(false);
+  const [copyFrom, setCopyFrom] = useState<DeployProject | null>(null);
 
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -148,6 +157,81 @@ export default function NewDeployPage() {
       .then((d) => setServers(d.items || []))
       .catch(() => setServers([]));
   }, []);
+
+  // Deep-link from "Import YAML": after the server step, land on the YAML importer.
+  useEffect(() => {
+    if (phase !== "import" || !wantYamlImport) return;
+    const el = document.getElementById("import-yml");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [phase, wantYamlImport]);
+
+  // Copy an existing project's config onto another server: load it, then pick the target.
+  useEffect(() => {
+    if (!copyFromId) {
+      setCopyFrom(null);
+      return;
+    }
+    let live = true;
+    fetch(`/api/deploys/${encodeURIComponent(copyFromId)}`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errorText(r));
+        return r.json() as Promise<{ project: DeployProject }>;
+      })
+      .then((d) => {
+        if (live) setCopyFrom(d.project);
+      })
+      .catch((e) => {
+        if (live) setError((e as Error).message);
+      });
+    return () => {
+      live = false;
+    };
+  }, [copyFromId]);
+
+  /** Apply a shared project (or YAML import) onto the configure form for the chosen server. */
+  function applyCopiedProject(p: DeployProject, serverId: string) {
+    const blocks = blocksFromProject(p);
+    const appEnv: Record<string, DeployEnvVar[]> = {};
+    for (const app of p.apps || []) {
+      if (app.env?.length) appEnv[app.name] = app.env;
+    }
+    const modes = (p.redeploy_on || []).filter(
+      (m): m is RedeployMode => m === "branch" || m === "tag" || m === "release",
+    );
+    setSource({
+      provider: p.provider,
+      fullName: p.repo_full_name,
+      repoId: p.repo_id,
+      cloneUrl: p.clone_url,
+      defaultBranch: p.default_branch,
+      via: "yaml",
+    });
+    setInspect(null);
+    setSpec(null);
+    setSelectedSpecPath(SPEC_NONE);
+    setForm({
+      name: p.name,
+      serverId,
+      branch: p.default_branch || "main",
+      clonePath: p.clone_path || "",
+      runAsUser: p.run_as_user || "",
+      blocks,
+      globalEnv: recordToEnvVars(p.env),
+      appEnv,
+      advanced: {
+        ...emptyAdvanced,
+        autoRollback: p.auto_rollback,
+        healthPath: p.health_path || "",
+        healthPort: p.health_port ? String(p.health_port) : "",
+        healthTimeout: p.health_timeout_seconds ? String(p.health_timeout_seconds) : "",
+        deployTimeout: p.deploy_timeout_seconds ? String(p.deploy_timeout_seconds) : "",
+      },
+      redeployOn: modes.length ? modes : [...DEFAULT_REDEPLOY_ON],
+    });
+    setShowYaml(false);
+    setPhase("configure");
+    window.scrollTo({ top: 0 });
+  }
 
   const connected = (conns || []).some((c) => c.provider === provider);
 
@@ -623,19 +707,42 @@ export default function NewDeployPage() {
         <Link href="/deploys" className="back-link"><IconChevronLeft /> Back to deploys</Link>
         <div className="page-head">
           <div>
-            <h1>Choose a server</h1>
+            <h1>
+              {copyFrom
+                ? "Copy to another server"
+                : wantYamlImport
+                  ? "Import shared configuration"
+                  : "Choose a server"}
+            </h1>
             <p className="subtle">
-              Pick where this code will run. You can assign a green emoji on the server page for a
-              quick visual identifier.
+              {copyFrom
+                ? `Configuration from ${copyFrom.name} will open in the edit screen after you pick the target server. Adjust anything, save, then deploy.`
+                : wantYamlImport
+                  ? "Pick the server that should receive the shared croncompose.yml. Next you will paste or upload the file and edit before deploying."
+                  : "Pick where this code will run. You can assign a green emoji on the server page for a quick visual identifier."}
             </p>
           </div>
         </div>
+        {copyFrom && (
+          <div className="panel" style={{ marginBottom: 16 }}>
+            <div className="card-title">Sharing {copyFrom.name}</div>
+            <p className="subtle" style={{ margin: "6px 0 0" }}>
+              {copyFrom.provider}/{copyFrom.repo_full_name} · processes, scripts, env, and pre-start
+              will be copied. Sensitive values are not included in YAML exports; they stay on this
+              project when using Copy to server.
+            </p>
+          </div>
+        )}
         <ServerPickerGrid
           servers={servers}
           value={form.serverId}
           onChange={(serverId) => setForm((f) => ({ ...f, serverId }))}
           onContinue={() => {
             setError(null);
+            if (copyFrom && form.serverId) {
+              applyCopiedProject(copyFrom, form.serverId);
+              return;
+            }
             setPhase(source ? "configure" : "import");
             window.scrollTo({ top: 0 });
           }}
@@ -764,16 +871,19 @@ export default function NewDeployPage() {
               <div className="card-title">croncompose.yml</div>
               <div className="cluster">
                 <CopyButton value={exportYaml} className="light" />
-                <a
+                <button
+                  type="button"
                   className="button secondary sm"
-                  download="croncompose.yml"
-                  href={`data:text/yaml;charset=utf-8,${encodeURIComponent(exportYaml)}`}
+                  onClick={() => downloadYaml("croncompose.yml", exportYaml)}
                 >
                   <IconDownload /> Download
-                </a>
+                </button>
               </div>
             </div>
-            <p className="field-hint">Commit this to the repo root and the next import fills itself in.</p>
+            <p className="field-hint">
+              Share this file with another CronCompose server, or commit it to the repo root so the
+              next import fills itself in. Sensitive env values are omitted.
+            </p>
             <pre className="spec-code">{exportYaml}</pre>
           </div>
         )}
@@ -782,7 +892,7 @@ export default function NewDeployPage() {
 
         <div className="deploy-bar">
           <button type="button" className="button ghost sm" onClick={() => setShowYaml((v) => !v)}>
-            {showYaml ? "Hide" : "Export as"} croncompose.yml
+            {showYaml ? "Hide" : "Share / export"} croncompose.yml
           </button>
           <div className="deploy-bar-right">
             {problems.length > 0 && <span className="subtle deploy-bar-hint">{problems[0]}</span>}
@@ -962,13 +1072,15 @@ export default function NewDeployPage() {
             </form>
           </section>
 
-          <section className="panel import-card">
+          <section className="panel import-card" id="import-yml">
             <div className="row">
-              <div className="card-title">Deploy from croncompose.yml</div>
+              <div className="card-title">Import shared croncompose.yml</div>
               <Link href="/docs" className="small">Docs →</Link>
             </div>
             <p className="subtle small">
-              Paste or upload a file. Already in your repo? Just import the repo; it is picked up automatically.
+              Paste or upload a <code>.yml</code> exported from another server (Share config). The
+              configure screen opens so you can edit processes, scripts, and pre-start, then deploy.
+              Already in your repo? Import the repo; the file is picked up automatically.
             </p>
             <textarea
               className="spec-input"
@@ -1023,5 +1135,13 @@ function IssueList({ issues }: { issues: DeploySpecIssue[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+export default function NewDeployPage() {
+  return (
+    <Suspense fallback={<p className="subtle">Loading…</p>}>
+      <NewDeployForm />
+    </Suspense>
   );
 }

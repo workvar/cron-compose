@@ -298,6 +298,7 @@ p.small { margin: 4px 0 12px; }
   box-shadow: var(--shadow-sm);
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
   min-height: 140px;
+  position: relative;
 }
 .deploy-project-card:hover {
   border-color: var(--border-strong);
@@ -305,6 +306,13 @@ p.small { margin: 4px 0 12px; }
   transform: translateY(-1px);
   color: inherit;
 }
+.deploy-project-card-main {
+  flex: 1;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+.deploy-project-card-main:hover { color: inherit; }
 .deploy-project-card-name {
   font-size: 17px;
   font-weight: 750;
@@ -318,6 +326,130 @@ p.small { margin: 4px 0 12px; }
   gap: 8px;
   align-items: center;
   padding-top: 8px;
+}
+
+/* Vercel-style Share / … menus on deploy pages */
+.button.icon-only {
+  padding: 8px 10px;
+  min-width: 36px;
+  justify-content: center;
+}
+.action-menu {
+  position: relative;
+  display: inline-flex;
+}
+.action-menu-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 220px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.action-menu-pop a,
+.action-menu-pop button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.action-menu-pop a:hover,
+.action-menu-pop button:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.action-menu-pop button.danger { color: var(--danger, #dc2626); }
+.action-menu-pop svg { width: 16px; height: 16px; flex: none; }
+
+.share-config-modal { width: min(640px, 100%); }
+.share-config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+.share-config-preview {
+  max-height: 280px;
+  overflow: auto;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.deploy-settings summary {
+  cursor: pointer;
+  list-style: none;
+}
+.deploy-settings summary::-webkit-details-marker { display: none; }
+.deploy-settings-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.deploy-settings-summary::after {
+  content: "▸";
+  color: var(--muted);
+  font-size: 12px;
+  margin-left: auto;
+}
+.deploy-settings[open] .deploy-settings-summary::after { content: "▾"; }
+.deploy-settings-body {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 18px;
+}
+.deploy-settings-dl {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+.deploy-settings-dl dt {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.deploy-settings-dl dd {
+  margin: 0;
+}
+.deploy-settings-dl pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 13px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  max-height: 100px;
+  overflow: auto;
+}
+
+.deploy-analytics-grid {
+  margin-top: 0;
 }
 .deploy-server-card {
   display: flex;
@@ -659,6 +791,7 @@ table.data-table tr:last-child td { border-bottom: 0; }
 }
 .deploy-substep-install .deploy-substep-n,
 .deploy-substep-build .deploy-substep-n { border-color: color-mix(in srgb, var(--green) 35%, var(--border)); }
+.deploy-substep-pre_start .deploy-substep-n { border-color: color-mix(in srgb, var(--warn, #d97706) 40%, var(--border)); }
 .deploy-substep-start .deploy-substep-n { border-color: color-mix(in srgb, var(--info, #3b82f6) 40%, var(--border)); }
 
 .deploy-steps { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 0; }

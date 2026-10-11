@@ -119,6 +119,15 @@ export const IconPlug = (p: P) => (
 export const IconDownload = (p: P) => (
   <svg {...base(p)}><path d="M12 3v12M7 11l5 5 5-5M5 21h14" /></svg>
 );
+export const IconShare = (p: P) => (
+  <svg {...base(p)}><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" /></svg>
+);
+export const IconMore = (p: P) => (
+  <svg {...base(p)}><circle cx="12" cy="5" r="1.5" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" /><circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none" /></svg>
+);
+export const IconUpload = (p: P) => (
+  <svg {...base(p)}><path d="M12 21V9M7 13l5-5 5 5M5 21h14" /></svg>
+);
 export const IconTrash = (p: P) => (
   <svg {...base(p)}><path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3" /></svg>
 );

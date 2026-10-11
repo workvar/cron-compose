@@ -8,6 +8,8 @@ import { HostThisApp } from "@/components/deploys/HostThisApp";
 import { ProjectActions } from "@/components/deploys/ProjectActions";
 import { ProjectEnvPanel } from "@/components/deploys/ProjectEnvPanel";
 import { ProjectProcesses } from "@/components/deploys/ProjectProcesses";
+import { DeploymentSettings } from "@/components/deploys/DeploymentSettings";
+import { DeployAnalyticsPanel } from "@/components/deploys/DeployAnalyticsPanel";
 import { DeployServerChip } from "@/components/deploys/DeployServerChip";
 import { HealthBadge } from "@/components/deploys/HealthBadge";
 
@@ -67,7 +69,7 @@ export default async function DeployDetailPage({ params }: { params: Promise<{ i
           <p className="subtle">{p.provider}/{p.repo_full_name}</p>
         </div>
         <div className="page-head-actions">
-          <ProjectActions project={p} />
+          <ProjectActions project={p} serverName={server?.name} />
           <RedeployButton
             projectId={p.id}
             provider={p.provider}
@@ -124,6 +126,9 @@ export default async function DeployDetailPage({ params }: { params: Promise<{ i
           />
         </div>
       </div>
+
+      <DeploymentSettings project={p} />
+      <DeployAnalyticsPanel projectId={p.id} title="Project analytics" />
 
       {detail.webhook_url && (
         <div className="panel" style={{ marginTop: 18 }}>

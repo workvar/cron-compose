@@ -55,6 +55,12 @@ export async function Shell({ children }: { children: React.ReactNode }) {
     redirect(dest);
   }
 
+  // Signed-in users should not sit on the marketing landing inside any chrome.
+  const isLanding = pathname === "/landing" || pathname.startsWith("/landing/");
+  if (me && isLanding) {
+    redirect("/");
+  }
+
   const health = await getHealth();
   let serverCount = 0;
   if (me && !isLogin) {

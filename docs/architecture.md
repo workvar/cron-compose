@@ -41,15 +41,15 @@ work without port forwarding.
 
 ## Public vs signed-in web
 
-The Next.js app uses `basePath: /app`. The control plane proxies `/` to the marketing
-landing (`/app/landing`), redirects `/docs` to `/app/docs`, and forwards `/app/*` to
-Next. Routes under landing, docs, and use-cases are public. Everything else requires a
-`cc_session` cookie.
+The Next.js app uses `basePath: /app`. The control plane redirects bare `/` by session
+(`cc_session` → `/app/` dashboard, else → `/app/landing`), redirects `/docs` to
+`/app/docs`, and forwards `/app/*` to Next. Routes under landing, docs, and use-cases
+are public. Everything else requires a `cc_session` cookie.
 
 Anonymous visitors render inside **PublicChrome** (marketing header/footer). Signed-in
-users get the sidebar **AppShell**. Login is full-bleed and never probes `/me` unless a
-session cookie is present, so opening `/login` signed-out does not surface a 401
-“missing session” banner.
+users get the sidebar **AppShell** and are redirected away from `/landing`. Login is
+full-bleed and never probes `/me` unless a session cookie is present, so opening
+`/login` signed-out does not surface a 401 “missing session” banner.
 
 Interactive runtime map: the in-app **Architecture** page embeds the Archify diagram
 from `web/public/architecture/runtime.html`.

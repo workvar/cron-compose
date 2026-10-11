@@ -59,8 +59,10 @@ const TOP_KEYS: Row[] = [
   { key: "branch", type: "string", def: "repo default", desc: "Branch to deploy on the first run, and the branch watched when redeploy_on includes branch." },
   { key: "server", type: "string", desc: "Server name or id to deploy to. Pre-selected in the importer when it matches; you can still change it." },
   { key: "clone_path", type: "absolute path", def: "/opt/apps/<language>/<repo>", desc: "Folder on the server releases land in (usually under /opt). Each process runs from its app folder under current/ after activation." },
-  { key: "install", type: "shell command", def: "detected", desc: "Build script. Runs in the app root after every clone. Install deps, compile, migrate. Left out, CronCompose uses what it detects." },
+  { key: "install", type: "shell command", def: "detected", desc: "Build script. Runs in the app root after every clone. Install deps and compile. Left out, CronCompose uses what it detects." },
   { key: "run", type: "shell command", def: "from language", desc: <>Start command after the release is live. Working directory is the activated app folder under the deploy path — for a Go binary that is often just <code>./app</code>.</> },
+  { key: "cleanup", type: "shell command", def: "framework default", desc: "Shell run after a successful build to drop source/caches from the release. Leave blank to skip (or let the framework preset fill it)." },
+  { key: "pre_start", type: "shell command", desc: <>One-shot script after the release is activated and before the process starts — typically migrations (<code>npx prisma migrate deploy</code>, <code>alembic upgrade head</code>). Runs on every deploy. Leave blank to skip.</> },
   { key: "root", type: "relative path", def: ".", desc: "App folder inside the repo, for single-app repos. Use apps for more than one." },
   { key: "language", type: "string", def: "detected", desc: <>Framework or language id — e.g. <code>nextjs nestjs react go csharp dotnet python fastapi</code>, or a base runtime like <code>node</code>. Picks clone-path defaults and seeds install/run when those fields are omitted.</> },
   { key: "port", type: "1–65535", desc: <>Exported as <code>PORT</code> and used as the default health-check port. Leave unset to let the agent detect the listening port and show it in the web UI.</> },
@@ -78,6 +80,8 @@ const APP_KEYS: Row[] = [
   { key: "root", type: "relative path", def: ".", desc: <>Folder inside the repo. No leading <code>/</code>, no <code>..</code>. Unique per project.</> },
   { key: "install", type: "shell command", def: "top-level, else detected", desc: "Build script for this app." },
   { key: "run", type: "shell command", def: "top-level, else from language", desc: "Start command for this app (cwd = activated deploy folder)." },
+  { key: "cleanup", type: "shell command", def: "top-level / framework default", desc: "Post-build cleanup for this app." },
+  { key: "pre_start", type: "shell command", def: "top-level", desc: "One-shot script after activation, before this app's process starts." },
   { key: "language", type: "string", def: "top-level language", desc: "Overrides the top-level value." },
   { key: "port", type: "1–65535", def: "top-level if only one app", desc: <>This app&apos;s <code>PORT</code>.</> },
   { key: "process_manager", type: "string", def: "top-level value", desc: "Overrides the top-level value." },
@@ -299,8 +303,12 @@ export default function DocsPage() {
             trigger). If the repo already has one, only the CI trigger is added.
           </li>
           <li>
-            <strong>Export any time.</strong> The Configure page has <em>Export as croncompose.yml</em>, which turns
-            whatever you set up by hand into a file you can commit.
+            <strong>Share between servers.</strong> Use <em>Share config</em> on a project (or{" "}
+            <em>Share / export croncompose.yml</em> while configuring) to download a <code>.yml</code>.
+            On the next server, open Deploy → Import shared croncompose.yml. The configure/edit screen
+            opens so you can tweak processes, scripts, and pre-start, then deploy. On the same
+            CronCompose instance, <em>Copy to server</em> skips the file and opens that flow directly.
+            You can also commit the file to the repo root so the next import fills itself in.
           </li>
         </ul>
 

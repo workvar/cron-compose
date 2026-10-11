@@ -176,6 +176,8 @@ server: my-server            # server name or id in CronCompose
 
 install: npm ci && npm run build
 run: npm start               # cwd = activated folder under /opt/…
+cleanup: rm -rf .git node_modules/.cache   # after build; frameworks set this
+pre_start: npx prisma migrate deploy       # after every deploy, before start
 port: 3000
 process_manager: pm2         # none | pm2 | systemd | docker
 redeploy_on: [branch]        # branch | tag | release
@@ -198,6 +200,9 @@ func TestParseSpecFileTemplate(t *testing.T) {
 	}
 	if res.Spec.Run != "npm start" {
 		t.Errorf("run = %q", res.Spec.Run)
+	}
+	if res.Spec.PreStart != "npx prisma migrate deploy" {
+		t.Errorf("pre_start = %q", res.Spec.PreStart)
 	}
 	if len(res.Spec.RedeployOn) != 1 || res.Spec.RedeployOn[0] != "branch" {
 		t.Errorf("redeploy_on = %v", res.Spec.RedeployOn)

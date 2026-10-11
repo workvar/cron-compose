@@ -15,6 +15,7 @@ export type DeployStepKind =
   | "command"
   | "stage"
   | "env"
+  | "pre_start"
   | "start"
   | "health"
   | "rollback"
@@ -279,6 +280,16 @@ export function buildDeployPlan(input: DeployStepsInput): DeployPlanBlock[] {
             ? `No custom env yet — set PORT=${b.port} when starting.`
             : "No custom env configured for this app.",
     });
+
+    const preStart = (b.preStart || "").trim();
+    if (preStart) {
+      runSteps.push({
+        id: `prestart-${b.id}`,
+        kind: "pre_start",
+        title: "Pre-start (one-time)",
+        detail: `After activation, run \`${preStart}\` once before starting the process (migrations, etc.).`,
+      });
+    }
 
     const pm = b.processManager || "none";
     const port = Number(b.port) || 0;
