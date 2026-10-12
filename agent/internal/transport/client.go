@@ -10,9 +10,18 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 
 	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
 )
+
+// Keep the TCP/HTTP2 session alive under proxies that idle-cut around 30–60s.
+// Application heartbeats alone are not enough when a middlebox ignores app frames.
+var clientKeepalive = keepalive.ClientParameters{
+	Time:                20 * time.Second,
+	Timeout:             10 * time.Second,
+	PermitWithoutStream: true,
+}
 
 // Client is a thin wrapper around the generated AgentService client.
 type Client struct {
@@ -32,6 +41,7 @@ func dial(ctx context.Context, addr string, creds ...grpc.DialOption) (*Client, 
 	defer cancel()
 	opts := append(creds,
 		grpc.WithBlock(),
+		grpc.WithKeepaliveParams(clientKeepalive),
 		// Without this a refused port, a TLS mismatch and a timeout all surface as
 		// "context deadline exceeded", which hides a wrong address or port clash.
 		grpc.WithReturnConnectionError(),

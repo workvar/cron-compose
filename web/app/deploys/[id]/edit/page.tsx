@@ -47,6 +47,7 @@ export default function EditDeployPage() {
   const [advanced, setAdvanced] = useState<AdvancedSettings>({ ...emptyAdvanced });
   const [redeployOn, setRedeployOn] = useState<RedeployMode[]>(["branch"]);
   const [branches, setBranches] = useState<SelectOption[]>([]);
+  const [branchesBusy, setBranchesBusy] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -100,9 +101,11 @@ export default function EditDeployPage() {
     if (!project) return;
     if (project.provider !== "github" && project.provider !== "gitlab") {
       setBranches([]);
+      setBranchesBusy(false);
       return;
     }
     let live = true;
+    setBranchesBusy(true);
     listBranches(project.provider, project.repo_full_name)
       .then((items) => {
         if (live) {
@@ -114,7 +117,10 @@ export default function EditDeployPage() {
           );
         }
       })
-      .catch(() => live && setBranches([]));
+      .catch(() => live && setBranches([]))
+      .finally(() => {
+        if (live) setBranchesBusy(false);
+      });
     return () => {
       live = false;
     };
@@ -254,6 +260,7 @@ export default function EditDeployPage() {
         redeployOn={redeployOn}
         onRedeployOn={setRedeployOn}
         gitConnected
+        branchesBusy={branchesBusy}
       />
 
       {error && <p className="form-error">{error}</p>}

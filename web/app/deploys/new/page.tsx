@@ -20,6 +20,7 @@ import {
   IconSearch,
 } from "@/components/icons";
 import {
+  applyDetection,
   blocksFromProject,
   blocksReady,
   blocksToDeployApps,
@@ -132,12 +133,17 @@ function NewDeployForm() {
 
   const [source, setSource] = useState<Source | null>(null);
   const [branches, setBranches] = useState<SelectOption[]>([]);
+  const [branchesBusy, setBranchesBusy] = useState(false);
   const [inspect, setInspect] = useState<DeployInspect | null>(null);
+  const [inspectBusy, setInspectBusy] = useState(false);
   const [spec, setSpec] = useState<DeploySpecResult | null>(null);
   const [specFiles, setSpecFiles] = useState<string[]>([]);
+  const [specFilesBusy, setSpecFilesBusy] = useState(false);
   const [selectedSpecPath, setSelectedSpecPath] = useState(SPEC_NONE);
   const [form, setForm] = useState<Form>(emptyForm);
   const [showYaml, setShowYaml] = useState(false);
+  /** Last branch we fetched inspect for — skip the initial post-openRepo pass. */
+  const inspectBranchRef = useRef<string | null>(null);
   const [copyFrom, setCopyFrom] = useState<DeployProject | null>(null);
 
   const [busy, setBusy] = useState<string | null>(null);
@@ -207,6 +213,7 @@ function NewDeployForm() {
       via: "yaml",
     });
     setInspect(null);
+    inspectBranchRef.current = null;
     setSpec(null);
     setSelectedSpecPath(SPEC_NONE);
     setForm({
@@ -253,15 +260,20 @@ function NewDeployForm() {
   useEffect(() => {
     if (!source) {
       setBranches([]);
+      setBranchesBusy(false);
       return;
     }
     let live = true;
+    setBranchesBusy(true);
     listBranches(source.provider, source.fullName)
       .then((items) => {
         if (live) setBranches(items.map((b) => ({ value: b.name, label: b.default ? `${b.name} (default)` : b.name })));
       })
       .catch(() => {
         if (live) setBranches([]);
+      })
+      .finally(() => {
+        if (live) setBranchesBusy(false);
       });
     return () => {
       live = false;
@@ -272,20 +284,94 @@ function NewDeployForm() {
   useEffect(() => {
     if (!source || source.via === "yaml" || phase === "import") {
       setSpecFiles([]);
+      setSpecFilesBusy(false);
       return;
     }
     let live = true;
+    setSpecFilesBusy(true);
     listSpecFiles(source.provider, source.fullName, form.branch || source.defaultBranch || "main")
       .then((items) => {
         if (live) setSpecFiles(items);
       })
       .catch(() => {
         if (live) setSpecFiles([]);
+      })
+      .finally(() => {
+        if (live) setSpecFilesBusy(false);
       });
     return () => {
       live = false;
     };
   }, [source?.provider, source?.fullName, source?.via, source?.defaultBranch, form.branch, phase]);
+
+  // Re-inspect the repo when the operator switches branch so workspaces / detection
+  // match the tree they are about to deploy from.
+  useEffect(() => {
+    if (!source || phase !== "configure" || source.via === "yaml") {
+      inspectBranchRef.current = null;
+      return;
+    }
+    const branch = form.branch || source.defaultBranch || "main";
+    const sourceKey = `${source.provider}/${source.fullName}`;
+    const fetchKey = `${sourceKey}@${branch}`;
+    if (inspectBranchRef.current === fetchKey) return;
+    // openRepo already inspected the initial branch; only refetch on a real change.
+    if (inspectBranchRef.current === null) {
+      inspectBranchRef.current = fetchKey;
+      return;
+    }
+    inspectBranchRef.current = fetchKey;
+
+    let live = true;
+    setInspectBusy(true);
+    const hasGrant = (conns || []).some((c) => c.provider === source.provider);
+    const q = new URLSearchParams({ provider: source.provider, repo: source.fullName, branch });
+    if (!hasGrant || source.via === "public") q.set("public", "1");
+    const specPath = selectedSpecPath;
+    (async () => {
+      try {
+        const res = await fetch(`/api/git/inspect?${q}`);
+        if (!res.ok) throw new Error(await errorText(res));
+        const ins = (await res.json()) as DeployInspect;
+        if (!live) return;
+        setInspect(ins);
+
+        if (specPath && specPath !== SPEC_NONE && specPath !== "pasted") {
+          try {
+            const result = await fetchSpecFile(source.provider, source.fullName, branch, specPath);
+            if (!live) return;
+            setSpec(result);
+            if (result.valid) {
+              setForm(applySpecToForm(source, ins, result));
+              return;
+            }
+          } catch {
+            // Spec missing on this branch — fall through to detection.
+            if (live) {
+              setSpec(null);
+              setSelectedSpecPath(SPEC_NONE);
+            }
+          }
+        }
+
+        if (!live) return;
+        // Refresh auto-detect blocks against the new branch without wiping manual edits.
+        setForm((f) => ({
+          ...f,
+          blocks: f.blocks.map((b) => (b.autoDetect ? applyDetection(b, ins) : b)),
+        }));
+      } catch {
+        /* keep previous inspect; operator can still pick folders manually */
+      } finally {
+        if (live) setInspectBusy(false);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+    // selectedSpecPath is read at switch time; do not re-run when only the picker changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, form.branch, phase, conns]);
 
   const personalLogin = conns?.find((c) => c.provider === provider)?.login;
   const owners = useMemo(() => listGitRepoOwners(repos || [], personalLogin), [repos, personalLogin]);
@@ -359,6 +445,7 @@ function NewDeployForm() {
         defaultBranch: ins?.default_branch || src.defaultBranch,
       });
       setInspect(ins);
+      inspectBranchRef.current = `${src.provider}/${src.fullName}@${next.branch}`;
       setSpec(fileSpec);
       // Pasted YAML is not a repo path; root auto-detect is. Nested picks come from the picker.
       if (pasted) setSelectedSpecPath(SPEC_NONE);
@@ -863,6 +950,8 @@ function NewDeployForm() {
           redeployOn={form.redeployOn}
           onRedeployOn={(redeployOn) => setForm((f) => ({ ...f, redeployOn }))}
           gitConnected={gitConnected}
+          branchesBusy={branchesBusy}
+          repoBusy={inspectBusy || specFilesBusy}
         />
 
         {showYaml && (

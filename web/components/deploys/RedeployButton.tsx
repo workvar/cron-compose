@@ -128,6 +128,7 @@ export function RedeployButton({
             onChange={setRefName}
             aria-label="Redeploy from branch, tag, or release"
             disabled={busy || loadingRefs}
+            loading={loadingRefs}
           />
         </div>
       )}

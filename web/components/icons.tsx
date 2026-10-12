@@ -139,6 +139,19 @@ export const IconGit = (p: P) => (
     <path d="M6 8.5v7M8.2 7.2 16 11.2" />
   </svg>
 );
+/** macOS-style filled folder (closed). Color via CSS currentColor / .mac-folder. */
+export const IconFolder = (p: P) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...p}>
+    <path d="M3.5 6.75A2.25 2.25 0 0 1 5.75 4.5h4.1c.4 0 .78.16 1.06.44l1.06 1.06c.28.28.66.44 1.06.44h5.28A2.25 2.25 0 0 1 20.5 8.7v8.55a2.25 2.25 0 0 1-2.25 2.25H5.75A2.25 2.25 0 0 1 3.5 17.25V6.75Z" />
+  </svg>
+);
+/** macOS-style filled folder (open / expanded). */
+export const IconFolderOpen = (p: P) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...p}>
+    <path d="M3.5 7A2.5 2.5 0 0 1 6 4.5h3.6c.4 0 .78.16 1.06.44l.9.9c.28.28.66.44 1.06.44H18A2.5 2.5 0 0 1 20.5 8.8V10H5.2A2.2 2.2 0 0 0 3.05 12.4l1.5 5.4A2.5 2.5 0 0 0 7 20h11.3a2.5 2.5 0 0 0 2.4-1.8l1.7-6.1A2.2 2.2 0 0 0 20.25 9.5H20.5V8.8A2.5 2.5 0 0 0 18 6.3h-5.38a.75.75 0 0 1-.53-.22l-.9-.9A2.25 2.25 0 0 0 9.6 4.5H6A2.5 2.5 0 0 0 3.5 7Z" opacity=".35" />
+    <path d="M4.2 11.25h16.1a1.75 1.75 0 0 1 1.7 2.15l-1.55 6.5A2.25 2.25 0 0 1 18.25 21.5H6.05a2.25 2.25 0 0 1-2.18-1.7L2.5 13.4a1.75 1.75 0 0 1 1.7-2.15Z" />
+  </svg>
+);
 export const IconTools = (p: P) => (
   <svg {...base(p)}>
     <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4L15 12l-2.3-2.3 1.9-3.4Z" />

@@ -71,6 +71,14 @@ func (r *Registry) Remove(c *Conn) bool {
 	return false
 }
 
+// Connected reports whether serverID currently has an AgentStream registered.
+func (r *Registry) Connected(serverID string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.conns[serverID]
+	return ok
+}
+
 // Send pushes a message to the named server, or returns ErrAgentOffline.
 func (r *Registry) Send(serverID string, msg *agentv1.ServerMessage) error {
 	r.mu.RLock()

@@ -64,6 +64,10 @@ type Props = {
   redeployOn: RedeployMode[];
   onRedeployOn: (modes: RedeployMode[]) => void;
   gitConnected: boolean;
+  /** Branch list is still loading. */
+  branchesBusy?: boolean;
+  /** Repo metadata (inspect / folders) is refreshing after a branch change. */
+  repoBusy?: boolean;
   activeTab?: ConfigTabId;
   onTabChange?: (tab: ConfigTabId) => void;
 };
@@ -144,6 +148,7 @@ export function DeployConfigTabs(props: Props) {
                 placeholder="main"
                 onChange={props.onBranch}
                 aria-label="Branch"
+                loading={props.branchesBusy}
               />
               <p className="field-hint">Used for the first deploy and for branch-push redeploys.</p>
             </div>
@@ -160,6 +165,7 @@ export function DeployConfigTabs(props: Props) {
               placeholder="Select a file…"
               aria-label="croncompose.yml from repo"
               disabled={props.specBusy}
+              loading={props.specBusy || props.repoBusy}
             />
             <p className="field-hint">
               Pick which file in the repo drives this deploy, or None to detect from the tree.
@@ -199,6 +205,7 @@ function ProcessesTab({
   provider,
   repo,
   branch,
+  repoBusy,
 }: Props) {
   return (
     <div className="config-tab-panel">
@@ -215,6 +222,7 @@ function ProcessesTab({
             provider={provider}
             repo={repo}
             branch={branch}
+            repoBusy={!!repoBusy}
             canRemove={blocks.length > 1}
             onChange={(next) => onBlocks(blocks.map((b) => (b.id === next.id ? next : b)))}
             onRemove={() => onBlocks(blocks.filter((b) => b.id !== block.id))}
@@ -239,6 +247,7 @@ function ProcessCard({
   provider,
   repo,
   branch,
+  repoBusy,
   canRemove,
   onChange,
   onRemove,
@@ -248,12 +257,14 @@ function ProcessCard({
   provider: string;
   repo: string;
   branch: string;
+  repoBusy: boolean;
   canRemove: boolean;
   onChange: (block: ProjectBlock) => void;
   onRemove: () => void;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [detecting, setDetecting] = useState(false);
+  const waiting = detecting || repoBusy;
 
   function patch(partial: Partial<ProjectBlock>) {
     onChange({ ...block, ...partial });
@@ -308,12 +319,16 @@ function ProcessCard({
         <div className="field">
           <label>Root folder in repo</label>
           <div className="row" style={{ gap: 8 }}>
-            <code style={{ flex: 1, padding: "8px 10px", background: "var(--surface-2)", borderRadius: 8 }}>
+            <code
+              className={`awaiting-box${waiting ? " awaiting" : ""}`}
+              style={{ flex: 1, padding: "8px 10px", background: "var(--surface-2)", borderRadius: 8, border: "1px solid var(--border)" }}
+            >
               {rootDisplay}
             </code>
             <button
               type="button"
-              className="button secondary sm"
+              className={`button secondary sm${waiting ? " awaiting" : ""}`}
+              disabled={waiting}
               onClick={() => setPickerOpen((o) => !o)}
             >
               Change
@@ -344,6 +359,7 @@ function ProcessCard({
             allowCustom
             placeholder={detecting ? "Detecting…" : "Select a framework…"}
             disabled={detecting}
+            loading={waiting}
             onChange={(language) => onChange(applyFramework(block, language))}
             aria-label="Framework or language"
           />
@@ -543,6 +559,7 @@ function AdvancedTab({
   branch,
   onBranch,
   branches,
+  branchesBusy,
 }: Props) {
   return (
     <div className="config-tab-panel">
@@ -557,6 +574,7 @@ function AdvancedTab({
             placeholder="main"
             onChange={onBranch}
             aria-label="Branch"
+            loading={branchesBusy}
           />
         </div>
       )}
@@ -637,6 +655,7 @@ function RedeployTab({
   branch,
   onBranch,
   branches,
+  branchesBusy,
   provider,
   gitConnected,
 }: Props) {
@@ -681,6 +700,7 @@ function RedeployTab({
               placeholder="Search branches…"
               onChange={onBranch}
               aria-label="Redeploy branch"
+              loading={branchesBusy}
             />
           </div>
         )}

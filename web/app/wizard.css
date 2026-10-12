@@ -805,3 +805,154 @@ table.data-table tr:last-child td { border-bottom: 0; }
 }
 .deploy-step-title { font-weight: 700; color: var(--text); }
 .deploy-step-detail { margin-top: 3px; font-size: 13px; color: var(--muted); line-height: 1.45; word-break: break-word; }
+
+/* ---------- Repo folder picker (Finder-style tree) ---------- */
+.repo-folder-picker {
+  margin-top: 10px;
+  padding: 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.repo-folder-picker__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.repo-folder-picker__title {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text);
+}
+.repo-folder-picker__shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.repo-folder-picker__filter {
+  width: 100%;
+  margin: 0;
+}
+.repo-folder-picker__foot,
+.repo-folder-picker__manual {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.repo-folder-picker__selected {
+  position: relative;
+  display: block;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.repo-folder-picker__foot .button,
+.repo-folder-picker__manual .button {
+  min-width: 132px;
+  justify-content: center;
+}
+.repo-folder-picker__manual input {
+  width: 100%;
+  margin: 0;
+}
+.repo-folder-picker__manual-toggle {
+  align-self: flex-start;
+  padding-left: 0;
+}
+
+.repo-folder-tree {
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  padding: 6px 4px;
+  position: relative;
+}
+.repo-folder-tree__hint { margin: 8px 12px; font-size: 13px; }
+.repo-folder-tree__row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 30px;
+  border-radius: 8px;
+}
+.repo-folder-tree__row:hover { background: var(--surface-3); }
+.repo-folder-tree__row.selected {
+  background: var(--green-soft);
+}
+.repo-folder-tree__chev {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.repo-folder-tree__chev:hover:not(:disabled) { background: var(--surface); color: var(--text-2); }
+.repo-folder-tree__chev:disabled { opacity: 0.35; cursor: default; }
+.repo-folder-tree__chev svg { width: 14px; height: 14px; }
+.repo-folder-tree__chev--spacer { visibility: hidden; pointer-events: none; }
+.repo-folder-tree__label {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 4px 8px 4px 2px;
+  margin: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.repo-folder-tree__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mac-folder {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  color: #5ac8fa;
+  filter: drop-shadow(0 0.5px 0.5px rgba(0, 0, 0, 0.12));
+}
+.mac-folder svg { width: 18px; height: 18px; }
+.mac-folder.open { color: #32ade6; }
+[data-theme="dark"] .mac-folder { color: #64d2ff; }
+[data-theme="dark"] .mac-folder.open { color: #70d7ff; }
+.repo-folder-tree__spinner {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--border-strong);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: repo-folder-spin 0.7s linear infinite;
+}
+@keyframes repo-folder-spin {
+  to { transform: rotate(360deg); }
+}

@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { GitDirEntry, GitDirList } from "@/lib/types";
 import { normalizeBlockRoot } from "@/lib/project-blocks";
 import { apiErrorMessage } from "@/lib/api-error";
-import { SearchableSelect } from "@/components/SearchableSelect";
-import type { SelectOption } from "@/lib/ui-helpers";
+import { IconChevronDown, IconChevronRight, IconFolder, IconFolderOpen } from "@/components/icons";
 
 type Props = {
   provider: string;
@@ -16,6 +15,8 @@ type Props = {
   onChange: (root: string) => void;
   onClose: () => void;
 };
+
+const ROOT_KEY = "";
 
 async function fetchDirs(
   provider: string,
@@ -32,8 +33,37 @@ async function fetchDirs(
   return data.items ?? [];
 }
 
-function toOptions(items: GitDirEntry[]): SelectOption[] {
-  return items.map((i) => ({ value: i.name, label: i.name }));
+function pathKey(path: string): string {
+  return normalizeBlockRoot(path) === "." ? ROOT_KEY : normalizeBlockRoot(path);
+}
+
+function parentKey(path: string): string {
+  const n = pathKey(path);
+  if (!n) return ROOT_KEY;
+  const i = n.lastIndexOf("/");
+  return i < 0 ? ROOT_KEY : n.slice(0, i);
+}
+
+function childEntries(all: GitDirEntry[], parent: string): GitDirEntry[] {
+  const prefix = parent ? `${parent}/` : "";
+  return all
+    .filter((item) => {
+      if (!prefix) return !item.path.includes("/");
+      if (!item.path.startsWith(prefix)) return false;
+      return !item.path.slice(prefix.length).includes("/");
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function ancestorsOf(path: string): string[] {
+  const n = pathKey(path);
+  if (!n) return [];
+  const parts = n.split("/");
+  const out: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    out.push(parts.slice(0, i + 1).join("/"));
+  }
+  return out;
 }
 
 export function RepoFolderPicker({
@@ -45,237 +75,353 @@ export function RepoFolderPicker({
   onChange,
   onClose,
 }: Props) {
-  // The path this picker opened on, split into one dropdown per level: editing
-  // ["backend", "cmd"] shows a root-level dropdown (picks "backend"), a dropdown
-  // of backend/'s children (picks "cmd"), and one more for cmd/'s children, if any.
-  const initialSegments = useMemo(() => {
-    const n = normalizeBlockRoot(value);
-    return n === "." ? [] : n.split("/").filter(Boolean);
-    // Only used to seed state when the picker opens; not meant to re-run on every
-    // keystroke elsewhere, so this intentionally ignores `value` after mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const initial = useMemo(() => pathKey(value), [value]);
 
-  const [segments, setSegments] = useState<string[]>(initialSegments);
-  const [levels, setLevels] = useState<GitDirEntry[][]>([]);
-  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState(initial || ".");
+  const [childrenByPath, setChildrenByPath] = useState<Record<string, GitDirEntry[]>>({});
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [loadingPaths, setLoadingPaths] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
 
-  const [treeMode, setTreeMode] = useState(false);
-  const [treeItems, setTreeItems] = useState<GitDirEntry[]>([]);
   const [filter, setFilter] = useState("");
+  const [allDirs, setAllDirs] = useState<GitDirEntry[] | null>(null);
+  const [loadingAll, setLoadingAll] = useState(false);
 
   const [manual, setManual] = useState("");
+  const [showManual, setShowManual] = useState(false);
 
-  // Load every level from the repo root down to the folder this picker opened on,
-  // so re-opening it on an already-chosen deep folder shows the full breadcrumb of
-  // dropdowns rather than just the root one.
+  async function loadChildren(path: string): Promise<GitDirEntry[]> {
+    const key = pathKey(path);
+    setLoadingPaths((prev) => new Set(prev).add(key));
+    setError(null);
+    try {
+      const items = await fetchDirs(provider, repo, branch, key, false);
+      setChildrenByPath((prev) => ({ ...prev, [key]: items }));
+      return items;
+    } catch (e) {
+      setError((e as Error).message);
+      return [];
+    } finally {
+      setLoadingPaths((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  }
+
+  // Seed root folders for this branch; clear caches so a branch switch cannot
+  // show the previous tree.
   useEffect(() => {
     let live = true;
-    setLoading(true);
+    setChildrenByPath({});
+    setAllDirs(null);
+    setExpanded(new Set());
+    setFilter("");
     setError(null);
     (async () => {
-      try {
-        const built: GitDirEntry[][] = [];
-        let path = "";
-        for (let d = 0; d <= initialSegments.length; d++) {
-          const items = await fetchDirs(provider, repo, branch, path, false);
-          if (!live) return;
-          built.push(items);
-          if (d < initialSegments.length) {
-            path = path ? `${path}/${initialSegments[d]}` : initialSegments[d];
-          }
-        }
-        if (live) setLevels(built);
-      } catch (e) {
-        if (live) setError((e as Error).message);
-      } finally {
-        if (live) setLoading(false);
+      const rootItems = await loadChildren(ROOT_KEY);
+      if (!live) return;
+      if (!initial) return;
+
+      const nextExpanded = new Set<string>();
+      let parent = ROOT_KEY;
+      for (const segment of initial.split("/")) {
+        nextExpanded.add(parent);
+        const items = parent === ROOT_KEY ? rootItems : await loadChildren(parent);
+        if (!live) return;
+        if (!items.some((i) => i.name === segment)) break;
+        parent = parent ? `${parent}/${segment}` : segment;
       }
+      nextExpanded.add(parentKey(initial));
+      if (live) setExpanded(nextExpanded);
     })();
     return () => {
       live = false;
     };
-  }, [provider, repo, branch, initialSegments]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider, repo, branch]);
 
-  /** Picks `name` at `depth`, dropping any deeper levels, and loads its children
-   * as the next dropdown (empty when it's a leaf folder). */
-  async function selectAt(depth: number, name: string) {
-    const nextSegments = [...segments.slice(0, depth), name];
-    setSegments(nextSegments);
-    setLevels((prev) => prev.slice(0, depth + 1));
-    setLoading(true);
+  const filterQ = filter.trim().toLowerCase();
+  const filtering = filterQ.length > 0;
+
+  async function ensureAllDirs(): Promise<GitDirEntry[]> {
+    if (allDirs) return allDirs;
+    setLoadingAll(true);
     setError(null);
     try {
-      const items = await fetchDirs(provider, repo, branch, nextSegments.join("/"), false);
-      setLevels((prev) => [...prev.slice(0, depth + 1), items]);
+      const items = await fetchDirs(provider, repo, branch, "", true);
+      setAllDirs(items);
+      return items;
     } catch (e) {
       setError((e as Error).message);
+      return [];
     } finally {
-      setLoading(false);
+      setLoadingAll(false);
     }
   }
 
-  function clearFrom(depth: number) {
-    setSegments((prev) => prev.slice(0, depth));
-    setLevels((prev) => prev.slice(0, depth + 1));
+  async function toggleExpand(path: string) {
+    if (filtering) return;
+    const key = pathKey(path);
+    const willExpand = !expanded.has(key);
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (willExpand) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+    if (willExpand && childrenByPath[key] === undefined) {
+      await loadChildren(key);
+    }
   }
 
-  async function toggleTreeMode() {
-    const next = !treeMode;
-    setTreeMode(next);
-    setFilter("");
-    if (next && treeItems.length === 0) {
-      setLoading(true);
-      setError(null);
-      try {
-        setTreeItems(await fetchDirs(provider, repo, branch, "", true));
-      } catch (e) {
-        setError((e as Error).message);
-      } finally {
-        setLoading(false);
+  useEffect(() => {
+    if (!filtering) return;
+    void ensureAllDirs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtering, provider, repo, branch]);
+
+  const visibleChildren = useMemo(() => {
+    if (!filtering || !allDirs) return childrenByPath;
+
+    const matchPaths = new Set(
+      allDirs
+        .filter((i) => i.path.toLowerCase().includes(filterQ) || i.name.toLowerCase().includes(filterQ))
+        .flatMap((i) => [i.path, ...ancestorsOf(i.path)]),
+    );
+
+    const keys = new Set<string>([ROOT_KEY]);
+    for (const p of matchPaths) {
+      keys.add(parentKey(p));
+      keys.add(pathKey(p));
+    }
+
+    const next: Record<string, GitDirEntry[]> = {};
+    for (const key of keys) {
+      next[key] = childEntries(allDirs, key).filter(
+        (c) => matchPaths.has(c.path) || allDirs.some((d) => d.path.startsWith(`${c.path}/`) && matchPaths.has(d.path)),
+      );
+    }
+    return next;
+  }, [filtering, allDirs, childrenByPath, filterQ]);
+
+  const filterExpanded = useMemo(() => {
+    if (!filtering || !allDirs) return expanded;
+    const next = new Set<string>([ROOT_KEY]);
+    for (const item of allDirs) {
+      if (item.path.toLowerCase().includes(filterQ) || item.name.toLowerCase().includes(filterQ)) {
+        for (const a of ancestorsOf(item.path)) {
+          next.add(parentKey(a));
+        }
       }
     }
-  }
+    return next;
+  }, [filtering, allDirs, filterQ, expanded]);
 
-  const filteredTree = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    if (!q) return treeItems;
-    return treeItems.filter((i) => i.path.toLowerCase().includes(q) || i.name.toLowerCase().includes(q));
-  }, [treeItems, filter]);
+  const pathLabel = selected === "." ? "Repository root" : selected;
+  const busy = loadingPaths.size > 0 || loadingAll;
 
-  const currentRoot = segments.length ? segments.join("/") : ".";
-  const pathLabel = currentRoot === "." ? "Repository root" : currentRoot;
+  const quickPicks = useMemo(() => {
+    const picks: { label: string; path: string }[] = [{ label: "Repository root", path: "." }];
+    for (const w of workspaces) {
+      const n = normalizeBlockRoot(w);
+      if (n === ".") continue;
+      picks.push({ label: n, path: n });
+    }
+    return picks;
+  }, [workspaces]);
 
   function commit(root: string) {
     onChange(normalizeBlockRoot(root));
     onClose();
   }
 
+  function renderNodes(parent: string, depth: number): ReactNode {
+    const key = pathKey(parent);
+    const items = visibleChildren[key];
+    const isExpanded = filterExpanded.has(key);
+
+    if (!isExpanded && key !== ROOT_KEY) return null;
+    if (items === undefined) {
+      if (loadingPaths.has(key) || (filtering && loadingAll)) {
+        return (
+          <p className="subtle repo-folder-tree__hint" style={{ paddingLeft: 12 + depth * 16 }}>
+            Loading…
+          </p>
+        );
+      }
+      return null;
+    }
+    if (items.length === 0 && key === ROOT_KEY && !busy) {
+      return <p className="subtle repo-folder-tree__hint">No folders in this repository.</p>;
+    }
+
+    return items.map((item) => {
+      const childKey = item.path;
+      const open = filterExpanded.has(childKey);
+      const hasLoaded = visibleChildren[childKey] !== undefined;
+      const childCount = visibleChildren[childKey]?.length;
+      const canExpand = filtering
+        ? (childCount ?? 0) > 0
+        : !hasLoaded || (childCount !== undefined && childCount > 0);
+      const isSelected = normalizeBlockRoot(selected) === normalizeBlockRoot(item.path);
+      const rowBusy = loadingPaths.has(childKey);
+
+      return (
+        <div key={item.path} className="repo-folder-tree__branch">
+          <div
+            className={`repo-folder-tree__row${isSelected ? " selected" : ""}`}
+            style={{ paddingLeft: 4 + depth * 16 }}
+            role="treeitem"
+            aria-expanded={canExpand ? open : undefined}
+            aria-selected={isSelected}
+          >
+            <button
+              type="button"
+              className="repo-folder-tree__chev"
+              aria-label={open ? `Collapse ${item.name}` : `Expand ${item.name}`}
+              disabled={filtering || rowBusy || (!canExpand && hasLoaded)}
+              onClick={(e) => {
+                e.stopPropagation();
+                void toggleExpand(item.path);
+              }}
+            >
+              {rowBusy ? (
+                <span className="repo-folder-tree__spinner" aria-hidden />
+              ) : open ? (
+                <IconChevronDown />
+              ) : (
+                <IconChevronRight />
+              )}
+            </button>
+            <button
+              type="button"
+              className="repo-folder-tree__label"
+              onClick={() => setSelected(item.path)}
+              onDoubleClick={() => commit(item.path)}
+            >
+              <span className={`mac-folder${open ? " open" : ""}`} aria-hidden>
+                {open ? <IconFolderOpen /> : <IconFolder />}
+              </span>
+              <span className="repo-folder-tree__name">{item.name}</span>
+            </button>
+          </div>
+          {open && renderNodes(item.path, depth + 1)}
+        </div>
+      );
+    });
+  }
+
   return (
-    <div
-      className="panel"
-      style={{ marginTop: 10, padding: 14, border: "1px solid var(--border-strong)" }}
-      role="dialog"
-      aria-label="Choose root folder"
-    >
-      <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
-        <div style={{ fontWeight: 700, fontSize: 14 }}>Choose root folder</div>
+    <div className="repo-folder-picker" role="dialog" aria-label="Choose root folder">
+      <div className="repo-folder-picker__head">
+        <div className="repo-folder-picker__title">Choose root folder</div>
         <button type="button" className="button ghost sm" onClick={onClose}>
           Cancel
         </button>
       </div>
 
-      {workspaces.length > 0 && (
-        <div className="chips" style={{ marginBottom: 12 }}>
-          {workspaces.map((w) => (
+      {quickPicks.length > 1 && (
+        <div className="repo-folder-picker__shortcuts" aria-label="Suggested folders">
+          {quickPicks.map((p) => (
             <button
-              key={w}
+              key={p.path}
               type="button"
-              className={`chip${normalizeBlockRoot(value) === normalizeBlockRoot(w) ? " selected" : ""}`}
-              onClick={() => commit(w)}
+              className={`chip${normalizeBlockRoot(selected) === normalizeBlockRoot(p.path) ? " selected" : ""}`}
+              onClick={() => setSelected(normalizeBlockRoot(p.path))}
             >
-              {w}
+              {p.label}
             </button>
           ))}
         </div>
       )}
 
-      <div className="row" style={{ gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <code style={{ fontSize: 13 }}>{pathLabel}</code>
-        <button type="button" className="button sm" onClick={() => commit(currentRoot)} disabled={loading}>
-          Use this folder
-        </button>
-        <button type="button" className="button ghost sm" onClick={() => void toggleTreeMode()}>
-          {treeMode ? "Back to folder-by-folder" : "Search all folders"}
-        </button>
+      <input
+        type="search"
+        className={`repo-folder-picker__filter${busy ? " awaiting" : ""}`}
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        placeholder={busy ? "Loading folders…" : "Filter folders…"}
+        aria-label="Filter folders"
+        aria-busy={busy || undefined}
+        disabled={busy && !filtering}
+      />
+
+      <div
+        className={`repo-folder-tree awaiting-box${busy ? " awaiting" : ""}`}
+        role="tree"
+        aria-label="Repository folders"
+        aria-busy={busy || undefined}
+      >
+        <div
+          className={`repo-folder-tree__row${selected === "." ? " selected" : ""}`}
+          style={{ paddingLeft: 4 }}
+          role="treeitem"
+          aria-selected={selected === "."}
+        >
+          <span className="repo-folder-tree__chev repo-folder-tree__chev--spacer" aria-hidden />
+          <button
+            type="button"
+            className="repo-folder-tree__label"
+            onClick={() => setSelected(".")}
+            onDoubleClick={() => commit(".")}
+          >
+            <span className="mac-folder open" aria-hidden>
+              <IconFolderOpen />
+            </span>
+            <span className="repo-folder-tree__name">Repository root</span>
+          </button>
+        </div>
+        {renderNodes(ROOT_KEY, 0)}
+        {filtering && !loadingAll && allDirs && visibleChildren[ROOT_KEY]?.length === 0 && (
+          <p className="subtle repo-folder-tree__hint">No folders match.</p>
+        )}
       </div>
 
-      {!treeMode && (
-        <div className="stack" style={{ gap: 8 }}>
-          {levels.map((items, depth) => {
-            if (depth > 0 && items.length === 0 && depth <= segments.length) return null;
-            const atLeaf = depth === segments.length && items.length === 0;
-            if (atLeaf && depth > 0) return null;
-            return (
-              <div key={depth} className="row" style={{ gap: 8, alignItems: "center" }}>
-                <span className="subtle" style={{ fontSize: 12, minWidth: 64 }}>
-                  {depth === 0 ? "Root" : segments.slice(0, depth).join("/")}
-                </span>
-                <div style={{ flex: 1, minWidth: 160 }}>
-                  <SearchableSelect
-                    value={segments[depth] ?? ""}
-                    options={toOptions(items)}
-                    placeholder={items.length ? "Choose a subfolder…" : "No subfolders here"}
-                    disabled={loading || items.length === 0}
-                    onChange={(name) => void selectAt(depth, name)}
-                    aria-label={`Subfolder at level ${depth + 1}`}
-                  />
-                </div>
-                {depth < segments.length && (
-                  <button type="button" className="button ghost sm" onClick={() => clearFrom(depth)}>
-                    Clear
-                  </button>
-                )}
-              </div>
-            );
-          })}
-          {loading && <p className="subtle" style={{ margin: 0 }}>Loading…</p>}
-        </div>
-      )}
-
-      {treeMode && (
-        <>
-          <input
-            type="search"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter folders…"
-            aria-label="Filter folders"
-            style={{ marginBottom: 10 }}
-          />
-          <div className="stack" style={{ maxHeight: 220, overflow: "auto", gap: 4 }}>
-            {loading && <p className="subtle" style={{ margin: 0 }}>Loading…</p>}
-            {!loading &&
-              filteredTree.map((item) => (
-                <button
-                  key={item.path}
-                  type="button"
-                  className="button secondary sm"
-                  style={{ textAlign: "left", justifyContent: "flex-start", width: "100%" }}
-                  onClick={() => commit(item.path)}
-                >
-                  <code>{item.path}</code>
-                </button>
-              ))}
-            {!loading && filteredTree.length === 0 && !error && (
-              <p className="subtle" style={{ margin: 0 }}>No folders match.</p>
-            )}
-          </div>
-        </>
-      )}
-
-      <div className="row" style={{ gap: 8, marginTop: 12 }}>
-        <input
-          value={manual}
-          onChange={(e) => setManual(e.target.value)}
-          placeholder="Or type a path (e.g. backend/cmd)"
-          aria-label="Folder path"
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && manual.trim()) commit(manual.trim());
-          }}
-        />
+      <div className="repo-folder-picker__foot">
+        <code className={`repo-folder-picker__selected${busy ? " awaiting" : ""}`} title={pathLabel}>{pathLabel}</code>
         <button
           type="button"
-          className="button secondary sm"
-          disabled={!manual.trim()}
-          onClick={() => commit(manual.trim())}
+          className={`button sm${busy ? " awaiting" : ""}`}
+          onClick={() => commit(selected)}
+          disabled={busy}
         >
-          Apply
+          Use this folder
         </button>
       </div>
 
-      {error && <p className="form-error" style={{ marginTop: 10 }}>{error}</p>}
+      {showManual ? (
+        <div className="repo-folder-picker__manual">
+          <input
+            value={manual}
+            onChange={(e) => setManual(e.target.value)}
+            placeholder="e.g. backend/cmd"
+            aria-label="Folder path"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && manual.trim()) commit(manual.trim());
+            }}
+          />
+          <button
+            type="button"
+            className="button secondary sm"
+            disabled={!manual.trim()}
+            onClick={() => commit(manual.trim())}
+          >
+            Apply
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="button ghost sm repo-folder-picker__manual-toggle"
+          onClick={() => setShowManual(true)}
+        >
+          Type a path instead
+        </button>
+      )}
+
+      {error && <p className="form-error" style={{ marginTop: 8 }}>{error}</p>}
     </div>
   );
 }

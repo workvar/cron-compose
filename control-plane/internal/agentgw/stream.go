@@ -34,12 +34,13 @@ func (s *service) AgentStream(stream agentv1.AgentService_AgentStreamServer) err
 	}
 
 	conn := s.registry.Add(serverID)
+	s.cancelPendingOffline(serverID)
 	defer func() {
 		if s.registry.Remove(conn) {
-			// Stream is gone and nothing replaced it. The servers page used to keep
-			// showing "online" from the last Hello while Terminal/ListUsers already
-			// failed with agent offline (those need a live registry Conn).
-			s.markOffline(serverID)
+			// Defer the DB offline flip so a brief stream drop (proxy idle cut,
+			// reconnect backoff) does not flash "offline" between heartbeats.
+			// Commands still fail with ErrAgentOffline until the stream returns.
+			s.scheduleOffline(serverID)
 		}
 	}()
 
@@ -196,6 +197,7 @@ func (s *service) handleAgentMessage(ctx context.Context, serverID string, msg *
 }
 
 func (s *service) onHello(ctx context.Context, serverID string, h *agentv1.Hello) error {
+	s.cancelPendingOffline(serverID)
 	var enabled, operatorSet bool
 	err := s.pool.QueryRow(ctx, `
 		update servers set
@@ -221,6 +223,7 @@ func (s *service) onHello(ctx context.Context, serverID string, h *agentv1.Hello
 }
 
 func (s *service) onHeartbeat(ctx context.Context, serverID string, _ *agentv1.Heartbeat) error {
+	s.cancelPendingOffline(serverID)
 	_, err := s.pool.Exec(ctx, `update servers set last_seen_at = now(), status = 'online' where id = $1`, serverID)
 	return err
 }
@@ -228,6 +231,9 @@ func (s *service) onHeartbeat(ctx context.Context, serverID string, _ *agentv1.H
 // markOffline records that no AgentStream is registered for serverID. Uses a
 // background context because the stream context is already canceled on disconnect.
 func (s *service) markOffline(serverID string) {
+	if s.pool == nil {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if _, err := s.pool.Exec(ctx, `update servers set status = 'offline' where id = $1 and status = 'online'`, serverID); err != nil {

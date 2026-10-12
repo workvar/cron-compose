@@ -11,6 +11,8 @@ type Props = {
   onChange: (value: string) => void;
   options: SelectOption[];
   disabled?: boolean;
+  /** Shows the forest-green border sweep and wait cursor while options load. */
+  loading?: boolean;
   placeholder?: string;
   id?: string;
   allowCustom?: boolean;
@@ -23,6 +25,7 @@ export function SearchableSelect({
   onChange,
   options,
   disabled,
+  loading,
   placeholder = "Select…",
   id,
   allowCustom,
@@ -99,8 +102,10 @@ export function SearchableSelect({
     }
   }
 
+  const blocked = !!disabled || !!loading;
+
   return (
-    <div className={`ss${className ? ` ${className}` : ""}`} ref={wrapRef}>
+    <div className={`ss${loading ? " awaiting" : ""}${className ? ` ${className}` : ""}`} ref={wrapRef}>
       <div className="ss-field">
         {showLeadingIcon && (
           // eslint-disable-next-line @next/next/no-img-element
@@ -110,13 +115,14 @@ export function SearchableSelect({
           id={inputId}
           className={`ss-input${showLeadingIcon ? " has-icon" : ""}`}
           value={display}
-          disabled={disabled}
-          placeholder={placeholder}
+          disabled={blocked}
+          placeholder={loading ? "Loading…" : placeholder}
           autoComplete="off"
           role="combobox"
           aria-expanded={open}
           aria-controls={`${inputId}-list`}
           aria-autocomplete="list"
+          aria-busy={loading || undefined}
           aria-label={ariaLabel}
           onChange={(e) => {
             setTyping(true);
@@ -130,14 +136,14 @@ export function SearchableSelect({
           type="button"
           className="ss-chevron"
           tabIndex={-1}
-          disabled={disabled}
+          disabled={blocked}
           aria-label="Toggle options"
           onClick={() => (open ? close() : setOpen(true))}
         >
           <IconChevronDown />
         </button>
       </div>
-      {open && !disabled && (
+      {open && !blocked && (
         <ul id={`${inputId}-list`} role="listbox" className="ss-list">
           {filtered.length === 0 && (
             <li className="ss-empty">

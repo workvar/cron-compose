@@ -273,19 +273,27 @@ func serviceUser(dataDir string) string {
 	return os.Getenv("USER")
 }
 
+// heartbeatInterval keeps the AgentStream warm for proxies with short idle
+// timeouts and refreshes last_seen often enough that a missed beat is not scary.
+const heartbeatInterval = 15 * time.Second
+
 func (r *Runtime) heartbeatLoop(ctx context.Context) {
-	t := time.NewTicker(30 * time.Second)
+	send := func() {
+		r.queue(&agentv1.AgentMessage{
+			Body: &agentv1.AgentMessage_Heartbeat{Heartbeat: &agentv1.Heartbeat{
+				Ts: timestamppb.Now(),
+			}},
+		})
+	}
+	send() // do not wait a full interval after Hello before the first beat
+	t := time.NewTicker(heartbeatInterval)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			r.queue(&agentv1.AgentMessage{
-				Body: &agentv1.AgentMessage_Heartbeat{Heartbeat: &agentv1.Heartbeat{
-					Ts: timestamppb.Now(),
-				}},
-			})
+			send()
 		}
 	}
 }
