@@ -1,33 +1,29 @@
-# CronCompose v0.0.54
+# CronCompose v0.0.55
 
-Run a process and wait until it is actually up before the next wave starts.
-Deploy logs keep streaming, and process controls work without a discovered
-pm2 connector.
+Live wave board on each deploy, Restart redeploys a full install→run chain for
+one app, and the agent stays online during long deploys.
 
 ## Highlights
 
-- **Run step** — Edit → Flow has a **Run** chip between Pre-start and Start.
-  Run starts the app (the run script, or pm2, systemd, or Docker when one is
-  set), streams its output, and holds the next wave until the process is
-  online and, when a port is set, accepting connections. Put Proxy’s Run in
-  an earlier wave than Backend’s Install when the API must be up first. A
-  later Start confirms the supervisor.
-- **Logs stay live** — After pm2, systemd, or Docker daemonizes, the agent
-  tails that process for the rest of the deploy, including the name an
-  `ecosystem.config.js` registered. The deploy log budget is 32MB, so a long
-  pre-start script is not cut off mid-output.
-- **Process controls** — Start, Pause, Stop, and Restart run as the project’s
-  deploy user, so an nvm or fnm pm2 works even when discovery never registered
-  a connector. A live run has **Cancel deploy**.
-- **Waiting vs in progress** — A process card stays Waiting until one of its
-  own steps is actually running.
+- **Wave visualizer** — The run page shows each flow wave with per-task progress
+  and completion. Click a task to open its log. Output is in tabs (Server,
+  Proxy, Backend, Frontend) instead of stacked terminals only.
+- **Restart = full chain** — Restart on a process card starts a new deploy for
+  that app only: install → build → cleanup → pre-start → run → start. Start,
+  Pause, and Stop still drive the process manager.
+- **pm2 status after Run** — Ecosystem names such as `peepal-proxy` match the
+  Proxy app (by name suffix or cwd). After Run or Start finishes, the agent
+  rediscovers connectors so the card can show online.
+- **Agent stays connected** — The control plane accepts the agent’s 20s
+  keepalive pings. The previous default treated them as abuse and closed the
+  stream about once a minute (`too_many_pings`), which showed as agent offline
+  mid-deploy. A healthy link also resets reconnect backoff.
+- **Dashboard root** — Signed-in redirects use `/app` (no trailing slash) so
+  soft navigation to the dashboard root no longer 404s.
 
 ## Upgrade
 
 1. Update **agent**, **control plane**, and **web**.
-2. Restart or reinstall the agent on each target, and restart the control
-   plane (cancel and process-action routes).
+2. Restart the control plane (keepalive enforcement + scoped redeploy). Restart
+   or reinstall the agent on each target (connector rediscover after Run).
 3. No new database migration.
-4. Open the project → Flow, put Proxy’s Run ahead of the other apps, set
-   Proxy’s port, save, and redeploy. A deploy already in flight keeps the
-   previous behavior until that agent is updated; cancel it after the upgrade.
