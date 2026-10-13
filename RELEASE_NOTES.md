@@ -1,25 +1,23 @@
-# CronCompose v0.0.49
+# CronCompose v0.0.50
 
-Pause, stop, and restart each deploy process from the live run board —
-without leaving the page or kicking off a full redeploy.
+Failed deploys no longer look like they are still running, and process
+controls stay usable even when the agent never registered the process.
 
 ## Highlights
 
-- **Process controls on deploy cards** — Each Proxy / Backend / Frontend-style
-  card on a deploy run shows **Pause**, **Stop**, and **Restart**. Pause
-  toggles to **Resume** when the process is already frozen. Controls light up
-  once the process is registered on the host (or the app step is done/failed).
-- **Same actions on the project Processes table** — Day-2 ops use the same
-  compact control row, with start / reload / delete kept beside it for pm2
-  and friends.
-- **Pause across managers** — Docker uses `pause` / `unpause`, systemd uses
-  cgroup `freeze` / `thaw`, and pm2 freezes with `SIGSTOP` / `SIGCONT` so the
-  process stays in the list (unlike stop).
+- **Failed progress stays failed** — When a run ends as failed, canceled, or
+  agent offline (including the deploy-budget timeout), no step stays active.
+  The summary reads **Failed · …** (or **Canceled · …**) and the progress bar
+  turns red instead of green mid-percent.
+- **Start when the process never came up** — Deploy cards and the project
+  Processes table show **Start** when the process is missing or stopped.
+  Pause / Resume appear only when it is actually running or frozen.
+- **Controls without a live inventory hit** — Stop, restart, and start work
+  against the process name when the deploy dies before the start step, as long
+  as the server has a pm2, systemd, or docker connector.
 
 ## Upgrade
 
-1. Update **agent** and **web** together (pause verbs live in the agent;
-   card UI in web). Control-plane unchanged for this release.
-2. Restart or reinstall the agent on each target so `pause` / `unpause` are
-   accepted.
-3. No database migration.
+1. Update **web** (progress freeze and process controls). Agent and
+   control-plane unchanged for this release.
+2. No database migration.
