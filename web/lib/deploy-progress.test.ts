@@ -225,4 +225,33 @@ still cleaning
   assert.ok(proc.percent > 5, `percent ${proc.percent} should move past empty install steps`);
 }
 
+{
+  // Run/start finish on an explicit done line. A sibling that has only installed
+  // stays Waiting, not In progress, until its own run begins.
+  const apps: ProgressApp[] = [
+    { name: "Proxy", root: "proxy", language: "go", install: "go build -o proxy .", run: "./proxy", port: 8080, processManager: "pm2" } as ProgressApp,
+    { name: "Backend", root: "backend", language: "go", install: "go build -o backend .", processManager: "pm2" },
+  ];
+  const view = buildDeployLive({
+    status: "running",
+    apps,
+    logs: lines(`clone: tmp clone ready (abc1234)
+install: go build -o proxy . (in /opt/apps/proxy)
+install: done (in /opt/apps/proxy)
+install: go build -o backend . (in /opt/apps/backend)
+install: done (in /opt/apps/backend)
+release: current -> abc
+run: pm2 start ecosystem.config.js --update-env (in /opt/apps/proxy)
+[in /opt/apps/proxy] listening
+run: done (in /opt/apps/proxy)
+`),
+  });
+  const proxy = view.processes.find((p) => p.name === "Proxy");
+  const backend = view.processes.find((p) => p.name === "Backend");
+  assert.equal(proxy?.steps.find((s) => s.kind === "run")?.state, "done");
+  assert.equal(proxy?.state, "pending", "start is still ahead, so the card waits");
+  assert.equal(backend?.state, "pending");
+  assert.ok(view.lines.some((l) => l.pane === proxy?.id && l.text.includes("listening")));
+}
+
 console.log("deploy-progress: ok");

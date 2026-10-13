@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -83,6 +84,62 @@ func (h *handler) dispatch(c fiber.Ctx, conn Connector, cmd *agentv1.ConnectorCo
 		"status":    res.GetStatus(),
 	})
 	return res, opID, nil
+}
+
+// processAction: POST /servers/:id/process-actions. Operator and above.
+// Drives pm2 / systemd / docker for a deploy process when no connector row exists.
+func (h *handler) processAction(c fiber.Ctx) error {
+	serverID := c.Params("id")
+	var req struct {
+		PM        string `json:"pm"`
+		Action    string `json:"action"`
+		Ref       string `json:"ref"`
+		RunAsUser string `json:"run_as_user"`
+	}
+	if err := c.Bind().Body(&req); err != nil {
+		return jsonError(c, fiber.StatusBadRequest, "invalid_body", err)
+	}
+	pm := strings.ToLower(strings.TrimSpace(req.PM))
+	switch pm {
+	case "pm2", "systemd", "docker":
+	default:
+		return jsonError(c, fiber.StatusBadRequest, "invalid_body", errors.New("pm must be pm2, systemd, or docker"))
+	}
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	switch action {
+	case "start", "stop", "restart", "pause", "unpause":
+	default:
+		return jsonError(c, fiber.StatusBadRequest, "invalid_body", errors.New("action must be start, stop, restart, pause, or unpause"))
+	}
+	ref := strings.TrimSpace(req.Ref)
+	if ref == "" || strings.ContainsAny(ref, "\r\n\t ") || strings.HasPrefix(ref, "-") {
+		return jsonError(c, fiber.StatusBadRequest, "invalid_body", errors.New("process name is missing"))
+	}
+	user := strings.TrimSpace(req.RunAsUser)
+	if strings.ContainsAny(user, "\r\n\t /\\") {
+		return jsonError(c, fiber.StatusBadRequest, "invalid_body", errors.New("run_as_user is not a username"))
+	}
+	cmd := &agentv1.ConnectorCommand{
+		Op:            "lifecycle",
+		ConnectorKind: pm,
+		Ref:           ref,
+		Action:        action,
+	}
+	if user != "" {
+		cmd.Content = []byte("run_as:" + user)
+	}
+	res, err := h.gateway.SendConnectorCommand(c.Context(), serverID, cmd)
+	if err != nil {
+		return h.dispatchError(c, err, "")
+	}
+	h.audited(c, "server.process_action", serverID, map[string]any{
+		"pm": pm, "action": action, "ref": ref, "status": res.GetStatus(),
+	})
+	return c.JSON(fiber.Map{
+		"status":  res.GetStatus(),
+		"message": res.GetMessage(),
+		"steps":   stepsFromProto(res.GetSteps()),
+	})
 }
 
 // action: POST /connectors/:id/actions. Operator and above.

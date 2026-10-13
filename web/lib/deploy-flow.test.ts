@@ -6,6 +6,7 @@ import {
   flowOrderError,
   flowProblems,
   flowToSpec,
+  reconcileFlow,
   hasEmptyWaves,
   moveTask,
   removeWave,
@@ -48,8 +49,12 @@ function block(id: string, name: string, partial: Partial<ProjectBlock> = {}): P
   assert.ok(phases.includes("install"));
   assert.ok(phases.includes("build"));
   assert.ok(phases.includes("cleanup"));
+  assert.ok(phases.includes("run"));
   assert.ok(phases.includes("start"));
   assert.ok(phases.includes("pre_start"));
+  const runAt = phases.indexOf("run");
+  const startAt = phases.indexOf("start");
+  assert.ok(runAt >= 0 && startAt > runAt, "run comes before start");
 }
 
 {
@@ -116,6 +121,22 @@ function block(id: string, name: string, partial: Partial<ProjectBlock> = {}): P
     { id: "w1", tasks: [{ id: "t2", blockId: "a", phase: "install" }] },
   ];
   assert.match(flowOrderError(flow) || "", /cannot run before/i);
+}
+
+{
+  // A saved flow from before Run existed gets the chip before Start, not after Health.
+  const blocks = [block("a", "Proxy", { healthPath: "/healthz" })];
+  const flow: FlowWave[] = [
+    { id: "w0", tasks: [{ id: "t1", blockId: "a", phase: "install" }] },
+    { id: "w1", tasks: [{ id: "t2", blockId: "a", phase: "start" }] },
+    { id: "w2", tasks: [{ id: "t3", blockId: "a", phase: "health" }] },
+  ];
+  const next = reconcileFlow(blocks, flow);
+  const flat = next.flatMap((w) => w.tasks.map((t) => t.phase));
+  const runAt = flat.indexOf("run");
+  const startAt = flat.indexOf("start");
+  assert.ok(runAt >= 0 && runAt < startAt, flat.join(","));
+  assert.equal(flowOrderError(next), null);
 }
 
 console.log("deploy-flow: ok");

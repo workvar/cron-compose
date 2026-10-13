@@ -557,7 +557,7 @@ function NewDeployForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- block script signature
   }, [
     form.blocks
-      .map((b) => `${b.id}:${b.install}:${b.cleanup}:${b.preStart}:${b.processManager}:${b.healthPath}`)
+      .map((b) => `${b.id}:${b.install}:${b.run}:${b.cleanup}:${b.preStart}:${b.processManager}:${b.healthPath}`)
       .join("|"),
   ]);
 

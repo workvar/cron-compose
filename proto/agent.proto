@@ -355,7 +355,7 @@ message DeployApp {
 // One task in a deploy flow wave (e.g. Proxy · install).
 message DeployFlowTask {
   string app = 1;
-  // install | build | cleanup | pre_start | start | health
+  // install | build | cleanup | pre_start | run | start | health
   string phase = 2;
 }
 

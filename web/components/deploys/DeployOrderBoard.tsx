@@ -55,10 +55,12 @@ export function DeployOrderBoard({
           <div className="card-title">Deploy flow</div>
           <p className="field-hint" style={{ margin: "4px 0 0" }}>
             Drag tasks into columns (waves). Tasks in one wave run together; later waves wait.
-            You can start one process before installing or building another — e.g. Proxy start,
-            then Backend install. Put start/pre-start/health in their own wave (not mixed with
-            install/build/cleanup). Release activates on the first start wave; later builds
-            continue in the live release.
+            Run starts the app — the run script, or pm2, systemd, or Docker when one is set —
+            streams its output, and holds the next wave until the process is online and, when
+            a port is set, accepting connections. Put Proxy’s Run in an earlier wave than
+            Backend’s Install when the API must be up first. A later Start confirms the
+            supervisor. Keep Run, Start, Pre-start, and Health out of the same wave as
+            Install, Build, or Cleanup.
           </p>
         </div>
         <div className="cluster" style={{ gap: 6, flexWrap: "wrap" }}>

@@ -15,10 +15,10 @@ func (pm2Provider) Kind() string { return "pm2" }
 
 // pm2Proc is the slice of `pm2 jlist` output we care about.
 type pm2Proc struct {
-	Name   string   `json:"name"`
-	PmID   int      `json:"pm_id"`
-	Pid    int      `json:"pid"`
-	Pm2Env pm2Env   `json:"pm2_env"`
+	Name   string `json:"name"`
+	PmID   int    `json:"pm_id"`
+	Pid    int    `json:"pid"`
+	Pm2Env pm2Env `json:"pm2_env"`
 }
 
 type pm2Env struct {
@@ -57,16 +57,41 @@ func (a *pm2Args) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// pm2Bin resolves pm2 on the agent PATH, then via a login shell so an nvm/fnm
+// install is visible to a systemd agent whose PATH is just /usr/bin.
+func pm2Bin(ctx context.Context) string {
+	if has("pm2") {
+		return "pm2"
+	}
+	out, err := run(ctx, "/bin/bash", "-lc", "command -v pm2")
+	if err != nil {
+		return ""
+	}
+	path := lastLine(out)
+	if path == "" || strings.ContainsAny(path, " \t") {
+		return ""
+	}
+	return path
+}
+
+func runPM2(ctx context.Context, args ...string) (string, error) {
+	bin := pm2Bin(ctx)
+	if bin == "" {
+		return "", os.ErrNotExist
+	}
+	return run(ctx, bin, args...)
+}
+
 func (p *pm2Provider) Detect(ctx context.Context) []Instance {
-	if !has("pm2") {
+	if pm2Bin(ctx) == "" {
 		return nil
 	}
 	ver := ""
-	if out, err := run(ctx, "pm2", "--version"); err == nil {
+	if out, err := runPM2(ctx, "--version"); err == nil {
 		ver = lastLine(out)
 	}
 	status := "stopped"
-	if _, err := run(ctx, "pm2", "ping"); err == nil {
+	if _, err := runPM2(ctx, "ping"); err == nil {
 		status = "running"
 	}
 	procs := p.list(ctx)
@@ -128,7 +153,7 @@ func (p *pm2Provider) Resources(ctx context.Context, inst Instance) []Resource {
 }
 
 func (p *pm2Provider) list(ctx context.Context) []pm2Proc {
-	out, err := run(ctx, "pm2", "jlist")
+	out, err := runPM2(ctx, "jlist")
 	if err != nil {
 		return nil
 	}

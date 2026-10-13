@@ -33,8 +33,22 @@ func (e *Executor) Execute(ctx context.Context, cmd Command) Result {
 	ctx, cancel := context.WithTimeout(ctx, commandTimeout)
 	defer cancel()
 
+	if cmd.Op == "lifecycle" {
+		user, rest := splitRunAs(cmd.Content)
+		cmd.Content = rest
+		// The deploy board drives pm2/systemd/docker as the deploy user even when
+		// discovery never registered a connector (nvm pm2 is invisible to the
+		// service PATH, which is what left Start/Stop disabled).
+		if user != "" || (cmd.Instance == "" && isHostPM(cmd.Kind)) {
+			return directLifecycle(ctx, cmd.Kind, cmd.Ref, cmd.Action, user)
+		}
+	}
+
 	prov, inst, found := e.reg.Resolve(ctx, cmd.Kind, cmd.Instance)
 	if !found {
+		if cmd.Op == "lifecycle" && isHostPM(cmd.Kind) {
+			return directLifecycle(ctx, cmd.Kind, cmd.Ref, cmd.Action, "")
+		}
 		return fail(StatusUnsupported, "no connector of kind "+cmd.Kind+" on this server")
 	}
 

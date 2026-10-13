@@ -63,7 +63,7 @@ func (p *pm2Provider) ValidateLive(ctx context.Context, inst Instance, path stri
 // Activate restores the process list from dump.pm2. That is the file `pm2 save`
 // writes, so resurrecting after a write is what actually makes the new dump live.
 func (p *pm2Provider) Activate(ctx context.Context, inst Instance, path string) Result {
-	out, err := run(ctx, "pm2", "resurrect")
+	out, err := runPM2(ctx, "resurrect")
 	s := step("pm2 resurrect", err == nil, out)
 	if err != nil {
 		return fail(StatusFailed, "pm2 resurrect failed: "+trimOutput(out), s)

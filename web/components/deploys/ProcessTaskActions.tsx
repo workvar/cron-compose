@@ -8,6 +8,10 @@ import { isProcessPaused, isProcessRunning, processActionRef, type ProcessRow } 
 
 type Props = {
   row: ProcessRow | null;
+  /** Server that owns the process. Used when no connector row exists yet. */
+  serverId?: string;
+  /** Deploy user, so pm2 runs against that account's daemon. */
+  runAsUser?: string;
   /** Soft-disable while deploy is still writing the process list. */
   enabled?: boolean;
   onChanged?: () => void;
@@ -17,7 +21,7 @@ type Props = {
  * Start / Pause / Stop / Restart for one process card.
  * All four stay visible; Pause/Resume and Start enable based on live state.
  */
-export function ProcessTaskActions({ row, enabled = true, onChanged }: Props) {
+export function ProcessTaskActions({ row, serverId, runAsUser, enabled = true, onChanged }: Props) {
   const { busy, error, result, send } = useConnectorCommand();
   const [forced, setForced] = useState<"running" | "stopped" | "paused" | null>(null);
   const reported = row?.resource?.state;
@@ -32,25 +36,38 @@ export function ProcessTaskActions({ row, enabled = true, onChanged }: Props) {
   const ref = processActionRef(row);
   const paused = forced === "paused" || (forced === null && isProcessPaused(resource?.state));
   const running = forced === "running" || (forced === null && isProcessRunning(resource?.state));
-  const ready = Boolean(enabled && row.connectorId && ref);
+  const direct = Boolean(serverId && ref);
+  const ready = Boolean(enabled && ref && (row.connectorId || direct));
   const label = row.label || row.processName;
   const blocked = !enabled
     ? "Wait for this deploy step to finish"
-    : !row.connectorId
-      ? `No ${row.pm} connector on this server yet — open Connectors`
-      : !ref
-        ? "Process name is missing"
+    : !ref
+      ? "Process name is missing"
+      : !row.connectorId && !direct
+        ? `No ${row.pm} connector on this server yet — open Connectors`
         : "";
 
   async function run(action: string) {
-    if (!row?.connectorId || !ref) return;
+    if (!ref || !row) return;
     if (action === "stop") {
       const ok = window.confirm(`Stop ${label}?`);
       if (!ok) return;
     }
-    const body = await send(`/api/connectors/${encodeURIComponent(row.connectorId)}/actions`, {
+    // Prefer the server path: it runs as the deploy user and does not need a
+    // connector discovered on the agent service PATH.
+    const path = serverId
+      ? `/api/servers/${encodeURIComponent(serverId)}/process-actions`
+      : row.connectorId
+        ? `/api/connectors/${encodeURIComponent(row.connectorId)}/actions`
+        : "";
+    if (!path) return;
+    const body = await send(path, {
       method: "POST",
-      body: JSON.stringify({ action, ref }),
+      body: JSON.stringify(
+        serverId
+          ? { pm: row.pm, action, ref, run_as_user: runAsUser || "" }
+          : { action, ref },
+      ),
     });
     if (body?.status === "succeeded") {
       if (action === "pause") setForced("paused");

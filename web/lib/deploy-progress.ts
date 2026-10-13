@@ -45,6 +45,8 @@ export type ProgressApp = {
   install?: string;
   cleanup?: string;
   preStart?: string;
+  /** Application command. When set, the rail shows a Run step. */
+  run?: string;
   processManager?: string;
   healthPath?: string;
 };
@@ -65,6 +67,7 @@ type Kind =
   | "cleanup"
   | "release"
   | "pre_start"
+  | "run"
   | "start"
   | "health";
 
@@ -87,12 +90,13 @@ type Proc = {
   commandSteps: Mutable[];
   cleanup?: Mutable;
   preStart?: Mutable;
+  run?: Mutable;
   start?: Mutable;
   health?: Mutable;
   steps: Mutable[];
 };
 
-const PHASE_RE = /^(preflight|clone|install|release|pre_start|start|health):\s*(.*)$/;
+const PHASE_RE = /^(preflight|clone|install|release|pre_start|run|start|health):\s*(.*)$/;
 const START_RE = /^(pm2|systemd|docker compose|systemctl|process_manager=none)\b/;
 /** Parallel multi-app PTY lines are tagged `[in <workDir>] …` for pane routing. */
 const IN_PREFIX_RE = /^\[in\s+([^\]]+)\]\s?(.*)$/;
@@ -107,6 +111,8 @@ function labelFor(kind: string, name: string, cmd: string): string {
       return `Cleaning ${name}`;
     case "pre_start":
       return `Pre-start ${name}`;
+    case "run":
+      return `Running ${name}`;
     case "start":
       return `Starting ${name}`;
     case "health":
@@ -124,6 +130,7 @@ function refresh(p: Proc) {
   p.steps = [...p.commandSteps];
   if (p.cleanup) p.steps.push(p.cleanup);
   if (p.preStart) p.steps.push(p.preStart);
+  if (p.run) p.steps.push(p.run);
   if (p.start) p.steps.push(p.start);
   if (p.health) p.steps.push(p.health);
 }
@@ -164,6 +171,9 @@ function makeProcess(app: ProgressApp, index: number): Proc {
   }
   if ((app.preStart || "").trim()) {
     proc.preStart = makeStep(`${id}-prestart`, `Pre-start ${name}`, "pre_start", app.preStart);
+  }
+  if ((app.run || "").trim() || pm === "pm2" || pm === "systemd" || pm === "docker") {
+    proc.run = makeStep(`${id}-run`, `Running ${name}`, "run", app.run);
   }
   if (pm === "pm2" || pm === "systemd" || pm === "docker") {
     proc.start = makeStep(`${id}-start`, `Starting ${name}`, "start");
@@ -222,7 +232,6 @@ function rollupState(steps: Mutable[]): StepState {
   if (steps.length > 0 && steps.every((s) => s.state === "done" || s.state === "skipped")) {
     return steps.some((s) => s.state === "done") ? "done" : "skipped";
   }
-  if (steps.some((s) => s.state === "done")) return "active";
   return "pending";
 }
 
@@ -256,6 +265,7 @@ export function buildDeployLive(input: LiveInput): LiveView {
     for (const p of processes) if (p.cleanup) out.push(p.cleanup);
     out.push(shared.release);
     for (const p of processes) if (p.preStart) out.push(p.preStart);
+    for (const p of processes) if (p.run) out.push(p.run);
     for (const p of processes) if (p.start) out.push(p.start);
     for (const p of processes) if (p.health) out.push(p.health);
     return out;
@@ -274,6 +284,7 @@ export function buildDeployLive(input: LiveInput): LiveView {
         p.commandSteps.includes(step) ||
         p.cleanup === step ||
         p.preStart === step ||
+        p.run === step ||
         p.start === step ||
         p.health === step,
     );
@@ -389,7 +400,7 @@ export function buildDeployLive(input: LiveInput): LiveView {
     }
     // Cleanup / pre-start / start / health are not command steps — still tick
     // them from log traffic so the rail percent moves while they run.
-    for (const s of [p.cleanup, p.preStart, p.start, p.health]) {
+    for (const s of [p.cleanup, p.preStart, p.run, p.start, p.health]) {
       if (s && s.state === "active") {
         s.ticks++;
         break;
@@ -571,8 +582,34 @@ export function buildDeployLive(input: LiveInput): LiveView {
         } else {
           pane = "shared";
         }
-      } else if (kind === "start") {
-        pane = "shared";
+      } else if (kind === "run" || kind === "start") {
+        const work = msg.match(/^(.*?)\s+\(in\s+([^)]+)\)\s*$/);
+        if (work) {
+          const script = work[1].trim();
+          const dir = work[2].trim();
+          const proc = ensure(dir);
+          const slot = kind === "run" ? "run" : "start";
+          if (!proc[slot]) {
+            proc[slot] = makeStep(
+              `${proc.id}-${slot}`,
+              labelFor(kind, proc.name, script),
+              kind,
+              script === "done" ? undefined : script,
+            );
+            refresh(proc);
+          }
+          const step = proc[slot]!;
+          if (script === "done") {
+            if (step.state === "pending" || step.state === "active") step.state = "done";
+            if (cur.step === step) cur.step = null;
+          } else {
+            activate(step);
+            step.ticks++;
+          }
+          pane = proc.id;
+        } else {
+          pane = "shared";
+        }
       }
       lines.push({ pane, text: line });
       continue;

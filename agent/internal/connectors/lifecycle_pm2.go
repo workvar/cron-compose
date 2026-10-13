@@ -12,7 +12,7 @@ import (
 func (p *pm2Provider) Lifecycle(ctx context.Context, inst Instance, ref, action string) Result {
 	switch action {
 	case "save", "enable":
-		out, err := run(ctx, "pm2", "save")
+		out, err := runPM2(ctx, "save")
 		s := step("pm2 save", err == nil, out)
 		if err != nil {
 			return fail(StatusFailed, "pm2 save failed: "+trimOutput(out), s)
@@ -20,7 +20,7 @@ func (p *pm2Provider) Lifecycle(ctx context.Context, inst Instance, ref, action 
 		return ok("current process list saved; it will be resurrected on boot", s)
 
 	case "startup":
-		out, err := run(ctx, "pm2", "startup")
+		out, err := runPM2(ctx, "startup")
 		s := step("pm2 startup", err == nil, out)
 		if err != nil {
 			return fail(StatusFailed, "pm2 startup failed (may need sudo once on this host): "+trimOutput(out), s)
@@ -38,7 +38,7 @@ func (p *pm2Provider) Lifecycle(ctx context.Context, inst Instance, ref, action 
 
 	switch action {
 	case "start", "stop", "restart", "reload", "delete":
-		out, err := run(ctx, "pm2", action, ref)
+		out, err := runPM2(ctx, action, ref)
 		s := step("pm2 "+action+" "+ref, err == nil, out)
 		if err != nil {
 			return fail(StatusFailed, "pm2 "+action+" failed: "+trimOutput(out), s)
@@ -52,7 +52,7 @@ func (p *pm2Provider) Lifecycle(ctx context.Context, inst Instance, ref, action 
 	case "pause":
 		// pm2 has no pause verb; SIGSTOP freezes the process without dropping it
 		// from the process list (unlike stop).
-		out, err := run(ctx, "pm2", "sendSignal", "SIGSTOP", ref)
+		out, err := runPM2(ctx, "sendSignal", "SIGSTOP", ref)
 		s := step("pm2 sendSignal SIGSTOP "+ref, err == nil, out)
 		if err != nil {
 			return fail(StatusFailed, "pm2 pause failed: "+trimOutput(out), s)
@@ -60,7 +60,7 @@ func (p *pm2Provider) Lifecycle(ctx context.Context, inst Instance, ref, action 
 		return ok("process "+ref+" paused", s)
 
 	case "unpause":
-		out, err := run(ctx, "pm2", "sendSignal", "SIGCONT", ref)
+		out, err := runPM2(ctx, "sendSignal", "SIGCONT", ref)
 		s := step("pm2 sendSignal SIGCONT "+ref, err == nil, out)
 		if err != nil {
 			return fail(StatusFailed, "pm2 unpause failed: "+trimOutput(out), s)
@@ -68,7 +68,7 @@ func (p *pm2Provider) Lifecycle(ctx context.Context, inst Instance, ref, action 
 		return ok("process "+ref+" unpaused", s)
 
 	case "flush":
-		out, err := run(ctx, "pm2", "flush", ref)
+		out, err := runPM2(ctx, "flush", ref)
 		s := step("pm2 flush "+ref, err == nil, out)
 		if err != nil {
 			return fail(StatusFailed, "pm2 flush failed: "+trimOutput(out), s)

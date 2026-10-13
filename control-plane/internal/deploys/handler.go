@@ -561,6 +561,26 @@ func (h *handler) stdin(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
+// cancel: POST /deploy-runs/:runId/cancel. Stops the in-flight install/run on the agent.
+func (h *handler) cancel(c fiber.Ctx) error {
+	run, err := h.store.GetRun(c.Context(), c.Params("runId"))
+	if errors.Is(err, ErrNotFound) {
+		return jsonError(c, fiber.StatusNotFound, "not_found", err)
+	}
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "get_failed", err)
+	}
+	if run.Status != "pending" && run.Status != "running" {
+		return jsonError(c, fiber.StatusConflict, "not_running", errors.New("this deploy is already "+run.Status))
+	}
+	if err := h.gateway.SendDeploy(run.ServerID, &agentv1.DeployCommand{
+		RunId: run.ID, Op: "cancel",
+	}); err != nil {
+		return jsonError(c, fiber.StatusServiceUnavailable, "agent_offline", err)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
 func (h *handler) stream(c fiber.Ctx) error {
 	runID := c.Params("runId")
 	run, err := h.store.GetRun(c.Context(), runID)
@@ -813,7 +833,7 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 		cmd.Apps = []*agentv1.DeployApp{{
 			Name: p.Name, RootDirectory: p.RootDirectory, InstallScript: p.InstallScript,
 			CleanupScript: DefaultCleanup(p.Language),
-			Language: p.Language, Port: int32(p.Port), ProcessManager: p.ProcessManager, Env: p.Env,
+			Language:      p.Language, Port: int32(p.Port), ProcessManager: p.ProcessManager, Env: p.Env,
 		}}
 	}
 	for _, wave := range p.Flow {

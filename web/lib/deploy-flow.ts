@@ -7,6 +7,7 @@ export type FlowPhase =
   | "build"
   | "cleanup"
   | "pre_start"
+  | "run"
   | "start"
   | "health";
 
@@ -28,18 +29,20 @@ export const FLOW_PHASES: { id: FlowPhase; label: string; hint: string }[] = [
   { id: "build", label: "Build", hint: "Compile / bundle" },
   { id: "cleanup", label: "Cleanup", hint: "Post-install trim" },
   { id: "pre_start", label: "Pre-start", hint: "Migrations" },
+  { id: "run", label: "Run", hint: "Start the app, stream output" },
   { id: "start", label: "Start", hint: "Process manager" },
   { id: "health", label: "Health", hint: "HTTP probe" },
 ];
 
 const PRE_RELEASE: FlowPhase[] = ["install", "build", "cleanup"];
-const POST_RELEASE: FlowPhase[] = ["pre_start", "start", "health"];
+const POST_RELEASE: FlowPhase[] = ["pre_start", "run", "start", "health"];
 /** Within one app, phases must keep this order (other apps may interleave). */
 const PHASE_ORDER: FlowPhase[] = [
   "install",
   "build",
   "cleanup",
   "pre_start",
+  "run",
   "start",
   "health",
 ];
@@ -92,7 +95,15 @@ export function tasksForBlock(block: ProjectBlock): Omit<FlowTask, "id">[] {
   }
   if (block.cleanup.trim()) out.push({ blockId: block.id, phase: "cleanup" });
   if (block.preStart.trim()) out.push({ blockId: block.id, phase: "pre_start" });
-  if (block.processManager === "pm2" || block.processManager === "systemd" || block.processManager === "docker") {
+  // Run is the step that actually executes the app and holds the next wave until
+  // it is listening. A process manager alone still gets a Run chip: Start only
+  // confirms the supervisor after Run has already launched it.
+  const managed =
+    block.processManager === "pm2" ||
+    block.processManager === "systemd" ||
+    block.processManager === "docker";
+  if (block.run.trim() || managed) out.push({ blockId: block.id, phase: "run" });
+  if (managed) {
     out.push({ blockId: block.id, phase: "start" });
   }
   if (block.healthPath.trim()) out.push({ blockId: block.id, phase: "health" });
@@ -164,20 +175,52 @@ export function reconcileFlow(blocks: ProjectBlock[], flow: FlowWave[]): FlowWav
     }),
   }));
 
-  const missing: FlowTask[] = [];
+  let placed = next.length ? next : [];
   for (const [key, phase] of expected) {
     if (seen.has(key)) continue;
     const blockId = key.slice(0, key.lastIndexOf(":"));
-    missing.push({ id: newId("t"), blockId, phase });
+    placed = insertMissingTask(placed, { id: newId("t"), blockId, phase });
   }
-  if (missing.length) {
-    if (next.length === 0) next.push({ id: newId("w"), tasks: missing });
-    else next[next.length - 1] = {
-      ...next[next.length - 1],
-      tasks: [...next[next.length - 1].tasks, ...missing],
-    };
+  return placed.length ? placed : [{ id: newId("w"), tasks: [] }];
+}
+
+/** Put a new task before that app's later phases, without mixing install and start. */
+function insertMissingTask(flow: FlowWave[], task: FlowTask): FlowWave[] {
+  const idx = PHASE_ORDER.indexOf(task.phase);
+  const post = POST_RELEASE.includes(task.phase);
+  let before = -1;
+  for (let i = 0; i < flow.length; i++) {
+    const later = flow[i].tasks.some(
+      (t) => t.blockId === task.blockId && PHASE_ORDER.indexOf(t.phase) > idx,
+    );
+    if (later) {
+      before = i;
+      break;
+    }
   }
-  return next.length ? next : [{ id: newId("w"), tasks: [] }];
+  const compatible = (w: FlowWave) => {
+    if (w.tasks.length === 0) return true;
+    const hasPre = w.tasks.some((t) => PRE_RELEASE.includes(t.phase));
+    const hasPost = w.tasks.some((t) => POST_RELEASE.includes(t.phase));
+    if (post && hasPre) return false;
+    if (!post && hasPost) return false;
+    return true;
+  };
+  if (before >= 0) {
+    const prev = before - 1;
+    if (prev >= 0 && compatible(flow[prev])) {
+      return flow.map((w, i) => (i === prev ? { ...w, tasks: [...w.tasks, task] } : w));
+    }
+    const waves = [...flow];
+    waves.splice(before, 0, { id: newId("w"), tasks: [task] });
+    return waves;
+  }
+  if (flow.length === 0) return [{ id: newId("w"), tasks: [task] }];
+  const last = flow.length - 1;
+  if (compatible(flow[last])) {
+    return flow.map((w, i) => (i === last ? { ...w, tasks: [...w.tasks, task] } : w));
+  }
+  return [...flow, { id: newId("w"), tasks: [task] }];
 }
 
 export function addEmptyWave(flow: FlowWave[]): FlowWave[] {

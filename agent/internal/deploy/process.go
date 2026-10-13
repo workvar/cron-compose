@@ -125,34 +125,65 @@ func systemdUnit(name, work, execStart string, env map[string]string) string {
 	return b.String()
 }
 
-func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, name, language, runScript string, env map[string]string, cred *osuser.Credential, tmpDir string) error {
+func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, name, language, runScript string, env map[string]string, cred *osuser.Credential, tmpDir, phase string, port int32) error {
+	if phase == "" {
+		phase = phaseStart
+	}
 	if name == "" {
 		name = filepath.Base(work)
 	}
 	if language == "" {
 		language = detectLangHint(work)
 	}
+	port = portFrom(port, env)
 	switch pm {
 	case "", "none":
-		m.logLine(runID, token, "process_manager=none; pick pm2, systemd, or docker on the project to host this app")
-		return nil
+		if strings.TrimSpace(runScript) == "" {
+			m.phaseLine(runID, token, phase, "done (in "+work+")")
+			return nil
+		}
+		return m.runDirect(ctx, runID, token, work, language, runScript, env, cred, tmpDir, phase, port)
 	case "pm2":
 		eco := findEcosystem(work)
 		args := pm2StartArgs(name, language, eco, runScript)
 		if len(args) == 0 {
-			m.logLine(runID, token, "pm2: no start command; add a run script, ecosystem file, or set language to node")
+			m.phaseLine(runID, token, phase, "pm2: no start command; add a run script, ecosystem file, or set language to node (in "+work+")")
 			return nil
 		}
-		m.logLine(runID, token, "pm2 "+strings.Join(args, " "))
-		return runCmdAs(ctx, work, env, cred, tmpDir, "pm2", args...)
+		m.phaseLine(runID, token, phase, "pm2 "+strings.Join(args, " ")+" (in "+work+")")
+		if err := m.runCmdStream(ctx, runID, token, work, env, cred, tmpDir, "pm2", args...); err != nil {
+			return err
+		}
+		// Ecosystem files name the process themselves, so the qualified name we
+		// passed in may not be what pm2 registered. Wait until that process is
+		// online, then tail its real name — otherwise the log pane goes quiet
+		// the moment `pm2 start` returns and the next wave starts too early.
+		real, err := m.waitPM2Online(ctx, runID, token, phase, work, name, cred, tmpDir)
+		if err != nil {
+			return err
+		}
+		go m.followLogs(ctx, runID, token, work, "pm2", real, cred, tmpDir)
+		if err := m.waitReady(ctx, runID, token, phase, work, port); err != nil {
+			return err
+		}
+		m.phaseLine(runID, token, phase, "done (in "+work+")")
+		return nil
 	case "docker":
 		compose := findCompose(work)
 		if compose == "" {
-			m.logLine(runID, token, "no docker-compose file; add one or use Connectors")
+			m.phaseLine(runID, token, phase, "no docker-compose file; add one or use Connectors (in "+work+")")
 			return nil
 		}
-		m.logLine(runID, token, "docker compose -f "+filepath.Base(compose)+" up -d")
-		return runCmdAs(ctx, work, env, cred, tmpDir, "docker", "compose", "-f", compose, "up", "-d")
+		m.phaseLine(runID, token, phase, "docker compose -f "+filepath.Base(compose)+" up -d (in "+work+")")
+		if err := m.runCmdStream(ctx, runID, token, work, env, cred, tmpDir, "docker", "compose", "-f", compose, "up", "-d"); err != nil {
+			return err
+		}
+		go m.followLogs(ctx, runID, token, work, "docker", name, cred, tmpDir)
+		if err := m.waitReady(ctx, runID, token, phase, work, port); err != nil {
+			return err
+		}
+		m.phaseLine(runID, token, phase, "done (in "+work+")")
+		return nil
 	case "systemd":
 		bin, args := startCommand(language, runScript, name)
 		if bin == "" {
@@ -179,13 +210,21 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, name
 			return err
 		}
 		_ = chownTree(path, cred)
-		m.logLine(runID, token, "systemd --user enable --now "+unit+".service")
-		if err := runCmdAs(ctx, work, env, cred, tmpDir, "systemctl", "--user", "daemon-reload"); err != nil {
+		m.phaseLine(runID, token, phase, "systemd --user enable --now "+unit+".service (in "+work+")")
+		if err := m.runCmdStream(ctx, runID, token, work, env, cred, tmpDir, "systemctl", "--user", "daemon-reload"); err != nil {
 			return fmt.Errorf("systemd reload: %w", err)
 		}
-		return runCmdAs(ctx, work, env, cred, tmpDir, "systemctl", "--user", "enable", "--now", unit+".service")
+		if err := m.runCmdStream(ctx, runID, token, work, env, cred, tmpDir, "systemctl", "--user", "enable", "--now", unit+".service"); err != nil {
+			return err
+		}
+		go m.followLogs(ctx, runID, token, work, "systemd", name, cred, tmpDir)
+		if err := m.waitReady(ctx, runID, token, phase, work, port); err != nil {
+			return err
+		}
+		m.phaseLine(runID, token, phase, "done (in "+work+")")
+		return nil
 	default:
-		m.logLine(runID, token, "unknown process_manager="+pm)
+		m.phaseLine(runID, token, phase, "unknown process_manager="+pm+" (in "+work+")")
 		return nil
 	}
 }

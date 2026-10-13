@@ -35,6 +35,7 @@ function appsOf(project: DeployProject | null): ProgressApp[] {
       install: a.install || project.install_script,
       cleanup: a.cleanup,
       preStart: a.pre_start,
+      run: a.run,
       processManager: a.process_manager || project.process_manager,
       healthPath: a.health?.path || (apps.length === 1 ? project.health_path : ""),
     }));
@@ -52,8 +53,9 @@ function appsOf(project: DeployProject | null): ProgressApp[] {
 function singleRail(view: LiveView): LiveStep[] {
   const proc = view.processes[0];
   if (!proc) return view.shared;
-  const early = proc.steps.filter((s) => s.kind !== "start" && s.kind !== "health");
-  const late = proc.steps.filter((s) => s.kind === "start" || s.kind === "health");
+  const lateKind = new Set(["run", "start", "health"]);
+  const early = proc.steps.filter((s) => !lateKind.has(s.kind));
+  const late = proc.steps.filter((s) => lateKind.has(s.kind));
   const release = view.shared.find((s) => s.kind === "release");
   const prepare = view.shared.filter((s) => s.kind !== "release");
   return [...prepare, ...early, ...(release ? [release] : []), ...late];
@@ -204,7 +206,9 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
           // even while a later wave / cleanup is still running — otherwise a stuck
           // progress rail leaves Start/Stop/Pause greyed out forever.
           const startDone = proc.steps.some(
-            (s) => s.kind === "start" && (s.state === "done" || s.state === "active"),
+            (s) =>
+              (s.kind === "start" || s.kind === "run") &&
+              (s.state === "done" || s.state === "active"),
           );
           const knownRunning = Boolean(row?.resource && isProcessRunning(row.resource.state));
           const controlsEnabled =
@@ -229,6 +233,8 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
                     <div className="deploy-proc-actions-wrap">
                       <ProcessTaskActions
                         row={row}
+                        serverId={project?.server_id}
+                        runAsUser={project?.run_as_user}
                         enabled={controlsEnabled}
                         onChanged={() => void refreshInventory()}
                       />
@@ -251,6 +257,8 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
                   <div className="deploy-proc-actions-wrap">
                     <ProcessTaskActions
                       row={row}
+                      serverId={project?.server_id}
+                      runAsUser={project?.run_as_user}
                       enabled={controlsEnabled}
                       onChanged={() => void refreshInventory()}
                     />

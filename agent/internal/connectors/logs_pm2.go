@@ -17,7 +17,7 @@ func (p *pm2Provider) Logs(ctx context.Context, inst Instance, ref string, lines
 	if lines > 1000 {
 		lines = 1000
 	}
-	out, err := run(ctx, "pm2", "logs", ref, "--lines", fmt.Sprintf("%d", lines), "--nostream", "--raw")
+	out, err := runPM2(ctx, "logs", ref, "--lines", fmt.Sprintf("%d", lines), "--nostream", "--raw")
 	s := step("pm2 logs "+ref, err == nil, trimOutput(out))
 	if err != nil {
 		return fail(StatusFailed, "pm2 logs failed: "+trimOutput(out), s)

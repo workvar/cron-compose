@@ -2797,7 +2797,7 @@ func (x *DeployApp) GetStartGroup() int32 {
 type DeployFlowTask struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	App   string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
-	// install | build | cleanup | pre_start | start | health
+	// install | build | cleanup | pre_start | run | start | health
 	Phase         string `protobuf:"bytes,2,opt,name=phase,proto3" json:"phase,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

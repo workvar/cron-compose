@@ -120,6 +120,16 @@ export default function DeployRunPage({ params }: Props) {
     return () => es.close();
   }, [runId]);
 
+  async function cancelDeploy() {
+    const ok = window.confirm("Cancel this deploy? The command running on the server will be stopped.");
+    if (!ok) return;
+    const res = await fetch(`/api/deploy-runs/${runId}/cancel`, { method: "POST" });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+      setError(body?.error?.message || "Could not cancel the deploy");
+    }
+  }
+
   async function sendStdin(e: React.FormEvent) {
     e.preventDefault();
     if (!stdin) return;
@@ -145,11 +155,16 @@ export default function DeployRunPage({ params }: Props) {
       <div className="page-head">
         <div>
           <h1>Deploy {run.id.slice(0, 8)}</h1>
-          <div className="cluster" style={{ marginTop: 6 }}>
+          <div className="cluster" style={{ marginTop: 6, gap: 8 }}>
             <span className={`status ${tone[run.status]}`}>{run.status}</span>
             <span className="pill">{run.trigger}</span>
             <span className="pill">{run.branch}</span>
             {showExit && <span className="pill">exit {run.exit_code}</span>}
+            {live && (
+              <button type="button" className="button danger sm" onClick={() => void cancelDeploy()}>
+                Cancel deploy
+              </button>
+            )}
           </div>
         </div>
       </div>

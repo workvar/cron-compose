@@ -151,7 +151,7 @@ export default function EditDeployPage() {
     });
   }, [
     blocks
-      .map((b) => `${b.id}:${b.install}:${b.cleanup}:${b.preStart}:${b.processManager}:${b.healthPath}`)
+      .map((b) => `${b.id}:${b.install}:${b.run}:${b.cleanup}:${b.preStart}:${b.processManager}:${b.healthPath}`)
       .join("|"),
   ]);
 

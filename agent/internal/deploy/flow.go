@@ -14,7 +14,7 @@ var preReleasePhases = map[string]bool{
 	"install": true, "build": true, "cleanup": true,
 }
 var postReleasePhases = map[string]bool{
-	"pre_start": true, "start": true, "health": true,
+	"pre_start": true, "run": true, "start": true, "health": true,
 }
 
 // runDeployFlow executes an explicit flow: waves of {app, phase} tasks.
@@ -130,6 +130,7 @@ func (m *Manager) runFlowWave(
 	token := cmd.GetCloneToken()
 
 	var scriptJobs []appScript
+	var runApps []*agentv1.DeployApp
 	var startApps []*agentv1.DeployApp
 	var healthApps []*agentv1.DeployApp
 
@@ -187,6 +188,8 @@ func (m *Manager) runFlowWave(
 				phase:  script,
 				done:   "done",
 			})
+		case "run":
+			runApps = append(runApps, app)
 		case "start":
 			startApps = append(startApps, app)
 		case "health":
@@ -214,6 +217,14 @@ func (m *Manager) runFlowWave(
 				return phaseError{phasePreStart, err}
 			}
 			return phaseError{phaseInstall, err}
+		}
+	}
+	if len(runApps) > 0 {
+		if !released {
+			return phaseError{phaseRun, fmt.Errorf("run tasks require an activated release")}
+		}
+		if err := m.runApps(ctx, cmd, layout, cred, tmpDir, runApps); err != nil {
+			return phaseError{phaseRun, err}
 		}
 	}
 	if len(startApps) > 0 {

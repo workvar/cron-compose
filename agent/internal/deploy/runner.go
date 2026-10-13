@@ -28,6 +28,7 @@ const (
 	phaseInstall   = "install"
 	phaseRelease   = "release"
 	phasePreStart  = "pre_start"
+	phaseRun       = "run"
 	phaseStart     = "start"
 	phaseHealth    = "health"
 )
@@ -41,7 +42,10 @@ const (
 const (
 	defaultRunTimeout = 60 * time.Minute
 	maxRunTimeout     = 2 * time.Hour
-	logCapBytes       = 2 << 20 // 2MB of streamed output per run
+	// 32MB: a migration or a build log routinely passes a couple of megabytes, and
+	// cutting the stream there is what made the run board go silent mid-deploy.
+	// The process keeps running either way; this only bounds what we forward.
+	logCapBytes = 32 << 20
 )
 
 // phaseError tags a failure with the stage it happened in. The stage travels to the
@@ -80,6 +84,12 @@ type Manager struct {
 	logged   map[string]*atomic.Int64 // bytes of log streamed per run, for the cap
 	capNoted map[string]bool          // whether the "truncated" notice was already sent
 	metrics  map[string]*runMetrics   // per-run analytics for the finished event
+	// launched is the set of app names whose Run step already started the process,
+	// so a later Start step does not launch a second copy.
+	launched map[string]map[string]bool
+	// procs are foreground Run processes (no process manager). Cancel kills them;
+	// a successful deploy leaves them running.
+	procs map[string][]*os.Process
 }
 
 // NewManager wires a Manager.
@@ -93,6 +103,8 @@ func NewManager(log *slog.Logger, send Sender) *Manager {
 		logged:   map[string]*atomic.Int64{},
 		capNoted: map[string]bool{},
 		metrics:  map[string]*runMetrics{},
+		launched: map[string]map[string]bool{},
+		procs:    map[string][]*os.Process{},
 	}
 }
 
@@ -150,10 +162,46 @@ func (m *Manager) writeStdin(runID string, data []byte) {
 func (m *Manager) cancelRun(runID string) {
 	m.mu.Lock()
 	c := m.cancel[runID]
+	procs := m.procs[runID]
+	delete(m.procs, runID)
 	m.mu.Unlock()
+	for _, p := range procs {
+		if p != nil {
+			_ = p.Kill()
+		}
+	}
 	if c != nil {
 		c()
 	}
+}
+
+func (m *Manager) noteLaunched(runID, appName string) {
+	if appName == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	set := m.launched[runID]
+	if set == nil {
+		set = map[string]bool{}
+		m.launched[runID] = set
+	}
+	set[appName] = true
+}
+
+func (m *Manager) wasLaunched(runID, appName string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.launched[runID][appName]
+}
+
+func (m *Manager) trackProc(runID string, p *os.Process) {
+	if p == nil {
+		return
+	}
+	m.mu.Lock()
+	m.procs[runID] = append(m.procs[runID], p)
+	m.mu.Unlock()
 }
 
 // runTimeout clamps the control plane's budget into something sane. A project can ask
@@ -188,6 +236,8 @@ func (m *Manager) start(cmd *agentv1.DeployCommand) {
 		delete(m.logged, runID)
 		delete(m.capNoted, runID)
 		delete(m.metrics, runID)
+		delete(m.launched, runID)
+		delete(m.procs, runID)
 		if f := m.stdin[runID]; f != nil {
 			_ = f.Close()
 			delete(m.stdin, runID)
@@ -670,16 +720,24 @@ func (m *Manager) startApps(ctx context.Context, cmd *agentv1.DeployCommand, lay
 	var errs []error
 	for _, app := range apps {
 		work := appWorkDir(layout.Current, cmd, app)
+		appName := app.GetName()
+		if appName == "" {
+			appName = filepath.Base(work)
+		}
+		if m.wasLaunched(runID, appName) {
+			m.phaseLine(runID, token, phaseStart, "done (in "+work+")")
+			continue
+		}
 		pm := app.GetProcessManager()
 		if pm == "" {
 			pm = cmd.GetProcessManager()
 		}
-		name := app.GetName()
-		if name == "" {
-			name = filepath.Base(work)
+		name := QualifyProcessName(project, appName)
+		port := app.GetPort()
+		if port == 0 {
+			port = cmd.GetPort()
 		}
-		name = QualifyProcessName(project, name)
-		if err := m.startProcess(ctx, runID, token, work, pm, name, app.GetLanguage(), app.GetRunScript(), appEnv(cmd, app), cred, tmpDir); err != nil {
+		if err := m.startProcess(ctx, runID, token, work, pm, name, app.GetLanguage(), app.GetRunScript(), appEnv(cmd, app), cred, tmpDir, phaseStart, port); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -1050,6 +1108,13 @@ func runCmd(ctx context.Context, dir string, env map[string]string, name string,
 }
 
 func runCmdAs(ctx context.Context, dir string, env map[string]string, cred *osuser.Credential, tmpDir, name string, args ...string) error {
+	_, err := runCmdOut(ctx, dir, env, cred, tmpDir, name, args...)
+	return err
+}
+
+// runCmdOut is runCmdAs that also returns combined output. Used to read `pm2 jlist`
+// without pouring the JSON into the deploy log.
+func runCmdOut(ctx context.Context, dir string, env map[string]string, cred *osuser.Credential, tmpDir, name string, args ...string) (string, error) {
 	// Resolve via the deploy user's login PATH (same as Tools / preflight). A raw
 	// exec.Command("pm2") only sees the agent process PATH, so nvm-global pm2
 	// looks "installed" in Tools but fails at start with "executable file not found".
@@ -1064,14 +1129,15 @@ func runCmdAs(ctx context.Context, dir string, env map[string]string, cred *osus
 	}
 	applyCredential(cmd, cred)
 	out, err := cmd.CombinedOutput()
+	text := string(out)
 	if err != nil {
-		msg := strings.TrimSpace(string(out))
+		msg := strings.TrimSpace(text)
 		if msg == "" {
 			msg = err.Error()
 		}
-		return fmt.Errorf("%s: %s", name, msg)
+		return text, fmt.Errorf("%s: %s", name, msg)
 	}
-	return nil
+	return text, nil
 }
 
 func envPairs(env map[string]string) []string {
