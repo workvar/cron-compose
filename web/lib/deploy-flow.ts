@@ -34,6 +34,15 @@ export const FLOW_PHASES: { id: FlowPhase; label: string; hint: string }[] = [
 
 const PRE_RELEASE: FlowPhase[] = ["install", "build", "cleanup"];
 const POST_RELEASE: FlowPhase[] = ["pre_start", "start", "health"];
+/** Within one app, phases must keep this order (other apps may interleave). */
+const PHASE_ORDER: FlowPhase[] = [
+  "install",
+  "build",
+  "cleanup",
+  "pre_start",
+  "start",
+  "health",
+];
 
 function newId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
@@ -207,17 +216,28 @@ export function hasEmptyWaves(flow: FlowWave[]): boolean {
   return flow.some((w) => w.tasks.length === 0);
 }
 
-/** Hard ordering: no install/build/cleanup after a pre_start/start/health. */
+/**
+ * Ordering rules:
+ * - Per app: install → build → cleanup → pre_start → start → health (subset OK).
+ * - Across apps: start A before install B is allowed (early release, then keep building).
+ * - One wave cannot mix install/build/cleanup with pre_start/start/health.
+ */
 export function flowOrderError(flow: FlowWave[]): string | null {
-  let sawPost = false;
+  const lastIdx = new Map<string, number>();
   for (const w of flow) {
+    const hasPre = w.tasks.some((t) => PRE_RELEASE.includes(t.phase));
+    const hasPost = w.tasks.some((t) => POST_RELEASE.includes(t.phase));
+    if (hasPre && hasPost) {
+      return "A wave cannot mix install/build/cleanup with pre-start, start, or health. Put start in its own wave — release activates first, then later installs continue.";
+    }
     for (const t of w.tasks) {
-      const pre = PRE_RELEASE.includes(t.phase);
-      const post = POST_RELEASE.includes(t.phase);
-      if (post) sawPost = true;
-      if (pre && sawPost) {
-        return "Install / build / cleanup must finish before pre-start, start, or health.";
+      const idx = PHASE_ORDER.indexOf(t.phase);
+      if (idx < 0) continue;
+      const prev = lastIdx.get(t.blockId);
+      if (prev !== undefined && idx < prev) {
+        return `For one process, ${phaseLabel(t.phase).toLowerCase()} cannot run before its earlier steps (e.g. start before that process's own install).`;
       }
+      lastIdx.set(t.blockId, Math.max(prev ?? -1, idx));
     }
   }
   return null;

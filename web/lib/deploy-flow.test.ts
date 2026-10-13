@@ -3,12 +3,14 @@ import type { ProjectBlock } from "./project-blocks.ts";
 import {
   addEmptyWave,
   defaultFlow,
+  flowOrderError,
   flowProblems,
   flowToSpec,
   hasEmptyWaves,
   moveTask,
   removeWave,
   splitInstallBuild,
+  type FlowWave,
 } from "./deploy-flow.ts";
 
 function block(id: string, name: string, partial: Partial<ProjectBlock> = {}): ProjectBlock {
@@ -74,6 +76,46 @@ function block(id: string, name: string, partial: Partial<ProjectBlock> = {}): P
   assert.ok(together, "Proxy install can sit in the same wave as Backend build");
   const spec = flowToSpec(blocks, flow);
   assert.ok(spec.some((w) => w.some((t) => t.app === "Proxy" && t.phase === "install")));
+}
+
+{
+  // Start Proxy, then install Backend — allowed across apps.
+  const flow: FlowWave[] = [
+    {
+      id: "w0",
+      tasks: [
+        { id: "t1", blockId: "a", phase: "install" },
+        { id: "t2", blockId: "a", phase: "build" },
+      ],
+    },
+    { id: "w1", tasks: [{ id: "t3", blockId: "a", phase: "start" }] },
+    { id: "w2", tasks: [{ id: "t4", blockId: "b", phase: "install" }] },
+    { id: "w3", tasks: [{ id: "t5", blockId: "b", phase: "start" }] },
+  ];
+  assert.equal(flowOrderError(flow), null);
+}
+
+{
+  // Same wave cannot mix start with install.
+  const flow: FlowWave[] = [
+    {
+      id: "w0",
+      tasks: [
+        { id: "t1", blockId: "a", phase: "start" },
+        { id: "t2", blockId: "b", phase: "install" },
+      ],
+    },
+  ];
+  assert.match(flowOrderError(flow) || "", /cannot mix/i);
+}
+
+{
+  // One process cannot start before its own install.
+  const flow: FlowWave[] = [
+    { id: "w0", tasks: [{ id: "t1", blockId: "a", phase: "start" }] },
+    { id: "w1", tasks: [{ id: "t2", blockId: "a", phase: "install" }] },
+  ];
+  assert.match(flowOrderError(flow) || "", /cannot run before/i);
 }
 
 console.log("deploy-flow: ok");

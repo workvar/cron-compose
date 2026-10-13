@@ -18,8 +18,10 @@ var postReleasePhases = map[string]bool{
 }
 
 // runDeployFlow executes an explicit flow: waves of {app, phase} tasks.
-// Release activates once, between the last pre-release wave and the first
-// post-release wave. Empty flow falls back to the caller.
+// Release activates once on the first pre_start/start/health wave. Later
+// install/build/cleanup waves still run (in current/) so one app can start
+// while another is still installing. A single wave must not mix pre-release
+// phases with post-release phases.
 func (m *Manager) runDeployFlow(
 	ctx context.Context,
 	cmd *agentv1.DeployCommand,
@@ -58,7 +60,7 @@ func (m *Manager) runDeployFlow(
 		}
 		if needsPost && !released {
 			if needsPre {
-				return phaseError{phaseInstall, fmt.Errorf("flow wave %d mixes pre-release and post-release tasks", i+1)}
+				return phaseError{phaseInstall, fmt.Errorf("flow wave %d mixes install/build/cleanup with start — put start in the next wave so the release can activate first", i+1)}
 			}
 			if err := layout.Swap(release); err != nil {
 				return phaseError{phaseRelease, fmt.Errorf("activate release: %w", err)}

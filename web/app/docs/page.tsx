@@ -73,7 +73,7 @@ const TOP_KEYS: Row[] = [
   { key: "deploy_timeout", type: "seconds", def: "3600", desc: "Budget for a whole deploy. The agent caps it at 2 hours." },
   { key: "auto_rollback", type: "boolean", def: "false", desc: "When a deploy fails, redeploy the last commit that worked." },
   { key: "on_wave_failure", type: "stop | continue", def: "stop", desc: <>When a flow wave fails: <code>stop</code> ends the deploy; <code>continue</code> skips the rest of that wave and still runs later waves. The run is still marked failed if any wave failed. Configure under Edit → Flow.</> },
-  { key: "flow", type: "list of waves", def: "parallel install + start_group", desc: <>Ordered waves of <code>{"{ app, phase }"}</code> tasks (<code>install</code>, <code>build</code>, <code>cleanup</code>, <code>pre_start</code>, <code>start</code>, <code>health</code>). Tasks in one wave run together; later waves wait. Drag-and-drop under Edit → Flow.</> },
+  { key: "flow", type: "list of waves", def: "parallel install + start_group", desc: <>Ordered waves of <code>{"{ app, phase }"}</code> tasks (<code>install</code>, <code>build</code>, <code>cleanup</code>, <code>pre_start</code>, <code>start</code>, <code>health</code>). Tasks in one wave run together; later waves wait. One app may start before another is installed (release activates on the first start wave; later builds continue). Do not mix install/build/cleanup with start in the same wave. Edit under Edit → Flow.</> },
   { key: "apps", type: "list", desc: "Several apps from one repo (monorepo). Each item takes the keys below." },
 ];
 
