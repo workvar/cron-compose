@@ -597,12 +597,19 @@ export function buildDeployLive(input: LiveInput): LiveView {
     lines.push({ pane, text: line });
   }
 
+  const terminalFail =
+    input.status === "failed" || input.status === "canceled" || input.status === "agent_offline";
   if (input.status === "succeeded") {
     for (const s of ordered()) {
       if (s.state === "pending" || s.state === "active") s.state = "done";
     }
-  } else if (input.status === "failed" || input.status === "canceled" || input.status === "agent_offline") {
+  } else if (terminalFail) {
     failHere();
+    // A budget timeout never writes a FAILED line, and parallel apps can leave a
+    // sibling step active after failHere pins a single index. The run is over.
+    for (const s of ordered()) {
+      if (s.state === "active") s.state = "failed";
+    }
   }
 
   const all = ordered();
@@ -613,10 +620,13 @@ export function buildDeployLive(input: LiveInput): LiveView {
   const activeLabels = all.filter((s) => s.state === "active").map((s) => s.label);
   const failedStep = all.find((s) => s.state === "failed");
   let headline = "Waiting for the agent";
-  if (activeLabels.length > 0) headline = activeLabels.join(" · ");
+  if (input.status === "failed" || input.status === "agent_offline") {
+    headline = failedStep ? `Failed · ${failedStep.label}` : "Failed";
+  } else if (input.status === "canceled") {
+    headline = failedStep ? `Canceled · ${failedStep.label}` : "Canceled";
+  } else if (activeLabels.length > 0) headline = activeLabels.join(" · ");
   else if (failedStep) headline = failedStep.label;
   else if (input.status === "succeeded") headline = "Finished";
-  else if (input.status === "canceled") headline = "Canceled";
   else if (all.some((s) => s.state === "done")) headline = "Working";
 
   return {

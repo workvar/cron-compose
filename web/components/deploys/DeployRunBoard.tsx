@@ -136,10 +136,11 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
   }
 
   const rail = multi ? view.shared : singleRail(view);
+  const runFailed = status === "failed" || status === "canceled" || status === "agent_offline";
 
   return (
     <div className="deploy-live">
-      <section className="panel deploy-live-summary">
+      <section className={`panel deploy-live-summary${runFailed ? " is-failed" : ""}`}>
         <div className="card-head">
           <div>
             <div className="card-title">Progress</div>
@@ -148,7 +149,7 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
           <div className="deploy-live-pct" aria-hidden="true">{view.percent}%</div>
         </div>
         <div
-          className="deploy-meter"
+          className={`deploy-meter${runFailed ? " is-failed" : ""}`}
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}
@@ -197,7 +198,7 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
                     </div>
                   )}
                   <div
-                    className="deploy-meter"
+                    className={`deploy-meter${proc.state === "failed" ? " is-failed" : ""}`}
                     role="progressbar"
                     aria-label={proc.name}
                     aria-valuemin={0}

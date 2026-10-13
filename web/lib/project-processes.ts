@@ -1,5 +1,5 @@
-import type { ConnectorResource, DeployApp, DeployInventory, DeployProject } from "@/lib/types";
-import { qualifyProcessName } from "@/lib/process-name";
+import type { ConnectorResource, DeployApp, DeployInventory, DeployProject } from "./types";
+import { qualifyProcessName } from "./process-name";
 
 /** One project app matched against live deploy-inventory. */
 export type ProcessRow = {
@@ -45,24 +45,50 @@ export function buildProcessRows(
     const processName =
       app.process_name || qualifyProcessName(project.name, app.name || app.root || "app");
     const hit =
-      objects.find(
-        (o) =>
-          o.kind === pm &&
-          (o.resource.name === processName ||
-            o.resource.ref === processName ||
-            o.resource.name === app.name),
-      ) ?? null;
+      objects.find((o) => o.kind === pm && sameProcess(o.resource, processName, app.name || "")) ??
+      null;
+    const bucket = (inventory?.items ?? []).find((b) => b.kind === pm);
     return {
       label: app.name || processName,
       processName,
       pm,
       resource: hit?.resource ?? null,
-      connectorId: hit?.connectorId ?? null,
+      // A failed deploy often dies before the start step, so the process is missing
+      // from inventory. The connector can still address it by name.
+      connectorId: hit?.connectorId || bucket?.connectors[0]?.id || null,
     };
   });
+}
+
+function normName(s: string): string {
+  return s.trim().toLowerCase().replace(/\.service$/, "");
+}
+
+function sameProcess(resource: ConnectorResource, processName: string, appName: string): boolean {
+  const got = [normName(resource.name), normName(resource.ref)].filter((s) => s.length > 0);
+  const appSlug = normName(appName).replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  const want = [normName(processName), normName(appName), appSlug].filter((s) => s.length >= 2);
+  for (const g of got) {
+    // Numeric pm2 ids are refs, not names.
+    if (/^\d+$/.test(g)) continue;
+    if (want.includes(g)) return true;
+  }
+  return false;
+}
+
+/** Ref passed to connector actions. Falls back to the qualified process name. */
+export function processActionRef(row: ProcessRow): string {
+  const ref = (row.resource?.ref || "").trim();
+  if (ref) return ref;
+  return row.processName;
 }
 
 export function isProcessPaused(state?: string | null): boolean {
   const s = (state || "").toLowerCase().trim();
   return s === "paused" || s === "frozen";
+}
+
+export function isProcessRunning(state?: string | null): boolean {
+  const s = (state || "").toLowerCase().trim();
+  return s === "online" || s === "running" || s === "active" || s === "listening";
 }

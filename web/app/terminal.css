@@ -287,6 +287,10 @@
   background: var(--green);
   transition: width 0.35s ease;
 }
+.deploy-meter.is-failed > span { background: var(--danger); }
+.deploy-live-summary.is-failed .deploy-live-headline,
+.deploy-live-summary.is-failed .deploy-live-pct,
+.deploy-proc:has(.deploy-meter.is-failed) .deploy-live-pct { color: var(--danger); }
 .deploy-rail {
   list-style: none;
   display: flex;

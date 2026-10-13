@@ -1,0 +1,83 @@
+import assert from "node:assert/strict";
+import {
+  buildProcessRows,
+  isProcessRunning,
+  processActionRef,
+} from "./project-processes.ts";
+import type { DeployInventory, DeployProject } from "./types.ts";
+
+const project = {
+  name: "Peepal RP",
+  process_manager: "pm2",
+  apps: [
+    { name: "Proxy", root: "proxy", process_manager: "pm2" },
+    { name: "Backend", root: "backend", process_manager: "pm2" },
+  ],
+} as DeployProject;
+
+const inventory = {
+  server_id: "srv",
+  total: 1,
+  items: [
+    {
+      kind: "pm2",
+      connectors: [{ id: "conn-pm2" } as DeployInventory["items"][number]["connectors"][number]],
+      objects: [
+        {
+          id: "obj-1",
+          connector_id: "conn-pm2",
+          type: "object",
+          ref: "4",
+          name: "peepal-rp-proxy",
+          state: "online",
+          updated_at: "",
+        },
+      ],
+      count: 1,
+    },
+  ],
+} as DeployInventory;
+
+const rows = buildProcessRows(project, inventory);
+assert.equal(rows[0].resource?.name, "peepal-rp-proxy");
+assert.equal(rows[0].connectorId, "conn-pm2");
+assert.equal(processActionRef(rows[0]), "4");
+assert.equal(rows[1].resource, null);
+assert.equal(rows[1].connectorId, "conn-pm2");
+assert.equal(processActionRef(rows[1]), "peepal-rp-backend");
+assert.equal(isProcessRunning("online"), true);
+assert.equal(isProcessRunning("stopped"), false);
+assert.equal(isProcessRunning(""), false);
+
+const systemd = buildProcessRows(
+  {
+    name: "shop",
+    apps: [{ name: "api", root: ".", process_manager: "systemd", process_name: "shop-api" }],
+  } as DeployProject,
+  {
+    server_id: "srv",
+    total: 1,
+    items: [
+      {
+        kind: "systemd",
+        connectors: [{ id: "conn-sys" } as DeployInventory["items"][number]["connectors"][number]],
+        objects: [
+          {
+            id: "obj-2",
+            connector_id: "conn-sys",
+            type: "object",
+            ref: "shop-api.service",
+            name: "shop-api",
+            state: "running",
+            updated_at: "",
+          },
+        ],
+        count: 1,
+      },
+    ],
+  } as DeployInventory,
+);
+assert.equal(systemd[0].resource?.ref, "shop-api.service");
+assert.equal(processActionRef(systemd[0]), "shop-api.service");
+
+console.log("project-processes: ok");

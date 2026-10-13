@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DeployInventory, DeployProject } from "@/lib/types";
-import { buildProcessRows, type ProcessRow } from "@/lib/project-processes";
+import { buildProcessRows, processActionRef, type ProcessRow } from "@/lib/project-processes";
 import { useConnectorCommand } from "@/components/connectors/useConnectorCommand";
 import { StepList } from "@/components/connectors/StepList";
 import { ProcessStateBadge } from "@/components/connectors/ProcessStateBadge";
@@ -52,14 +52,15 @@ export function ProjectProcesses({ project }: { project: DeployProject }) {
   if (!manageable) return null;
 
   async function runAction(row: ProcessRow, action: string) {
-    if (!row.connectorId || !row.resource) return;
+    const ref = processActionRef(row);
+    if (!row.connectorId || !ref) return;
     if (DESTRUCTIVE.has(action)) {
       const ok = window.confirm(`${action} ${row.processName}?`);
       if (!ok) return;
     }
     await send(`/api/connectors/${encodeURIComponent(row.connectorId)}/actions`, {
       method: "POST",
-      body: JSON.stringify({ action, ref: row.resource.ref }),
+      body: JSON.stringify({ action, ref }),
     });
     await refresh();
   }
@@ -154,7 +155,7 @@ export function ProjectProcesses({ project }: { project: DeployProject }) {
                           key={a}
                           type="button"
                           className={`button sm ${DESTRUCTIVE.has(a) ? "danger" : "secondary"}`}
-                          disabled={busy || !row.connectorId || !row.resource || row.pm === "none"}
+                          disabled={busy || !row.connectorId || !processActionRef(row) || row.pm === "none"}
                           onClick={() => void runAction(row, a)}
                         >
                           {a}

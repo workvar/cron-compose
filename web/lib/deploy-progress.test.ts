@@ -41,7 +41,9 @@ FAILED — install: npm install && npm run build: context canceled
   assert.equal(view.shared.find((s) => s.kind === "clone")?.state, "done");
   assert.equal(view.shared.find((s) => s.kind === "release")?.state, "skipped");
   assert.ok(view.percent < 100, `percent ${view.percent} should stay under 100`);
-  assert.equal(view.headline, "Building college-connect-web");
+  assert.equal(view.headline, "Failed · Building college-connect-web");
+  assert.ok(view.processes.every((p) => p.steps.every((s) => s.state !== "active")));
+  assert.ok(view.shared.every((s) => s.state !== "active"));
   assert.ok(view.lines.some((l) => l.text.includes("Compiled successfully")));
   assert.ok(view.lines.some((l) => l.pane === proc.id && l.text.startsWith("FAILED")));
   const cloneLine = view.lines.find((l) => l.text.includes("removing tmp clone"));
@@ -153,6 +155,42 @@ pm2 start npm --name college-connect-web -- start
   assert.equal(view.headline, "Finished");
   assert.ok(view.shared.every((s) => s.state === "done"));
   assert.ok(view.processes[0].steps.every((s) => s.state === "done"));
+}
+
+{
+  // Budget expiry marks the run failed without a FAILED line. Nothing may stay active.
+  const apps: ProgressApp[] = [
+    { name: "Proxy", root: "proxy", language: "node", install: "npm install", processManager: "pm2" },
+    {
+      name: "Backend",
+      root: "backend",
+      language: "node",
+      install: "npm install",
+      preStart: "echo migrate",
+      processManager: "pm2",
+    },
+  ];
+  const view = buildDeployLive({
+    status: "failed",
+    apps,
+    logs: lines(`preflight: git: ok
+clone: tmp clone ready (abc1234)
+install: npm install (in /opt/apps/node/peepal-rp/proxy)
+install: done (in /opt/apps/node/peepal-rp/proxy)
+install: npm install (in /opt/apps/node/peepal-rp/backend)
+install: done (in /opt/apps/node/peepal-rp/backend)
+release: current -> abc1234
+pre_start: echo migrate (in /opt/apps/node/peepal-rp/backend)
+still migrating
+`),
+  });
+  const steps = [...view.shared, ...view.processes.flatMap((p) => p.steps)];
+  assert.ok(steps.every((s) => s.state !== "active"), "a failed run must not leave a step active");
+  assert.ok(view.processes.every((p) => p.state !== "active"));
+  assert.equal(view.headline, "Failed · Pre-start Backend");
+  const backend = view.processes.find((p) => p.name === "Backend");
+  assert.equal(backend?.steps.find((s) => s.kind === "pre_start")?.state, "failed");
+  assert.equal(backend?.state, "failed");
 }
 
 console.log("deploy-progress: ok");

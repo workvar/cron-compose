@@ -49,6 +49,7 @@
     "lib/deploy-spec.test.ts",
     "lib/deploy-steps.test.ts",
     "lib/deploy-progress.test.ts",
+    "lib/project-processes.test.ts",
     "lib/git-oauth.test.ts",
     "lib/project-blocks.test.ts",
     "lib/frameworks.test.ts",
