@@ -1,26 +1,25 @@
-# CronCompose v0.0.48
+# CronCompose v0.0.49
 
-A clearer deploy folder picker, calmer agent online status between heartbeats,
-and visible loading on fields that are still fetching repo data.
+Pause, stop, and restart each deploy process from the live run board —
+without leaving the page or kicking off a full redeploy.
 
 ## Highlights
 
-- **Finder-style folder picker** — Browse the repo as an expandable tree with
-  macOS-style folder icons. Root folders show first; children load on expand.
-  Shortcuts, filter, and an optional typed path stay out of the way. Selected
-  path and **Use this folder** sit on one aligned row.
-- **Branch switches refresh the tree** — Changing the default branch re-inspects
-  the repo, clears folder caches, and reloads workspaces / `croncompose.yml`
-  for that branch instead of leaving stale paths on screen.
-- **Awaiting fields** — Selects, buttons, and the folder picker show a forest-green
-  border sweep and a wait cursor while branches, specs, detection, or directories
-  load in the background.
-- **Offline grace** — Agents no longer flip to **offline** the instant a stream
-  drops. Status stays online for 90s so brief reconnects and proxy idle cuts do
-  not look like an outage. Heartbeats run every 15s with gRPC keepalive.
+- **Process controls on deploy cards** — Each Proxy / Backend / Frontend-style
+  card on a deploy run shows **Pause**, **Stop**, and **Restart**. Pause
+  toggles to **Resume** when the process is already frozen. Controls light up
+  once the process is registered on the host (or the app step is done/failed).
+- **Same actions on the project Processes table** — Day-2 ops use the same
+  compact control row, with start / reload / delete kept beside it for pm2
+  and friends.
+- **Pause across managers** — Docker uses `pause` / `unpause`, systemd uses
+  cgroup `freeze` / `thaw`, and pm2 freezes with `SIGSTOP` / `SIGCONT` so the
+  process stays in the list (unlike stop).
 
 ## Upgrade
 
-1. Update **control-plane**, **agent**, and **web** together (status grace lives
-   in the gateway; heartbeats/keepalive in the agent; picker UI in web).
-2. No database migration.
+1. Update **agent** and **web** together (pause verbs live in the agent;
+   card UI in web). Control-plane unchanged for this release.
+2. Restart or reinstall the agent on each target so `pause` / `unpause` are
+   accepted.
+3. No database migration.
