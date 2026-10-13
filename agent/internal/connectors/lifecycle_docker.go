@@ -14,13 +14,19 @@ func (p *dockerProvider) Lifecycle(ctx context.Context, inst Instance, ref, acti
 		return fail(StatusFailed, "no container given")
 	}
 	switch action {
-	case "start", "stop", "restart":
+	case "start", "stop", "restart", "pause", "unpause":
 		out, err := run(ctx, "docker", action, ref)
 		s := step("docker "+action+" "+ref, err == nil, out)
 		if err != nil {
 			return fail(dockerStatus(out), "docker "+action+" failed: "+trimOutput(out), s)
 		}
-		return ok("container "+ref+" "+action+"ed", s)
+		verb := action + "ed"
+		if action == "pause" {
+			verb = "paused"
+		} else if action == "unpause" {
+			verb = "unpaused"
+		}
+		return ok("container "+ref+" "+verb, s)
 
 	case "enable", "disable":
 		policy := "always"

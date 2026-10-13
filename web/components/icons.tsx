@@ -107,6 +107,15 @@ export const IconArchitecture = (p: P) => (
 export const IconPlay = (p: P) => (
   <svg {...base(p)}><path d="M6 4.5v15l13-7.5-13-7.5Z" /></svg>
 );
+export const IconPause = (p: P) => (
+  <svg {...base(p)}><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
+);
+export const IconStop = (p: P) => (
+  <svg {...base(p)}><rect x="6" y="6" width="12" height="12" rx="1.5" /></svg>
+);
+export const IconRestart = (p: P) => (
+  <svg {...base(p)}><path d="M3.5 12a8.5 8.5 0 0 1 14.5-6M20.5 12A8.5 8.5 0 0 1 6 18.1" /><path d="M18 2.5v4.5h-4.5M6 21.5v-4.5h4.5" /></svg>
+);
 export const IconZap = (p: P) => (
   <svg {...base(p)}><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" /></svg>
 );

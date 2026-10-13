@@ -49,6 +49,24 @@ func (p *pm2Provider) Lifecycle(ctx context.Context, inst Instance, ref, action 
 		}
 		return ok("process "+ref+" "+verb, s)
 
+	case "pause":
+		// pm2 has no pause verb; SIGSTOP freezes the process without dropping it
+		// from the process list (unlike stop).
+		out, err := run(ctx, "pm2", "sendSignal", "SIGSTOP", ref)
+		s := step("pm2 sendSignal SIGSTOP "+ref, err == nil, out)
+		if err != nil {
+			return fail(StatusFailed, "pm2 pause failed: "+trimOutput(out), s)
+		}
+		return ok("process "+ref+" paused", s)
+
+	case "unpause":
+		out, err := run(ctx, "pm2", "sendSignal", "SIGCONT", ref)
+		s := step("pm2 sendSignal SIGCONT "+ref, err == nil, out)
+		if err != nil {
+			return fail(StatusFailed, "pm2 unpause failed: "+trimOutput(out), s)
+		}
+		return ok("process "+ref+" unpaused", s)
+
 	case "flush":
 		out, err := run(ctx, "pm2", "flush", ref)
 		s := step("pm2 flush "+ref, err == nil, out)

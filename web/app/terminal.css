@@ -379,6 +379,24 @@
 .deploy-proc-state.is-done { color: var(--text-2); }
 .deploy-proc .deploy-rail { margin-top: 12px; }
 .deploy-proc .term-wrap { margin-top: 14px; }
+.deploy-proc-actions-wrap {
+  margin: 0 0 12px;
+}
+.deploy-proc-actions-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.deploy-proc-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.deploy-proc-action svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
 .deploy-term-collapse {
   flex: none;
   border: 0;

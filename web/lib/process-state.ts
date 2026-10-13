@@ -11,6 +11,8 @@ export function processStateTone(state?: string | null): string {
     case "stopping":
     case "waiting restart":
     case "one-launch-status":
+    case "paused":
+    case "frozen":
       return "info";
     case "stopped":
     case "offline":

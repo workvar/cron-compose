@@ -18,13 +18,27 @@ func (p *systemdProvider) Lifecycle(ctx context.Context, inst Instance, ref, act
 	if !systemdAvailable() {
 		return noSystemd(action + " " + ref)
 	}
-	out, ran, err := privRun(ctx, "systemctl", action, ref)
+	// pause/unpause map onto cgroup freeze/thaw; systemctl has no "pause" verb.
+	sysAction := action
+	switch action {
+	case "pause":
+		sysAction = "freeze"
+	case "unpause":
+		sysAction = "thaw"
+	}
+	out, ran, err := privRun(ctx, "systemctl", sysAction, ref)
 	if !ran {
 		return unauthorized("systemctl")
 	}
-	s := step("systemctl "+action+" "+ref, err == nil, out)
+	s := step("systemctl "+sysAction+" "+ref, err == nil, out)
 	if err != nil {
-		return fail(StatusFailed, "systemctl "+action+" failed: "+trimOutput(out), s)
+		return fail(StatusFailed, "systemctl "+sysAction+" failed: "+trimOutput(out), s)
 	}
-	return ok("unit "+ref+" "+action+"ed", s, step("status", true, serviceStatus(ctx, ref)))
+	verb := action + "ed"
+	if action == "pause" {
+		verb = "paused"
+	} else if action == "unpause" {
+		verb = "unpaused"
+	}
+	return ok("unit "+ref+" "+verb, s, step("status", true, serviceStatus(ctx, ref)))
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildDeployLive,
   type LiveStep,
@@ -8,8 +8,10 @@ import {
   type ProgressApp,
   type StepState,
 } from "@/lib/deploy-progress";
-import type { DeployProject, LogLine } from "@/lib/types";
+import type { DeployInventory, DeployProject, LogLine } from "@/lib/types";
+import { buildProcessRows, type ProcessRow } from "@/lib/project-processes";
 import { TerminalFrame } from "@/components/terminal/TerminalFrame";
+import { ProcessTaskActions } from "@/components/deploys/ProcessTaskActions";
 
 type Props = {
   logs: LogLine[];
@@ -67,6 +69,17 @@ function defaultOpen(id: string, view: LiveView): boolean {
   return true;
 }
 
+function rowForProcess(rows: ProcessRow[], name: string): ProcessRow | null {
+  return (
+    rows.find(
+      (r) =>
+        r.label === name ||
+        r.processName === name ||
+        r.processName.endsWith(`-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`),
+    ) ?? null
+  );
+}
+
 export function DeployRunBoard({ logs, project, status, live }: Props) {
   const apps = useMemo(() => appsOf(project), [project]);
   const view = useMemo(
@@ -80,6 +93,38 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
   );
   const multi = view.processes.length > 1;
   const [forced, setForced] = useState<Record<string, boolean>>({});
+  const [inventory, setInventory] = useState<DeployInventory | null>(null);
+
+  const refreshInventory = useCallback(async () => {
+    if (!project?.server_id) return;
+    try {
+      const res = await fetch(
+        `/api/servers/${encodeURIComponent(project.server_id)}/deploy-inventory`,
+      );
+      if (!res.ok) return;
+      setInventory((await res.json()) as DeployInventory);
+    } catch {
+      /* ignore — controls stay disabled until inventory is available */
+    }
+  }, [project?.server_id]);
+
+  useEffect(() => {
+    void refreshInventory();
+  }, [refreshInventory, status]);
+
+  // Re-poll while the run is live so controls light up once pm2/systemd/docker
+  // registers the process after the start step.
+  useEffect(() => {
+    if (!live || !project?.server_id) return;
+    const id = window.setInterval(() => void refreshInventory(), 5000);
+    return () => window.clearInterval(id);
+  }, [live, project?.server_id, refreshInventory]);
+
+  const processRows = useMemo(
+    () => (project ? buildProcessRows(project, inventory) : []),
+    [project, inventory],
+  );
+  const manageable = processRows.some((r) => r.pm !== "none");
 
   function isOpen(id: string) {
     if (id in forced) return forced[id];
@@ -128,40 +173,63 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
             />
           </div>
         )}
-        {view.processes.map((proc) => (
-          <section key={proc.id} className={multi ? "panel deploy-proc" : "deploy-proc"}>
-            {multi && (
-              <>
-                <div className="deploy-proc-top">
-                  <div>
-                    <div className="deploy-proc-name">{proc.name}</div>
-                    <div className={`deploy-proc-state is-${proc.state}`}>{stateLabel(proc.state)}</div>
+        {view.processes.map((proc) => {
+          const row = manageable ? rowForProcess(processRows, proc.name) : null;
+          const showControls = Boolean(row && row.pm !== "none");
+          return (
+            <section key={proc.id} className={multi ? "panel deploy-proc" : "deploy-proc"}>
+              {multi ? (
+                <>
+                  <div className="deploy-proc-top">
+                    <div>
+                      <div className="deploy-proc-name">{proc.name}</div>
+                      <div className={`deploy-proc-state is-${proc.state}`}>{stateLabel(proc.state)}</div>
+                    </div>
+                    <div className="deploy-live-pct sm" aria-hidden="true">{proc.percent}%</div>
                   </div>
-                  <div className="deploy-live-pct sm" aria-hidden="true">{proc.percent}%</div>
-                </div>
-                <div
-                  className="deploy-meter"
-                  role="progressbar"
-                  aria-label={proc.name}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={proc.percent}
-                >
-                  <span style={{ width: `${proc.percent}%` }} />
-                </div>
-                <Rail steps={proc.steps} />
-              </>
-            )}
-            <LogTerminal
-              title={proc.name}
-              text={paneText(view, proc.id, !multi)}
-              open={isOpen(proc.id)}
-              onToggle={() => toggle(proc.id)}
-              live={live && (proc.state === "active" || proc.state === "pending" || !multi)}
-              tall={!multi}
-            />
-          </section>
-        ))}
+                  {showControls && (
+                    <div className="deploy-proc-actions-wrap">
+                      <ProcessTaskActions
+                        row={row}
+                        enabled={!live || proc.state === "done" || proc.state === "failed"}
+                        onChanged={() => void refreshInventory()}
+                      />
+                    </div>
+                  )}
+                  <div
+                    className="deploy-meter"
+                    role="progressbar"
+                    aria-label={proc.name}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={proc.percent}
+                  >
+                    <span style={{ width: `${proc.percent}%` }} />
+                  </div>
+                  <Rail steps={proc.steps} />
+                </>
+              ) : (
+                showControls && (
+                  <div className="deploy-proc-actions-wrap">
+                    <ProcessTaskActions
+                      row={row}
+                      enabled={!live || proc.state === "done" || proc.state === "failed"}
+                      onChanged={() => void refreshInventory()}
+                    />
+                  </div>
+                )
+              )}
+              <LogTerminal
+                title={proc.name}
+                text={paneText(view, proc.id, !multi)}
+                open={isOpen(proc.id)}
+                onToggle={() => toggle(proc.id)}
+                live={live && (proc.state === "active" || proc.state === "pending" || !multi)}
+                tall={!multi}
+              />
+            </section>
+          );
+        })}
       </div>
     </div>
   );

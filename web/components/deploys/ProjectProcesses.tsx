@@ -1,71 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ConnectorResource, DeployApp, DeployInventory, DeployProject } from "@/lib/types";
-import { qualifyProcessName } from "@/lib/process-name";
+import type { DeployInventory, DeployProject } from "@/lib/types";
+import { buildProcessRows, type ProcessRow } from "@/lib/project-processes";
 import { useConnectorCommand } from "@/components/connectors/useConnectorCommand";
 import { StepList } from "@/components/connectors/StepList";
 import { ProcessStateBadge } from "@/components/connectors/ProcessStateBadge";
 import { ProcessLogsPanel } from "@/components/connectors/ProcessLogsPanel";
 import { Pm2DaemonActions } from "@/components/connectors/Pm2DaemonActions";
+import { ProcessTaskActions } from "@/components/deploys/ProcessTaskActions";
 
-type Row = {
-  label: string;
-  processName: string;
-  pm: string;
-  resource: ConnectorResource | null;
-  connectorId: string | null;
+const EXTRA_ACTIONS: Record<string, readonly string[]> = {
+  pm2: ["start", "reload", "delete"],
+  systemd: ["start", "reload"],
+  docker: ["start"],
 };
-
-const ROW_ACTIONS = ["start", "stop", "restart", "reload", "delete"] as const;
-const DESTRUCTIVE = new Set(["stop", "delete", "flush"]);
-
-function buildRows(project: DeployProject, inventory: DeployInventory | null): Row[] {
-  const apps: DeployApp[] =
-    project.apps?.length > 0
-      ? project.apps
-      : [
-          {
-            name: project.name,
-            root: project.root_directory || ".",
-            process_manager: project.process_manager,
-            process_name: qualifyProcessName(project.name, project.name),
-          },
-        ];
-
-  const objects: { kind: string; connectorId: string; resource: ConnectorResource }[] = [];
-  for (const bucket of inventory?.items ?? []) {
-    const fallbackConn = bucket.connectors[0]?.id ?? "";
-    for (const o of bucket.objects) {
-      objects.push({
-        kind: bucket.kind,
-        connectorId: o.connector_id || o.attributes?.connector_id || fallbackConn,
-        resource: o,
-      });
-    }
-  }
-
-  return apps.map((app) => {
-    const pm = (app.process_manager || project.process_manager || "none").trim() || "none";
-    const processName =
-      app.process_name || qualifyProcessName(project.name, app.name || app.root || "app");
-    const hit =
-      objects.find(
-        (o) =>
-          o.kind === pm &&
-          (o.resource.name === processName ||
-            o.resource.ref === processName ||
-            o.resource.name === app.name),
-      ) ?? null;
-    return {
-      label: app.name || processName,
-      processName,
-      pm,
-      resource: hit?.resource ?? null,
-      connectorId: hit?.connectorId ?? null,
-    };
-  });
-}
+const DESTRUCTIVE = new Set(["delete"]);
 
 export function ProjectProcesses({ project }: { project: DeployProject }) {
   const [inventory, setInventory] = useState<DeployInventory | null>(null);
@@ -73,7 +23,7 @@ export function ProjectProcesses({ project }: { project: DeployProject }) {
   const [logsFor, setLogsFor] = useState<string | null>(null);
   const [logsText, setLogsText] = useState<string>("");
   const [logsBusy, setLogsBusy] = useState(false);
-  const [logsRow, setLogsRow] = useState<Row | null>(null);
+  const [logsRow, setLogsRow] = useState<ProcessRow | null>(null);
   const { busy, error, result, send } = useConnectorCommand();
 
   const refresh = useCallback(async () => {
@@ -91,7 +41,7 @@ export function ProjectProcesses({ project }: { project: DeployProject }) {
     void refresh();
   }, [refresh]);
 
-  const rows = buildRows(project, inventory);
+  const rows = buildProcessRows(project, inventory);
   const manageable = rows.some((r) => r.pm !== "none");
   const pm2ConnectorId = useMemo(() => {
     const bucket = inventory?.items.find((b) => b.kind === "pm2");
@@ -101,7 +51,7 @@ export function ProjectProcesses({ project }: { project: DeployProject }) {
 
   if (!manageable) return null;
 
-  async function runAction(row: Row, action: string) {
+  async function runAction(row: ProcessRow, action: string) {
     if (!row.connectorId || !row.resource) return;
     if (DESTRUCTIVE.has(action)) {
       const ok = window.confirm(`${action} ${row.processName}?`);
@@ -114,7 +64,7 @@ export function ProjectProcesses({ project }: { project: DeployProject }) {
     await refresh();
   }
 
-  async function viewLogs(row: Row) {
+  async function viewLogs(row: ProcessRow) {
     if (!row.connectorId || !row.resource) return;
     setLogsFor(row.processName);
     setLogsRow(row);
@@ -142,7 +92,7 @@ export function ProjectProcesses({ project }: { project: DeployProject }) {
         <div>
           <div className="card-title">Processes</div>
           <p className="subtle" style={{ margin: "6px 0 0" }}>
-            Live status from the agent. Start, stop, restart, view or download logs without redeploying.
+            Live status from the agent. Pause, stop, restart, view or download logs without redeploying.
           </p>
         </div>
         <button type="button" className="button secondary sm" onClick={() => void refresh()} disabled={busy}>
@@ -176,8 +126,7 @@ export function ProjectProcesses({ project }: { project: DeployProject }) {
           <tbody>
             {rows.map((row) => {
               const attrs = row.resource?.attributes || {};
-              const actions =
-                row.pm === "pm2" ? ROW_ACTIONS : (["start", "stop", "restart"] as const);
+              const extras = EXTRA_ACTIONS[row.pm] ?? ["start"];
               return (
                 <tr key={row.processName}>
                   <td>
@@ -198,8 +147,9 @@ export function ProjectProcesses({ project }: { project: DeployProject }) {
                     {attrs.restarts ?? "—"}
                   </td>
                   <td style={{ textAlign: "right" }}>
-                    <div className="cluster" style={{ gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                      {actions.map((a) => (
+                    <div className="cluster" style={{ gap: 8, justifyContent: "flex-end", flexWrap: "wrap", alignItems: "center" }}>
+                      <ProcessTaskActions row={row} onChanged={() => void refresh()} />
+                      {extras.map((a) => (
                         <button
                           key={a}
                           type="button"

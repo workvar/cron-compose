@@ -11,7 +11,7 @@ type Command struct {
 	Kind         string // nginx|systemd|docker|pm2|...
 	Instance     string // provider instance discriminator; empty for singletons
 	Ref          string // path | unit | container id | pm2 id | process name
-	Action       string // lifecycle: start|stop|restart|reload|enable|disable
+	Action       string // lifecycle: start|stop|restart|reload|enable|disable|pause|unpause
 	Content      []byte // apply/rollback: the bytes to write
 	BaseChecksum string // apply: optimistic concurrency against the last read
 	DryRun       bool
@@ -119,6 +119,8 @@ var allowedActions = map[string]bool{
 	"reload":  true,
 	"enable":  true,
 	"disable": true,
+	"pause":   true, // freeze without tearing down (docker pause / SIGSTOP / systemd freeze)
+	"unpause": true, // resume a paused process
 	// pm2 daemon / process extras
 	"save":    true, // pm2 save — persist process list for reboot
 	"startup": true, // pm2 startup — install boot hook

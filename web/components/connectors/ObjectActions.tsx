@@ -8,9 +8,9 @@ import { ProcessLogsPanel } from "./ProcessLogsPanel";
 
 // Per-process verbs. Daemon-wide pm2 save/startup live on Pm2DaemonActions.
 const ACTIONS: Record<string, string[]> = {
-  systemd: ["start", "stop", "restart", "reload", "enable", "disable"],
-  docker: ["start", "stop", "restart"],
-  pm2: ["start", "stop", "restart", "reload", "delete", "flush"],
+  systemd: ["start", "stop", "restart", "pause", "unpause", "reload", "enable", "disable"],
+  docker: ["start", "stop", "restart", "pause", "unpause"],
+  pm2: ["start", "stop", "restart", "pause", "unpause", "reload", "delete", "flush"],
   nginx: ["start", "stop", "restart", "reload"],
 };
 
@@ -22,6 +22,8 @@ const LABELS: Record<string, string> = {
   start: "start",
   stop: "stop",
   restart: "restart",
+  pause: "pause",
+  unpause: "resume",
   reload: "reload",
   enable: "enable",
   disable: "disable",
