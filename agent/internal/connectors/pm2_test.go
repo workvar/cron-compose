@@ -4,8 +4,20 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestShellJoinQuotesArgs(t *testing.T) {
+	got := shellJoin("pm2", "save")
+	if got != "'pm2' 'save'" {
+		t.Fatalf("got %q", got)
+	}
+	got = shellJoin("pm2", "logs", "app's")
+	if !strings.Contains(got, `'\''`) {
+		t.Fatalf("expected escaped quote in %q", got)
+	}
+}
 
 func TestPm2DumpPathUsesPm2Home(t *testing.T) {
 	t.Setenv("PM2_HOME", "/tmp/custom-pm2")

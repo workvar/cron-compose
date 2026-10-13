@@ -1,8 +1,9 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Brand } from "@/components/Brand";
+import { BrandLoader } from "@/components/BrandLoader";
 import { LoginShowcase } from "@/components/login/LoginShowcase";
 import { ControlPlaneError } from "@/lib/agent-root";
 import { loginWithPasskey, supportsConditionalMediation } from "@/lib/webauthn";
@@ -32,8 +33,14 @@ function safeNext(raw: string | null): string {
   return next;
 }
 
+/** Absolute path under the UI basePath (/app). Soft router.replace("/") 404'd for some clients. */
+function appDestination(next: string): string {
+  if (next.startsWith("/app")) return next;
+  if (next === "/" || next === "") return "/app";
+  return `/app${next}`;
+}
+
 function LoginForm() {
-  const router = useRouter();
   const params = useSearchParams();
   const next = safeNext(params.get("next"));
 
@@ -48,14 +55,17 @@ function LoginForm() {
 
   useEffect(() => {
     // Quiet session probe (401 is expected when signed out; never surface it).
+    // Already signed in → hard navigate to /app (or ?next=). Soft replace("/") 404'd.
     fetch("/api/me", { credentials: "include" })
-      .then((r) => { if (r.ok) router.replace(next); })
+      .then((r) => {
+        if (r.ok) window.location.replace(appDestination(next));
+      })
       .catch(() => {});
     fetch("/api/auth/config", { credentials: "include" })
       .then((r) => r.json() as Promise<AuthConfig>)
       .then(setAuthCfg)
       .catch(() => setAuthCfg({ password_login: true, oidc_enabled: false, oidc_start_url: "" }));
-  }, [next, router]);
+  }, [next]);
 
   useEffect(() => {
     if (!authCfg?.passkey_login) return;
@@ -66,15 +76,14 @@ function LoginForm() {
       try {
         await loginWithPasskey({ mediation: "conditional", signal: ac.signal });
         if (ac.signal.aborted) return;
-        const dest = next.startsWith("/app") ? next : next === "/" ? "/app" : `/app${next}`;
-        window.location.assign(dest);
+        window.location.assign(appDestination(next));
       } catch {
         // Conditional UI is ambient autofill — never surface errors under the form
         // (including 401 "missing session" from a signed-out probe race).
       }
     })();
     return () => ac.abort();
-  }, [authCfg?.passkey_login, condGen, next, router]);
+  }, [authCfg?.passkey_login, condGen, next]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -91,8 +100,7 @@ function LoginForm() {
         if (res.status === 401) throw new Error("Wrong email or password");
         throw new Error(`Sign-in failed (HTTP ${res.status})`);
       }
-      const dest = next.startsWith("/app") ? next : next === "/" ? "/app" : `/app${next}`;
-      window.location.assign(dest);
+      window.location.assign(appDestination(next));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -103,8 +111,7 @@ function LoginForm() {
   function startOAuth(url?: string) {
     if (!url) return;
     const u = new URL(url, window.location.origin);
-    const dest = next.startsWith("/app") ? next : (next === "/" ? "/app" : `/app${next}`);
-    u.searchParams.set("next", dest);
+    u.searchParams.set("next", appDestination(next));
     window.location.href = u.toString();
   }
 
@@ -122,8 +129,7 @@ function LoginForm() {
       await loginWithPasskey();
       // Hard navigate so the app shell mounts with a fresh session (soft nav can
       // keep stale chrome after logout → login).
-      const dest = next.startsWith("/app") ? next : next === "/" ? "/app" : `/app${next}`;
-      window.location.assign(dest);
+      window.location.assign(appDestination(next));
     } catch (e) {
       setCondGen((n) => n + 1);
       if (e instanceof DOMException && (e.name === "NotAllowedError" || e.name === "AbortError")) return;
@@ -220,6 +226,7 @@ function LoginFallback() {
           <Brand />
           <h1>Sign in</h1>
           <p className="subtle login-lede">Welcome back to your control plane.</p>
+          <BrandLoader size={36} caption="Loading…" label="Loading sign-in" />
         </div>
       </section>
     </div>

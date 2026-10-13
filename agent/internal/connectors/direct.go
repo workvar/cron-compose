@@ -133,24 +133,15 @@ func directDocker(ctx context.Context, ref, action, username string) Result {
 	}
 }
 
-// runAs executes name as username (empty = agent user), resolving the binary
-// through that account's login shell so nvm-installed pm2 is found.
+// runAs executes name as username (empty = agent user) via bash + toolchain
+// prelude so nvm-installed pm2/node are on PATH. Running an absolute pm2 path
+// directly fails with `env: 'node': No such file or directory`.
 func runAs(ctx context.Context, username, name string, args ...string) (string, error) {
 	cred, err := osuser.Resolve(strings.TrimSpace(username))
 	if err != nil {
 		return "", err
 	}
-	bin := name
-	if len(name) > 0 && name[0] != '/' {
-		look := exec.CommandContext(ctx, "/bin/bash", "-lc", "command -v "+name)
-		applyUser(look, cred)
-		if out, lerr := look.Output(); lerr == nil {
-			if path := lastLine(string(out)); path != "" && !strings.ContainsAny(path, " \t") {
-				bin = path
-			}
-		}
-	}
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := exec.CommandContext(ctx, "/bin/bash", "-lc", osuser.WrapScript(shellJoin(name, args...)))
 	applyUser(cmd, cred)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf

@@ -57,7 +57,7 @@ One process, two listeners:
 
 | Listener | Default | Who uses it |
 |----------|---------|-------------|
-| HTTP (`HTTP_ADDR`) | `:8080` | Browsers and REST clients. Serves `/api` and proxies `/app`. Bare `/` redirects to `/app`. |
+| HTTP (`HTTP_ADDR`) | `:8080` | Browsers and REST clients. Serves `/api` and proxies `/app`. Bare `/` redirects to `/app/landing`. |
 | gRPC mTLS (`GRPC_ADDR`) | `:9090` | Agents only. End-to-end mTLS; do not HTTP-terminate this port. |
 
 Responsibilities: authentication and RBAC, CRUD for servers/jobs/schedules, job versions, accepting run records and log chunks, fanning live logs to the UI over SSE, connector operations, terminal relay, and being the source of truth that agents sync from.

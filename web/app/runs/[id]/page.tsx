@@ -3,6 +3,7 @@
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import type { LogLine, Run } from "@/lib/types";
+import { BrandLoaderBlock } from "@/components/BrandLoader";
 import { IconChevronLeft } from "@/components/icons";
 import { TerminalFrame } from "@/components/terminal/TerminalFrame";
 import { stripAnsi } from "@/lib/strip-ansi";
@@ -56,7 +57,7 @@ export default function RunDetailPage({ params }: Props) {
   if (error && !run) {
     return <div className="form-error">Could not load run: <code>{error}</code></div>;
   }
-  if (!run) return <p className="subtle">Loading…</p>;
+  if (!run) return <BrandLoaderBlock caption="Loading run…" />;
 
   return (
     <>

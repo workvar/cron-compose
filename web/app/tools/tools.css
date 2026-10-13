@@ -1,4 +1,4 @@
-/* Tools page — full-width selectors, row progress, bottom terminal dock. */
+/* Tools page — full-width selectors, toolchain cards, bottom terminal dock. */
 
 .tools-page {
   padding-bottom: 120px; /* room for collapsed dock */
@@ -19,36 +19,130 @@
   width: 100%;
 }
 
-.tools-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  margin-top: 8px;
+.tools-search {
+  width: 100%;
+  margin: 14px 0 18px;
 }
 
-.tools-row {
+.tools-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 42px;
+  padding: 0 14px 0 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.tools-search-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.tools-search-wrap > svg {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.tools-search-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--green) 45%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 16%, transparent);
+  background: var(--surface);
+}
+
+.tools-search-input::placeholder {
+  color: var(--muted);
+}
+
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 4px;
+  align-items: stretch;
+}
+
+.tools-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 220px;
+  height: 100%;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  box-sizing: border-box;
+}
+
+.tools-card-meta {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tools-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--border);
+  gap: 10px;
 }
 
-.tools-row:last-child {
-  border-bottom: 0;
+.tools-card-name {
+  font-size: 16px;
+  font-weight: 760;
+  color: var(--text);
+  letter-spacing: -0.01em;
 }
 
-.tools-row-meta {
-  min-width: 0;
-  flex: 1;
+.tools-card-blurb {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
 }
 
-.tools-row-actions {
+.tools-card-path {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-2);
+  word-break: break-all;
+}
+
+.tools-card-path code {
+  font-size: 11.5px;
+}
+
+.tools-card-actions {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
-  flex-shrink: 0;
+  margin-top: 16px;
+}
+
+.tools-card-actions .tools-progress-btn {
+  width: 100%;
+  min-width: 0;
+}
+
+.tools-empty {
+  grid-column: 1 / -1;
+  padding: 28px 12px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13.5px;
 }
 
 .tools-progress-btn {
@@ -79,6 +173,14 @@
 .tools-status-waiting {
   color: var(--muted);
   font-size: 12px;
+}
+
+.tools-scanning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 13px;
 }
 
 /* Bottom terminal dock (Windows-style tab) */
@@ -157,11 +259,20 @@
   word-break: break-word;
 }
 
+@media (max-width: 1100px) {
+  .tools-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 860px) {
   .tools-dock {
     left: 0;
   }
   .tools-selectors .grid-2 {
+    grid-template-columns: 1fr;
+  }
+  .tools-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { BrandLoader } from "@/components/BrandLoader";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { UserSwitcher } from "@/components/terminal/UserSwitcher";
-import { IconTools } from "@/components/icons";
+import { IconSearch, IconTools } from "@/components/icons";
 import {
   clearToolsCache,
   mergeToolStatuses,
@@ -55,6 +56,7 @@ export default function ToolsPage() {
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<DockJob | null>(null);
   const [dockOpen, setDockOpen] = useState(true);
+  const [query, setQuery] = useState("");
   const scanGen = useRef(0);
   const logPaneRef = useRef<HTMLDivElement | null>(null);
 
@@ -242,6 +244,25 @@ export default function ToolsPage() {
   const waitingCount = INSTALLABLE.filter((n) => rowState[n] === "waiting").length;
   const readyCount = INSTALLABLE.filter((n) => rowState[n] === "ready").length;
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [...INSTALLABLE];
+    return INSTALLABLE.filter((name) => {
+      const st = pickStatus(byName, name);
+      const hay = [
+        name,
+        TOOL_BLURB[name] || "",
+        st?.version || "",
+        st?.path || "",
+        byName.python3?.version || "",
+        byName.python3?.path || "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [query, byName]);
+
   return (
     <div className="tools-page">
       <div className="page-head">
@@ -286,13 +307,20 @@ export default function ToolsPage() {
           </div>
         </div>
         <div className="cluster" style={{ marginTop: 8, justifyContent: "space-between" }}>
-          <p className="subtle" style={{ margin: 0, fontSize: 13 }}>
-            {waitingCount > 0
-              ? `Loaded ${readyCount}/${INSTALLABLE.length} · waiting for ${waitingCount}…`
-              : readyCount > 0
+          {waitingCount > 0 ? (
+            <p className="tools-scanning subtle">
+              <BrandLoader inline size={22} label="Scanning tools" />
+              <span>
+                Loaded {readyCount}/{INSTALLABLE.length} · waiting for {waitingCount}…
+              </span>
+            </p>
+          ) : (
+            <p className="subtle" style={{ margin: 0, fontSize: 13 }}>
+              {readyCount > 0
                 ? `${readyCount} tools ready (cached until install/uninstall)`
                 : "Pick a server to scan"}
-          </p>
+            </p>
+          )}
           <button
             type="button"
             className="button secondary sm"
@@ -308,77 +336,102 @@ export default function ToolsPage() {
 
       <div className="panel" style={{ marginTop: 16 }}>
         <div className="card-title">Toolchains</div>
+        <div className="tools-search">
+          <div className="tools-search-wrap">
+            <IconSearch aria-hidden="true" />
+            <input
+              id="tools-search"
+              className="tools-search-input"
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search toolchains…"
+              aria-label="Search toolchains"
+            />
+          </div>
+        </div>
         <div className="tools-grid">
-          {INSTALLABLE.map((name) => {
-            const st = pickStatus(byName, name);
-            const state = rowState[name] || "idle";
-            const installed = !!(st?.installed || (name === "python" && byName.python3?.installed));
-            const version = st?.version || (name === "python" ? byName.python3?.version : "") || "";
-            const path = st?.path || "";
-            const active = job && !job.done && job.tool === name;
-            const pct = active ? Math.round(job.percent) : 0;
+          {filtered.length === 0 ? (
+            <div className="tools-empty">No toolchains match “{query.trim()}”.</div>
+          ) : (
+            filtered.map((name) => {
+              const st = pickStatus(byName, name);
+              const state = rowState[name] || "idle";
+              const installed = !!(st?.installed || (name === "python" && byName.python3?.installed));
+              const version = st?.version || (name === "python" ? byName.python3?.version : "") || "";
+              const path = st?.path || "";
+              const active = job && !job.done && job.tool === name;
+              const pct = active ? Math.round(job.percent) : 0;
+              const checking = state === "waiting" || state === "idle";
 
-            return (
-              <div key={name} className="tools-row">
-                <div className="tools-row-meta">
-                  <div className="cluster" style={{ gap: 8, alignItems: "center" }}>
-                    <strong>{name}</strong>
-                    {state === "waiting" || state === "idle" ? (
-                      <span className="pill neutral">checking…</span>
-                    ) : (
-                      <span className={`pill ${installed ? "ok" : "neutral"}`}>
-                        {installed ? "installed" : "missing"}
-                      </span>
-                    )}
-                  </div>
-                  <p className="field-hint" style={{ margin: "4px 0 0" }}>
-                    {TOOL_BLURB[name]}
-                    {version ? <> · {version}</> : null}
-                    {path ? <> · <code>{path}</code></> : null}
-                    {state === "waiting" ? (
-                      <span className="tools-status-waiting"> · waiting…</span>
+              return (
+                <div key={name} className="tools-card">
+                  <div className="tools-card-meta">
+                    <div className="tools-card-head">
+                      <span className="tools-card-name">{name}</span>
+                      {checking ? (
+                        <span className="pill neutral">checking…</span>
+                      ) : (
+                        <span className={`pill ${installed ? "ok" : "neutral"}`}>
+                          {installed ? "installed" : "missing"}
+                        </span>
+                      )}
+                    </div>
+                    <p className="tools-card-blurb">
+                      {TOOL_BLURB[name]}
+                      {version ? <> · {version}</> : null}
+                      {checking ? <span className="tools-status-waiting"> · waiting…</span> : null}
+                    </p>
+                    {path ? (
+                      <p className="tools-card-path">
+                        <code>{path}</code>
+                      </p>
                     ) : null}
-                  </p>
-                </div>
-                <div className="tools-row-actions">
-                  {(installed || (active && job.op === "uninstall")) && (
+                  </div>
+                  <div className="tools-card-actions">
+                    {(installed || (active && job?.op === "uninstall")) ? (
+                      <button
+                        type="button"
+                        className="button secondary sm tools-progress-btn"
+                        disabled={!serverId || (!!job && !(active && job.op === "uninstall")) || state === "waiting"}
+                        onClick={() => void mutate("uninstall", name)}
+                      >
+                        {active && job?.op === "uninstall" ? (
+                          <>
+                            <span className="tools-progress-fill" style={{ width: `${pct}%` }} />
+                            <span className="tools-progress-label">Removing {pct}%</span>
+                          </>
+                        ) : (
+                          <span className="tools-progress-label">Uninstall</span>
+                        )}
+                      </button>
+                    ) : (
+                      <button type="button" className="button secondary sm tools-progress-btn" disabled>
+                        <span className="tools-progress-label">Uninstall</span>
+                      </button>
+                    )}
                     <button
                       type="button"
-                      className={`button secondary sm tools-progress-btn`}
-                      disabled={!serverId || (!!job && !(active && job.op === "uninstall")) || state === "waiting"}
-                      onClick={() => void mutate("uninstall", name)}
+                      className="button sm tools-progress-btn"
+                      disabled={!serverId || (!!job && !(active && job.op === "install")) || state === "waiting"}
+                      onClick={() => void mutate("install", name)}
                     >
-                      {active && job.op === "uninstall" ? (
+                      {active && job?.op === "install" ? (
                         <>
                           <span className="tools-progress-fill" style={{ width: `${pct}%` }} />
-                          <span className="tools-progress-label">Removing {pct}%</span>
+                          <span className="tools-progress-label">Installing {pct}%</span>
                         </>
                       ) : (
-                        <span className="tools-progress-label">Uninstall</span>
+                        <span className="tools-progress-label">
+                          {installed ? "Reinstall" : "Install"}
+                        </span>
                       )}
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    className="button sm tools-progress-btn"
-                    disabled={!serverId || (!!job && !(active && job.op === "install")) || state === "waiting"}
-                    onClick={() => void mutate("install", name)}
-                  >
-                    {active && job.op === "install" ? (
-                      <>
-                        <span className="tools-progress-fill" style={{ width: `${pct}%` }} />
-                        <span className="tools-progress-label">Installing {pct}%</span>
-                      </>
-                    ) : (
-                      <span className="tools-progress-label">
-                        {installed ? "Reinstall" : "Install"}
-                      </span>
-                    )}
-                  </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
 

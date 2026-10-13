@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/croncompose/croncompose/agent/internal/osuser"
 )
 
 type pm2Provider struct{}
@@ -57,13 +59,14 @@ func (a *pm2Args) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// pm2Bin resolves pm2 on the agent PATH, then via a login shell so an nvm/fnm
-// install is visible to a systemd agent whose PATH is just /usr/bin.
+// pm2Bin resolves pm2 on the agent PATH, then via a login shell with the
+// toolchain prelude so an nvm/fnm install is visible to a systemd agent whose
+// PATH is just /usr/bin.
 func pm2Bin(ctx context.Context) string {
 	if has("pm2") {
 		return "pm2"
 	}
-	out, err := run(ctx, "/bin/bash", "-lc", "command -v pm2")
+	out, err := run(ctx, "/bin/bash", "-lc", osuser.WrapScript("command -v pm2"))
 	if err != nil {
 		return ""
 	}
@@ -74,12 +77,15 @@ func pm2Bin(ctx context.Context) string {
 	return path
 }
 
+// runPM2 runs pm2 through bash + ToolchainPrelude. pm2's shebang is
+// `#!/usr/bin/env node`; executing the absolute nvm path directly fails with
+// `env: 'node': No such file or directory` under a minimal agent PATH, which
+// also made jlist look empty ("No processes reported for PM2").
 func runPM2(ctx context.Context, args ...string) (string, error) {
-	bin := pm2Bin(ctx)
-	if bin == "" {
+	if pm2Bin(ctx) == "" {
 		return "", os.ErrNotExist
 	}
-	return run(ctx, bin, args...)
+	return run(ctx, "/bin/bash", "-lc", osuser.WrapScript(shellJoin("pm2", args...)))
 }
 
 func (p *pm2Provider) Detect(ctx context.Context) []Instance {

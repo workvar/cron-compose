@@ -42,14 +42,10 @@ export function proxy(req: NextRequest) {
 
   const hasSession = req.cookies.has("cc_session");
 
-  // Bare host root only (outside basePath). Control plane does the same when it
-  // fronts the site; this covers direct hits on the Next port (dev / tunnel).
-  // Use /app not /app/ — Next's default trailingSlash:false 308s /app/ → /app,
-  // and bouncing the dashboard root here used to 404 soft navigations to "/".
+  // Bare host root only (outside basePath). Always marketing landing — same as the
+  // control plane. Dashboard is /app; login bounces signed-in users there itself.
   if (rawPath === "/") {
-    return NextResponse.redirect(
-      new URL(hasSession ? "/app" : "/app/landing", req.url),
-    );
+    return NextResponse.redirect(new URL("/app/landing", req.url));
   }
 
   if (!hasSession && !isPublic(pathname)) {

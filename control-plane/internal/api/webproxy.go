@@ -42,15 +42,10 @@ func mountWeb(app *fiber.App, upstream string) {
 	}
 	upstream = strings.TrimRight(upstream, "/")
 
-	// Bare / must redirect (not reverse-proxy). Proxying / → /app/landing left the
-	// browser URL at / while Next rendered landing HTML; the client then mounted
-	// AppShell because usePathname() saw "/", which looked cheap for signed-in users.
-	// Cookie present → dashboard; signed out → marketing landing (PublicChrome).
+	// Bare / always shows the marketing landing (PublicChrome), signed in or out.
+	// The control plane dashboard lives at /app; do not bounce cookie holders there
+	// from the site root — that hid the landing page and soft-nav 404'd for some clients.
 	app.Get("/", func(c fiber.Ctx) error {
-		if strings.TrimSpace(c.Cookies("cc_session")) != "" {
-			// Prefer /app (no trailing slash) — Next 308s /app/ → /app by default.
-			return c.Redirect().Status(fiber.StatusFound).To("/app")
-		}
 		return c.Redirect().Status(fiber.StatusFound).To("/app/landing")
 	})
 	// Public docs live in the UI; /docs is the short link people share.

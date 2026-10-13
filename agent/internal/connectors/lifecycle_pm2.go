@@ -76,12 +76,12 @@ func (p *pm2Provider) Lifecycle(ctx context.Context, inst Instance, ref, action 
 		return ok("logs flushed for "+ref, s)
 
 	case "disable":
-		stopOut, err := run(ctx, "pm2", "stop", ref)
+		stopOut, err := runPM2(ctx, "stop", ref)
 		stopStep := step("pm2 stop "+ref, err == nil, stopOut)
 		if err != nil {
 			return fail(StatusFailed, "pm2 stop failed: "+trimOutput(stopOut), stopStep)
 		}
-		saveOut, err := run(ctx, "pm2", "save")
+		saveOut, err := runPM2(ctx, "save")
 		saveStep := step("pm2 save", err == nil, saveOut)
 		if err != nil {
 			return fail(StatusFailed, "stopped, but pm2 save failed so it will come back on boot: "+

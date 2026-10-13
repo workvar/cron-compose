@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { BrandLoaderBlock } from "@/components/BrandLoader";
 import { DeployConfigTabs } from "@/components/deploys/DeployConfigTabs";
 import { RedeployButton } from "@/components/deploys/RedeployButton";
 import { IconChevronLeft, IconDownload } from "@/components/icons";
@@ -248,7 +249,7 @@ export default function EditDeployPage() {
   }
 
   if (!project) {
-    return <p className="subtle">Loading…</p>;
+    return <BrandLoaderBlock caption="Loading project…" />;
   }
 
   return (

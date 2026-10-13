@@ -68,7 +68,7 @@ Then:
 ./croncompose-ctl.sh boot          # survive reboots (pm2 startup + save)
 ```
 
-Open `http://<host>:<http port>` — it redirects to `/app`.
+Open `http://<host>:<http port>` — it redirects to `/app/landing` (sign in from there to reach `/app`).
 
 Full flag and `CC_*` env reference: [`install/README.md`](https://github.com/workvar/cron-compose/blob/main/install/README.md).
 

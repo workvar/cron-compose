@@ -232,3 +232,118 @@ code {
   min-height: 100dvh;
   background: var(--backdrop);
 }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Logo-inspired brand loader — persistent site-wide loading mark */
+.brand-loader {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.brand-loader.is-inline {
+  flex-direction: row;
+  gap: 10px;
+}
+.brand-loader-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 22%;
+  overflow: visible;
+  flex: none;
+}
+.brand-loader-svg {
+  display: block;
+  border-radius: 22%;
+  overflow: hidden;
+  animation: brand-loader-breathe 1.8s ease-in-out infinite;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 35%, transparent);
+}
+.brand-loader-svg .logo-mark-arc {
+  stroke-dasharray: 42;
+  stroke-dashoffset: 42;
+  animation: brand-loader-draw 1.4s ease-in-out infinite alternate;
+}
+.brand-loader-svg .logo-mark-slab {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: brand-loader-slab 1.2s ease-in-out infinite;
+}
+.brand-loader-svg .logo-mark-slab:nth-child(4) { animation-delay: 0.12s; }
+.brand-loader-svg .logo-mark-slab:nth-child(5) { animation-delay: 0.24s; }
+.brand-loader-svg .logo-mark-led {
+  animation: brand-loader-led 1.2s ease-in-out infinite;
+}
+.brand-loader-svg .logo-mark-led:nth-child(7) { animation-delay: 0.12s; }
+.brand-loader-svg .logo-mark-led:nth-child(8) { animation-delay: 0.24s; }
+.brand-loader-orbit {
+  position: absolute;
+  inset: -5px;
+  border-radius: 28%;
+  border: 2px solid transparent;
+  border-top-color: var(--green-mint);
+  border-right-color: color-mix(in srgb, var(--green) 55%, transparent);
+  animation: brand-loader-spin 1.15s cubic-bezier(0.45, 0.05, 0.25, 1) infinite;
+  pointer-events: none;
+}
+.brand-loader-caption {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+.brand-loader-block {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: min(42vh, 320px);
+  padding: 32px 16px;
+}
+@keyframes brand-loader-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes brand-loader-breathe {
+  0%, 100% {
+    transform: scale(1);
+    filter: brightness(1);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 28%, transparent);
+  }
+  50% {
+    transform: scale(1.04);
+    filter: brightness(1.08);
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--green) 0%, transparent);
+  }
+}
+@keyframes brand-loader-draw {
+  from { stroke-dashoffset: 36; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes brand-loader-slab {
+  0%, 100% { opacity: 0.45; transform: scaleX(0.72); }
+  50% { opacity: 1; transform: scaleX(1); }
+}
+@keyframes brand-loader-led {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .brand-loader-svg,
+  .brand-loader-svg .logo-mark-arc,
+  .brand-loader-svg .logo-mark-slab,
+  .brand-loader-svg .logo-mark-led,
+  .brand-loader-orbit {
+    animation: none;
+  }
+}

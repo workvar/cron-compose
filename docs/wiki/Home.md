@@ -56,7 +56,7 @@ cd cron-compose
 ./install/install.sh
 ```
 
-Open the printed URL (it redirects to `/app`), sign in with the admin you created, add a server, and paste the install command on the target. Details: [Installation](Installation.md).
+Open the printed URL (it redirects to `/app/landing`), sign in with the admin you created (lands on `/app`), add a server, and paste the install command on the target. Details: [Installation](Installation.md).
 
 ## Wiki map
 

@@ -11,6 +11,7 @@ import { DeployConfigTabs } from "@/components/deploys/DeployConfigTabs";
 import { DeployReview } from "@/components/deploys/DeployReview";
 import { DeployServerChip } from "@/components/deploys/DeployServerChip";
 import { ServerPickerGrid } from "@/components/deploys/ServerPickerGrid";
+import { BrandLoaderBlock } from "@/components/BrandLoader";
 import CopyButton from "@/components/CopyButton";
 import {
   IconCheck,
@@ -1275,7 +1276,7 @@ function IssueList({ issues }: { issues: DeploySpecIssue[] }) {
 
 export default function NewDeployPage() {
   return (
-    <Suspense fallback={<p className="subtle">Loading…</p>}>
+    <Suspense fallback={<BrandLoaderBlock caption="Loading…" />}>
       <NewDeployForm />
     </Suspense>
   );

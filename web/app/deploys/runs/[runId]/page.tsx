@@ -3,6 +3,7 @@
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import type { DeployProject, DeployRun, LogLine } from "@/lib/types";
+import { BrandLoaderBlock } from "@/components/BrandLoader";
 import { IconChevronLeft } from "@/components/icons";
 import { HostThisApp } from "@/components/deploys/HostThisApp";
 import { DeployRunBoard } from "@/components/deploys/DeployRunBoard";
@@ -144,7 +145,7 @@ export default function DeployRunPage({ params }: Props) {
   if (error && !run) {
     return <div className="form-error">Could not load run: <code>{error}</code></div>;
   }
-  if (!run) return <p className="subtle">Loading…</p>;
+  if (!run) return <BrandLoaderBlock caption="Loading deploy…" />;
 
   const live = run.status === "pending" || run.status === "running";
   const showExit = run.exit_code !== undefined && terminalStatus.has(run.status);

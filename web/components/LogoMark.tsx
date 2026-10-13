@@ -17,18 +17,19 @@ export function LogoMark({ size = 32, className }: LogoMarkProps) {
     >
       <rect width="32" height="32" fill="#0d2f23" />
       <path
+        className="logo-mark-arc"
         d="M20.4 9.6a8.2 8.2 0 1 0 0 12.8"
         fill="none"
         stroke="#fff"
         strokeWidth="3.4"
         strokeLinecap="round"
       />
-      <rect x="17.6" y="11.4" width="9.6" height="2.5" rx="0.85" fill="#fff" />
-      <rect x="17.6" y="14.75" width="9.6" height="2.5" rx="0.85" fill="#fff" />
-      <rect x="17.6" y="18.1" width="9.6" height="2.5" rx="0.85" fill="#fff" />
-      <circle cx="19.3" cy="12.65" r="0.55" fill="#8ed7ad" />
-      <circle cx="19.3" cy="16" r="0.55" fill="#8ed7ad" />
-      <circle cx="19.3" cy="19.35" r="0.55" fill="#8ed7ad" />
+      <rect className="logo-mark-slab" x="17.6" y="11.4" width="9.6" height="2.5" rx="0.85" fill="#fff" />
+      <rect className="logo-mark-slab" x="17.6" y="14.75" width="9.6" height="2.5" rx="0.85" fill="#fff" />
+      <rect className="logo-mark-slab" x="17.6" y="18.1" width="9.6" height="2.5" rx="0.85" fill="#fff" />
+      <circle className="logo-mark-led" cx="19.3" cy="12.65" r="0.55" fill="#8ed7ad" />
+      <circle className="logo-mark-led" cx="19.3" cy="16" r="0.55" fill="#8ed7ad" />
+      <circle className="logo-mark-led" cx="19.3" cy="19.35" r="0.55" fill="#8ed7ad" />
     </svg>
   );
 }

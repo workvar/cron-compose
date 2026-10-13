@@ -27,6 +27,22 @@ func has(name string) bool {
 	return err == nil
 }
 
+// shellQuote wraps s in single quotes for bash -lc.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// shellJoin builds `name arg1 arg2…` with each arg shell-quoted.
+func shellJoin(name string, args ...string) string {
+	var b strings.Builder
+	b.WriteString(shellQuote(name))
+	for _, a := range args {
+		b.WriteByte(' ')
+		b.WriteString(shellQuote(a))
+	}
+	return b.String()
+}
+
 // fileChecksum returns the sha256 hex and byte size of a file, best-effort. Either may be
 // zero-valued if the agent cannot stat or read the file.
 func fileChecksum(path string) (sum string, size int64) {

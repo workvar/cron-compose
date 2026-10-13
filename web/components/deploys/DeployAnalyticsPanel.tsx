@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { BrandLoader } from "@/components/BrandLoader";
 import { AreaChart } from "@/components/charts/AreaChart";
 import { BarChart } from "@/components/charts/BarChart";
 import {
@@ -56,7 +57,7 @@ export function DeployAnalyticsPanel({ projectId, title, compact }: Props) {
     return (
       <div className="panel" style={{ marginTop: compact ? 0 : 18 }}>
         <div className="card-title">{title || "Deploy analytics"}</div>
-        <p className="subtle">Loading…</p>
+        <BrandLoader inline size={28} caption="Loading analytics…" />
       </div>
     );
   }

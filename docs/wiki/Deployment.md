@@ -18,7 +18,7 @@ The **control plane is the single entry point**. It exposes two ports:
                           control plane ──► Postgres (internal)
 ```
 
-- **HTTP** (`HTTP_ADDR`, default `:8080`) serves REST under `/api` and reverse-proxies `/app` to Next.js via `WEB_UPSTREAM`. `/` redirects to `/app`.
+- **HTTP** (`HTTP_ADDR`, default `:8080`) serves REST under `/api` and reverse-proxies `/app` to Next.js via `WEB_UPSTREAM`. `/` redirects to `/app/landing`.
 - **gRPC** (`GRPC_ADDR`, default `:9090`) is the agent mTLS endpoint. Agents never accept inbound connections.
 - **Web UI** binds loopback (source install) or stays on the Compose network.
 - **Postgres** is the only stateful dependency.

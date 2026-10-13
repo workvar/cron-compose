@@ -46,7 +46,7 @@ func TestAPIPrefixRewrite(t *testing.T) {
 	}
 }
 
-// mountWeb redirects / by session (dashboard vs landing) and reverse-proxies /app/*.
+// mountWeb redirects bare / to the marketing landing and reverse-proxies /app/*.
 func TestMountWebLandingAndProxy(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "upstream:"+r.URL.Path)
@@ -56,28 +56,39 @@ func TestMountWebLandingAndProxy(t *testing.T) {
 	app := fiber.New()
 	mountWeb(app, upstream.URL)
 
-	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/", nil), fiber.TestConfig{Timeout: 5 * time.Second})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != http.StatusFound {
-		t.Fatalf("/ status=%d want=302", resp.StatusCode)
-	}
-	if loc := resp.Header.Get("Location"); loc != "/app/landing" {
-		t.Fatalf("/ Location=%q want /app/landing", loc)
+	for _, tc := range []struct {
+		name string
+		req  *http.Request
+	}{
+		{"signed-out", httptest.NewRequest(http.MethodGet, "/", nil)},
+		{"signed-in", func() *http.Request {
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r.AddCookie(&http.Cookie{Name: "cc_session", Value: "signed"})
+			return r
+		}()},
+	} {
+		resp, err := app.Test(tc.req, fiber.TestConfig{Timeout: 5 * time.Second})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if resp.StatusCode != http.StatusFound {
+			t.Fatalf("%s status=%d want=302", tc.name, resp.StatusCode)
+		}
+		if loc := resp.Header.Get("Location"); loc != "/app/landing" {
+			t.Fatalf("%s Location=%q want /app/landing", tc.name, loc)
+		}
 	}
 
-	reqAuthed := httptest.NewRequest(http.MethodGet, "/", nil)
-	reqAuthed.AddCookie(&http.Cookie{Name: "cc_session", Value: "signed"})
-	respAuthed, err := app.Test(reqAuthed, fiber.TestConfig{Timeout: 5 * time.Second})
+	respRoot, err := app.Test(httptest.NewRequest(http.MethodGet, "/app", nil), fiber.TestConfig{Timeout: 5 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if respAuthed.StatusCode != http.StatusFound {
-		t.Fatalf("/+cookie status=%d want=302", respAuthed.StatusCode)
+	if respRoot.StatusCode != http.StatusOK {
+		t.Fatalf("/app status=%d", respRoot.StatusCode)
 	}
-	if loc := respAuthed.Header.Get("Location"); loc != "/app/" {
-		t.Fatalf("/+cookie Location=%q want /app/", loc)
+	bRoot, _ := io.ReadAll(respRoot.Body)
+	if string(bRoot) != "upstream:/app" {
+		t.Fatalf("/app body=%q want upstream:/app", bRoot)
 	}
 
 	resp2, err := app.Test(httptest.NewRequest(http.MethodGet, "/app/jobs", nil), fiber.TestConfig{Timeout: 5 * time.Second})
@@ -130,7 +141,7 @@ func TestMountWebDisabled(t *testing.T) {
 	if !strings.Contains(body, "Welcome to CronCompose!") {
 		t.Errorf("/ body=%q want welcome page", b)
 	}
-	if !strings.Contains(body, `class="btn"`) || !strings.Contains(body, `href="/app/"`) {
+	if !strings.Contains(body, `class="btn"`) || !strings.Contains(body, `href="/app"`) {
 		t.Errorf("/ body missing control-plane button, got %q", b)
 	}
 }
