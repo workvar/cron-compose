@@ -1,30 +1,28 @@
-# CronCompose v0.0.56
+# CronCompose v0.0.57
 
-pm2 ecosystem files drive process names end-to-end, and the deploy run page shows
-one terminal per process with a clearer wave flow.
+pm2 ecosystem names drive the Process name field and the deploy wait path, with a
+clearer full-width run board.
 
 ## Highlights
 
-- **Ecosystem autopopulate** — Inspect reads `ecosystem.config.*` / `pm2.json` and
-  fills process manager, process name, run script, and port. Multi-cwd ecosystems
-  seed one block per app. `process_name` is stored and sent to the agent.
-- **pm2 wait uses the real name** — The agent prefers `apps[].name` (e.g.
-  `peepal-proxy`), starts with `--only`, and matches aliases / cwd so waits no
-  longer time out looking for `peepal-rp-proxy` while pm2 registered something
-  else. Parent-folder ecosystems (monorepo `current/`) are found too.
-- **One terminal per process** — The run board shows Server plus each app’s own
-  terminal. Phase tabs (install, build, run, start, …) filter that process’s log.
-- **Wave flow with arrows** — Waves are a horizontal task graph: arrows between
-  waves, parallel tasks side by side. Click a task to jump to that process and
-  phase.
+- **Ecosystem process name** — On deploy, `ecosystem.config.js` `apps[].name`
+  wins over a computed `project-app` token. The control plane no longer sends
+  that default for pm2, so waits match names like `peepal-proxy`.
+- **Auto-populate + edit sync** — Inspect fills the Process name field from the
+  ecosystem file and shows an “auto-populated” hint. Editing the field updates
+  `apps[].name` in the ecosystem file on the next deploy.
+- **pm2 wait reliability** — Each `pm2 jlist` call has a short timeout (no more
+  forever hangs), with `pm2 pid` as a fallback. Start skips restart when the
+  process is already online after Run.
+- **Run board layout** — Waves are full width (no longer capped by the wizard
+  `deploy-flow` max-width). The Server terminal is its own full-width row above
+  the per-process terminals.
 
 ## Upgrade
 
 1. Update **agent**, **control plane**, and **web**.
-2. Restart or reinstall the agent on each target (ecosystem name wait / `--only`).
-   Restart the control plane so inspect returns `pm2_apps` and deploys send
-   `process_name`.
-3. Existing projects: re-detect the app folder or set **Process name** on the
-   Process manager tab, then save — or rely on the agent’s ecosystem parse at
-   start time.
+2. Restart or reinstall the agent on each target (ecosystem name sync + jlist
+   timeout). Restart the control plane so deploys omit computed pm2 names.
+3. Existing projects: open Process manager, confirm Process name (re-detect if
+   empty), save, then redeploy.
 4. No new database migration.
