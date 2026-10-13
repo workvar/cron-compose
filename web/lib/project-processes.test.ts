@@ -80,4 +80,23 @@ const systemd = buildProcessRows(
 assert.equal(systemd[0].resource?.ref, "shop-api.service");
 assert.equal(processActionRef(systemd[0]), "shop-api.service");
 
+const fromConnectors = buildProcessRows(
+  project,
+  { server_id: "srv", total: 0, items: [] } as DeployInventory,
+  [{ id: "conn-fallback", kind: "pm2" } as import("./types.ts").Connector],
+);
+assert.equal(fromConnectors[0].connectorId, "conn-fallback");
+assert.equal(fromConnectors[1].connectorId, "conn-fallback");
+assert.equal(processActionRef(fromConnectors[1]), "peepal-rp-backend");
+
+const systemdNameOnly = buildProcessRows(
+  {
+    name: "shop",
+    apps: [{ name: "api", root: ".", process_manager: "systemd", process_name: "shop-api" }],
+  } as DeployProject,
+  null,
+  [{ id: "conn-sys-2", kind: "systemd" } as import("./types.ts").Connector],
+);
+assert.equal(processActionRef(systemdNameOnly[0]), "shop-api.service");
+
 console.log("project-processes: ok");

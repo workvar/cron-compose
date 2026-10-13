@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -272,17 +273,8 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 				return phaseError{phaseRelease, fmt.Errorf("activate release: %w", err)}
 			}
 			m.phaseLine(runID, token, phaseRelease, "current -> "+filepath.Base(dir))
-			if err := m.preStartApps(ctx, cmd, layout, cred, tmpDir); err != nil {
-				return phaseError{phasePreStart, err}
-			}
-			if err := m.startApps(ctx, cmd, layout, cred, tmpDir); err != nil {
-				return phaseError{phaseStart, err}
-			}
-			if err := m.persistProcessManagers(ctx, cmd, layout, cred, tmpDir); err != nil {
-				return phaseError{phaseStart, err}
-			}
-			if err := m.checkHealth(ctx, cmd); err != nil {
-				return phaseError{phaseHealth, err}
+			if err := m.activateAppWaves(ctx, cmd, layout, cred, tmpDir); err != nil {
+				return err
 			}
 			return nil
 		}
@@ -330,22 +322,100 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 	_ = chownTree(base, cred)
 	m.phaseLine(runID, token, phaseRelease, "current -> "+filepath.Base(release))
 
-	if err := m.preStartApps(ctx, cmd, layout, cred, tmpDir); err != nil {
-		return phaseError{phasePreStart, err}
-	}
-	if err := m.startApps(ctx, cmd, layout, cred, tmpDir); err != nil {
-		return phaseError{phaseStart, err}
-	}
-	if err := m.persistProcessManagers(ctx, cmd, layout, cred, tmpDir); err != nil {
-		return phaseError{phaseStart, err}
-	}
-	if err := m.checkHealth(ctx, cmd); err != nil {
-		return phaseError{phaseHealth, err}
+	if err := m.activateAppWaves(ctx, cmd, layout, cred, tmpDir); err != nil {
+		return err
 	}
 	if pruned := layout.Prune(); len(pruned) > 0 {
 		m.phaseLine(runID, token, phaseRelease, "pruned old releases: "+strings.Join(pruned, ", "))
 	}
 	return nil
+}
+
+// activateAppWaves runs pre-start → start → health for each start_group in order.
+// Apps that share a group run in parallel; a later group waits for the earlier
+// one to finish. Install/build stay parallel across every app before release.
+//
+// OnWaveFailure "continue" skips the rest of a failed wave and still runs later
+// waves; the deploy fails at the end if any wave failed. Default "stop" ends
+// the run on the first wave failure.
+func (m *Manager) activateAppWaves(ctx context.Context, cmd *agentv1.DeployCommand, layout Layout, cred *osuser.Credential, tmpDir string) error {
+	runID := cmd.GetRunId()
+	token := cmd.GetCloneToken()
+	continueOnFail := strings.EqualFold(strings.TrimSpace(cmd.GetOnWaveFailure()), "continue")
+	waves := groupAppsByStart(appsOf(cmd, layout.Current))
+	var waveErrs []error
+	for i, wave := range waves {
+		if len(waves) > 1 {
+			names := make([]string, 0, len(wave))
+			for _, a := range wave {
+				n := a.GetName()
+				if n == "" {
+					n = "app"
+				}
+				names = append(names, n)
+			}
+			m.phaseLine(runID, token, phaseStart, fmt.Sprintf("wave %d/%d: %s", i+1, len(waves), strings.Join(names, ", ")))
+		}
+		if err := m.preStartApps(ctx, cmd, layout, cred, tmpDir, wave); err != nil {
+			if !continueOnFail {
+				return phaseError{phasePreStart, err}
+			}
+			m.phaseLine(runID, token, phasePreStart, "wave failed; continuing: "+err.Error())
+			waveErrs = append(waveErrs, fmt.Errorf("pre_start: %w", err))
+			continue
+		}
+		if err := m.startApps(ctx, cmd, layout, cred, tmpDir, wave); err != nil {
+			if !continueOnFail {
+				return phaseError{phaseStart, err}
+			}
+			m.phaseLine(runID, token, phaseStart, "wave failed; continuing: "+err.Error())
+			waveErrs = append(waveErrs, fmt.Errorf("start: %w", err))
+			continue
+		}
+		if err := m.checkHealth(ctx, cmd, wave); err != nil {
+			if !continueOnFail {
+				return phaseError{phaseHealth, err}
+			}
+			m.phaseLine(runID, token, phaseHealth, "wave failed; continuing: "+err.Error())
+			waveErrs = append(waveErrs, fmt.Errorf("health: %w", err))
+			continue
+		}
+	}
+	if err := m.persistProcessManagers(ctx, cmd, layout, cred, tmpDir); err != nil {
+		return phaseError{phaseStart, err}
+	}
+	if err := joinErrors(waveErrs); err != nil {
+		return phaseError{phaseStart, err}
+	}
+	return nil
+}
+
+// groupAppsByStart buckets apps by StartGroup (ascending). Empty input yields one
+// empty wave so callers can still run persist. Missing/negative groups count as 0.
+func groupAppsByStart(apps []*agentv1.DeployApp) [][]*agentv1.DeployApp {
+	if len(apps) == 0 {
+		return nil
+	}
+	order := []int{}
+	seen := map[int]bool{}
+	buckets := map[int][]*agentv1.DeployApp{}
+	for _, app := range apps {
+		g := int(app.GetStartGroup())
+		if g < 0 {
+			g = 0
+		}
+		if !seen[g] {
+			seen[g] = true
+			order = append(order, g)
+		}
+		buckets[g] = append(buckets[g], app)
+	}
+	sort.Ints(order)
+	out := make([][]*agentv1.DeployApp, 0, len(order))
+	for _, g := range order {
+		out = append(out, buckets[g])
+	}
+	return out
 }
 
 // cloneToTmp clones the full repository into a disposable directory under the
@@ -551,9 +621,14 @@ func joinErrors(errs []error) error {
 // preStartApps runs each app's one-shot pre-start script (migrations, etc.) after
 // the release is activated and before the process manager starts. Empty scripts
 // are skipped. Apps with a script run in parallel when there is more than one.
-func (m *Manager) preStartApps(ctx context.Context, cmd *agentv1.DeployCommand, layout Layout, cred *osuser.Credential, tmpDir string) error {
+// only limits the apps considered (one start wave); nil means every app.
+func (m *Manager) preStartApps(ctx context.Context, cmd *agentv1.DeployCommand, layout Layout, cred *osuser.Credential, tmpDir string, only []*agentv1.DeployApp) error {
+	apps := only
+	if apps == nil {
+		apps = appsOf(cmd, layout.Current)
+	}
 	var jobs []appScript
-	for _, app := range appsOf(cmd, layout.Current) {
+	for _, app := range apps {
 		script := strings.TrimSpace(app.GetPreStartScript())
 		if script == "" {
 			continue
@@ -574,13 +649,17 @@ func (m *Manager) preStartApps(ctx context.Context, cmd *agentv1.DeployCommand, 
 // startApps hands each app to its process manager. Working directories go through the
 // current symlink, never a release directory, so a pm2 or systemd entry written today
 // still points at live code after the next deploy. Apps are independent: one start
-// failure does not skip the others.
-func (m *Manager) startApps(ctx context.Context, cmd *agentv1.DeployCommand, layout Layout, cred *osuser.Credential, tmpDir string) error {
+// failure does not skip the others. only limits the apps considered (one start wave).
+func (m *Manager) startApps(ctx context.Context, cmd *agentv1.DeployCommand, layout Layout, cred *osuser.Credential, tmpDir string, only []*agentv1.DeployApp) error {
 	runID := cmd.GetRunId()
 	token := cmd.GetCloneToken()
 	project := cmd.GetProjectName()
+	apps := only
+	if apps == nil {
+		apps = appsOf(cmd, layout.Current)
+	}
 	var errs []error
-	for _, app := range appsOf(cmd, layout.Current) {
+	for _, app := range apps {
 		work := appWorkDir(layout.Current, cmd, app)
 		pm := app.GetProcessManager()
 		if pm == "" {
@@ -624,13 +703,17 @@ func (m *Manager) persistProcessManagers(ctx context.Context, cmd *agentv1.Deplo
 // give each process a different path (a Go API's /healthz is not a Next.js
 // frontend's) while a project that never set per-app checks keeps behaving exactly
 // as before. Apps are independent: one failed probe does not skip the others.
-func (m *Manager) checkHealth(ctx context.Context, cmd *agentv1.DeployCommand) error {
+func (m *Manager) checkHealth(ctx context.Context, cmd *agentv1.DeployCommand, only []*agentv1.DeployApp) error {
 	runID := cmd.GetRunId()
 	token := cmd.GetCloneToken()
+	apps := only
+	if apps == nil {
+		apps = appsOf(cmd, "")
+	}
 	checked := false
 	anyConfigured := cmd.GetHealth().GetPath() != ""
 	var errs []error
-	for _, app := range appsOf(cmd, "") {
+	for _, app := range apps {
 		port := app.GetPort()
 		if port == 0 {
 			port = cmd.GetPort()
@@ -649,7 +732,7 @@ func (m *Manager) checkHealth(ctx context.Context, cmd *agentv1.DeployCommand) e
 			errs = append(errs, err)
 		}
 	}
-	if !checked && anyConfigured {
+	if !checked && anyConfigured && only == nil {
 		m.phaseLine(runID, token, phaseHealth, "skipped: no port configured to probe")
 	}
 	return joinErrors(errs)

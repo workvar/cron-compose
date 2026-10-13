@@ -18,6 +18,7 @@ import type { DeployApp, DeployEnvVar, DeployInspect } from "@/lib/types";
 import type { SelectOption } from "@/lib/ui-helpers";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { AppEnvEditor } from "./AppEnvEditor";
+import { DeployOrderBoard } from "./DeployOrderBoard";
 import { HealthCheckFields } from "./HealthCheckFields";
 import { RepoFolderPicker } from "./RepoFolderPicker";
 import { GitConnections } from "./GitConnections";
@@ -206,6 +207,8 @@ function ProcessesTab({
   repo,
   branch,
   repoBusy,
+  advanced,
+  onAdvanced,
 }: Props) {
   return (
     <div className="config-tab-panel">
@@ -237,6 +240,12 @@ function ProcessesTab({
       >
         + Add another process
       </button>
+      <DeployOrderBoard
+        blocks={blocks}
+        onBlocks={onBlocks}
+        onWaveFailure={advanced.onWaveFailure}
+        onOnWaveFailure={(onWaveFailure) => onAdvanced({ ...advanced, onWaveFailure })}
+      />
     </div>
   );
 }

@@ -14,12 +14,15 @@ function block(partial: Partial<ProjectBlock> & { id: string }): ProjectBlock {
     language: "node",
     install: "npm ci && npm run build",
     run: "npm start",
+    cleanup: "",
+    preStart: "",
     port: "3000",
     processManager: "pm2",
     autoDetect: false,
     healthPath: "",
     healthPort: "",
     healthTimeout: "",
+    startGroup: 0,
     ...partial,
   };
 }

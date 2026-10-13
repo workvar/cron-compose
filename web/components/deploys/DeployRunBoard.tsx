@@ -8,7 +8,7 @@ import {
   type ProgressApp,
   type StepState,
 } from "@/lib/deploy-progress";
-import type { DeployInventory, DeployProject, LogLine } from "@/lib/types";
+import type { Connector, DeployInventory, DeployProject, LogLine } from "@/lib/types";
 import { buildProcessRows, type ProcessRow } from "@/lib/project-processes";
 import { TerminalFrame } from "@/components/terminal/TerminalFrame";
 import { ProcessTaskActions } from "@/components/deploys/ProcessTaskActions";
@@ -94,17 +94,29 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
   const multi = view.processes.length > 1;
   const [forced, setForced] = useState<Record<string, boolean>>({});
   const [inventory, setInventory] = useState<DeployInventory | null>(null);
+  const [connectors, setConnectors] = useState<Connector[]>([]);
+  const [controlsError, setControlsError] = useState<string | null>(null);
 
   const refreshInventory = useCallback(async () => {
     if (!project?.server_id) return;
+    const sid = encodeURIComponent(project.server_id);
     try {
-      const res = await fetch(
-        `/api/servers/${encodeURIComponent(project.server_id)}/deploy-inventory`,
-      );
-      if (!res.ok) return;
-      setInventory((await res.json()) as DeployInventory);
-    } catch {
-      /* ignore — controls stay disabled until inventory is available */
+      const [invRes, connRes] = await Promise.all([
+        fetch(`/api/servers/${sid}/deploy-inventory`),
+        fetch(`/api/servers/${sid}/connectors`),
+      ]);
+      if (invRes.ok) setInventory((await invRes.json()) as DeployInventory);
+      if (connRes.ok) {
+        const body = (await connRes.json()) as { items?: Connector[] };
+        setConnectors(Array.isArray(body.items) ? body.items : []);
+      }
+      if (!invRes.ok && !connRes.ok) {
+        setControlsError(`Could not load process controls (${invRes.status})`);
+      } else {
+        setControlsError(null);
+      }
+    } catch (e) {
+      setControlsError((e as Error).message || "Could not load process controls");
     }
   }, [project?.server_id]);
 
@@ -113,16 +125,20 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
   }, [refreshInventory, status]);
 
   // Re-poll while the run is live so controls light up once pm2/systemd/docker
-  // registers the process after the start step.
+  // registers the process after the start step. Also once after failure so
+  // Start/Stop can resolve a connector even when no process object exists yet.
   useEffect(() => {
-    if (!live || !project?.server_id) return;
-    const id = window.setInterval(() => void refreshInventory(), 5000);
+    if (!project?.server_id) return;
+    if (!live && status !== "failed" && status !== "canceled" && status !== "agent_offline") {
+      return;
+    }
+    const id = window.setInterval(() => void refreshInventory(), live ? 5000 : 15000);
     return () => window.clearInterval(id);
-  }, [live, project?.server_id, refreshInventory]);
+  }, [live, project?.server_id, refreshInventory, status]);
 
   const processRows = useMemo(
-    () => (project ? buildProcessRows(project, inventory) : []),
-    [project, inventory],
+    () => (project ? buildProcessRows(project, inventory, connectors) : []),
+    [project, inventory, connectors],
   );
   const manageable = processRows.some((r) => r.pm !== "none");
 
@@ -161,6 +177,9 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
         <Rail steps={rail} />
       </section>
 
+      {controlsError && (
+        <p className="form-error" style={{ margin: 0 }}>{controlsError}</p>
+      )}
       <div className={`deploy-proc-grid${multi ? " is-multi" : ""}`}>
         {multi && (
           <div className="deploy-shared-term">

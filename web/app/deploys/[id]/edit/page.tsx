@@ -81,6 +81,7 @@ export default function EditDeployPage() {
         setAdvanced({
           ...emptyAdvanced,
           autoRollback: p.auto_rollback,
+          onWaveFailure: p.on_wave_failure === "continue" ? "continue" : "stop",
           healthPath: p.health_path || "",
           healthPort: p.health_port ? String(p.health_port) : "",
           healthTimeout: p.health_timeout_seconds ? String(p.health_timeout_seconds) : "",
@@ -179,6 +180,7 @@ export default function EditDeployPage() {
           port: blocks[0]?.port ? Number(blocks[0].port) : 0,
           process_manager: blocks[0]?.processManager || project.process_manager,
           auto_rollback: advanced.autoRollback,
+          on_wave_failure: advanced.onWaveFailure,
           health_path: advanced.healthPath.trim(),
           health_port: advanced.healthPort ? Number(advanced.healthPort) : 0,
           health_timeout_seconds: advanced.healthTimeout ? Number(advanced.healthTimeout) : 60,

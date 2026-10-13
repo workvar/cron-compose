@@ -2672,8 +2672,11 @@ type DeployApp struct {
 	// One-shot shell run after the release is activated and before the process
 	// manager starts (e.g. database migrations). Empty = skip.
 	PreStartScript string `protobuf:"bytes,11,opt,name=pre_start_script,json=preStartScript,proto3" json:"pre_start_script,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Start wave: apps that share a group run pre_start/start/health together;
+	// lower groups finish before higher ones begin. 0 = first / all-together default.
+	StartGroup    int32 `protobuf:"varint,12,opt,name=start_group,json=startGroup,proto3" json:"start_group,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeployApp) Reset() {
@@ -2783,6 +2786,13 @@ func (x *DeployApp) GetPreStartScript() string {
 	return ""
 }
 
+func (x *DeployApp) GetStartGroup() int32 {
+	if x != nil {
+		return x.StartGroup
+	}
+	return 0
+}
+
 type DeployCommand struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	RunId          string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
@@ -2813,7 +2823,11 @@ type DeployCommand struct {
 	RunAsUser string `protobuf:"bytes,17,opt,name=run_as_user,json=runAsUser,proto3" json:"run_as_user,omitempty"`
 	// Deploy project display name. Used to prefix pm2/systemd process names
 	// (e.g. "shop-web") so multiple projects on one host do not collide.
-	ProjectName   string `protobuf:"bytes,18,opt,name=project_name,json=projectName,proto3" json:"project_name,omitempty"`
+	ProjectName string `protobuf:"bytes,18,opt,name=project_name,json=projectName,proto3" json:"project_name,omitempty"`
+	// When a start wave fails: "stop" (default) ends the deploy; "continue"
+	// skips the rest of that wave and still runs later waves. The run still
+	// fails at the end if any wave failed.
+	OnWaveFailure string `protobuf:"bytes,19,opt,name=on_wave_failure,json=onWaveFailure,proto3" json:"on_wave_failure,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2970,6 +2984,13 @@ func (x *DeployCommand) GetRunAsUser() string {
 func (x *DeployCommand) GetProjectName() string {
 	if x != nil {
 		return x.ProjectName
+	}
+	return ""
+}
+
+func (x *DeployCommand) GetOnWaveFailure() string {
+	if x != nil {
+		return x.OnWaveFailure
 	}
 	return ""
 }
@@ -4003,7 +4024,7 @@ const file_agent_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x126\n" +
 	"\x05users\x18\x02 \x03(\v2 .croncompose.agent.v1.SystemUserR\x05users\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"\xe5\x03\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\x86\x04\n" +
 	"\tDeployApp\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12%\n" +
 	"\x0eroot_directory\x18\x02 \x01(\tR\rrootDirectory\x12%\n" +
@@ -4017,10 +4038,12 @@ const file_agent_proto_rawDesc = "" +
 	"run_script\x18\t \x01(\tR\trunScript\x12%\n" +
 	"\x0ecleanup_script\x18\n" +
 	" \x01(\tR\rcleanupScript\x12(\n" +
-	"\x10pre_start_script\x18\v \x01(\tR\x0epreStartScript\x1a6\n" +
+	"\x10pre_start_script\x18\v \x01(\tR\x0epreStartScript\x12\x1f\n" +
+	"\vstart_group\x18\f \x01(\x05R\n" +
+	"startGroup\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc1\x05\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe9\x05\n" +
 	"\rDeployCommand\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x0e\n" +
 	"\x02op\x18\x02 \x01(\tR\x02op\x12\x1b\n" +
@@ -4041,7 +4064,8 @@ const file_agent_proto_rawDesc = "" +
 	"\x06health\x18\x0f \x01(\v2!.croncompose.agent.v1.HealthCheckR\x06health\x12'\n" +
 	"\x0ftimeout_seconds\x18\x10 \x01(\x05R\x0etimeoutSeconds\x12\x1e\n" +
 	"\vrun_as_user\x18\x11 \x01(\tR\trunAsUser\x12!\n" +
-	"\fproject_name\x18\x12 \x01(\tR\vprojectName\x1a6\n" +
+	"\fproject_name\x18\x12 \x01(\tR\vprojectName\x12&\n" +
+	"\x0fon_wave_failure\x18\x13 \x01(\tR\ronWaveFailure\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"l\n" +

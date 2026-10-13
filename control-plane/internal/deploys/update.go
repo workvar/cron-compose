@@ -16,6 +16,7 @@ type UpdateInput struct {
 	Apps           *[]SpecApp         `json:"apps"`
 	WriteSpec      *bool              `json:"write_spec"`
 	AutoRollback   *bool              `json:"auto_rollback"`
+	OnWaveFailure  *string            `json:"on_wave_failure"`
 	// Health check and run budget. An empty HealthPath turns the probe off again.
 	HealthPath           *string  `json:"health_path"`
 	HealthPort           *int     `json:"health_port"`
@@ -66,6 +67,9 @@ func applyUpdate(p Project, in UpdateInput) Project {
 	}
 	if in.AutoRollback != nil {
 		p.AutoRollback = *in.AutoRollback
+	}
+	if in.OnWaveFailure != nil {
+		p.OnWaveFailure = NormalizeOnWaveFailure(*in.OnWaveFailure)
 	}
 	if in.HealthPath != nil {
 		p.HealthPath = *in.HealthPath

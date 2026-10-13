@@ -29,6 +29,7 @@ const projectCols = `
   language, install_script, root_directory, clone_path, port, process_manager,
   coalesce(run_as_user,''),
   coalesce(env::text,'{}'), coalesce(apps::text,'[]'), write_spec, auto_rollback,
+  coalesce(nullif(on_wave_failure,''), 'stop'),
   health_path, health_port, health_timeout_seconds, deploy_timeout_seconds, health_state,
   coalesce(redeploy_on::text,'["branch"]'),
   created_by, created_at, updated_at
@@ -41,7 +42,7 @@ func scanProject(row pgx.Row) (Project, error) {
 		&p.ID, &p.Name, &p.Provider, &p.RepoFullName, &p.RepoID, &p.CloneURL, &p.DefaultBranch, &p.ServerID,
 		&p.Language, &p.InstallScript, &p.RootDirectory, &p.ClonePath, &p.Port, &p.ProcessManager,
 		&p.RunAsUser,
-		&envJSON, &appsJSON, &p.WriteSpec, &p.AutoRollback,
+		&envJSON, &appsJSON, &p.WriteSpec, &p.AutoRollback, &p.OnWaveFailure,
 		&p.HealthPath, &p.HealthPort, &p.HealthTimeoutSeconds, &p.DeployTimeoutSeconds, &p.HealthState,
 		&redeployJSON,
 		&p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
@@ -56,6 +57,7 @@ func scanProject(row pgx.Row) (Project, error) {
 	p.RedeployOn = []string{}
 	_ = json.Unmarshal([]byte(redeployJSON), &p.RedeployOn)
 	p.RedeployOn = NormalizeRedeployOn(p.RedeployOn)
+	p.OnWaveFailure = NormalizeOnWaveFailure(p.OnWaveFailure)
 	return p, nil
 }
 
@@ -217,13 +219,13 @@ func (s *Store) Update(ctx context.Context, id string, in UpdateInput) (Project,
 		  name=$2, default_branch=$3, server_id=$4, language=$5, install_script=$6,
 		  root_directory=$7, clone_path=$8, port=$9, process_manager=$10,
 		  run_as_user=$11,
-		  env=$12, apps=$13, write_spec=$14, auto_rollback=$15,
-		  health_path=$16, health_port=$17, health_timeout_seconds=$18,
-		  deploy_timeout_seconds=$19, redeploy_on=$20, updated_at=now()
+		  env=$12, apps=$13, write_spec=$14, auto_rollback=$15, on_wave_failure=$16,
+		  health_path=$17, health_port=$18, health_timeout_seconds=$19,
+		  deploy_timeout_seconds=$20, redeploy_on=$21, updated_at=now()
 		where id=$1
 	`, p.ID, p.Name, p.DefaultBranch, p.ServerID, p.Language, p.InstallScript,
 		p.RootDirectory, p.ClonePath, p.Port, p.ProcessManager, p.RunAsUser,
-		envJSON, appsJSON, p.WriteSpec, p.AutoRollback,
+		envJSON, appsJSON, p.WriteSpec, p.AutoRollback, NormalizeOnWaveFailure(p.OnWaveFailure),
 		p.HealthPath, p.HealthPort, p.HealthTimeoutSeconds, p.DeployTimeoutSeconds, redeployJSON)
 	if err != nil {
 		return Project{}, err

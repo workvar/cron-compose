@@ -38,6 +38,8 @@ type Spec struct {
 	Health         *SpecHealth       `yaml:"health,omitempty" json:"health,omitempty"`
 	DeployTimeout  int               `yaml:"deploy_timeout,omitempty" json:"deploy_timeout,omitempty"`
 	AutoRollback   bool              `yaml:"auto_rollback,omitempty" json:"auto_rollback,omitempty"`
+	// OnWaveFailure is "stop" or "continue" when a start wave fails. See Project.
+	OnWaveFailure string `yaml:"on_wave_failure,omitempty" json:"on_wave_failure,omitempty"`
 	// RedeployOn lists Git events that should start a new deploy: branch, tag, release.
 	RedeployOn []string `yaml:"redeploy_on,omitempty" json:"redeploy_on,omitempty"`
 }
@@ -74,6 +76,9 @@ type SpecApp struct {
 	// ProcessName is the pm2/systemd name on the host (project-app). Computed for
 	// API responses; not stored in croncompose.yml.
 	ProcessName string `yaml:"-" json:"process_name,omitempty"`
+	// StartGroup is the deploy wave. Apps in the same group run pre-start/start/
+	// health together; lower groups finish before higher ones. 0 = first wave.
+	StartGroup int `yaml:"start_group,omitempty" json:"start_group,omitempty"`
 }
 
 // MarshalSpec renders croncompose.yml.
@@ -137,7 +142,11 @@ func SpecForProject(p Project) Spec {
 		Port: p.Port, ProcessManager: p.ProcessManager, ClonePath: p.ClonePath,
 		Apps: appsForSpec(p.Apps), Env: p.Env,
 		DeployTimeout: p.DeployTimeoutSeconds, AutoRollback: p.AutoRollback,
+		OnWaveFailure: NormalizeOnWaveFailure(p.OnWaveFailure),
 		RedeployOn: NormalizeRedeployOn(p.RedeployOn),
+	}
+	if s.OnWaveFailure == OnWaveFailureStop {
+		s.OnWaveFailure = "" // keep yml quiet for the default
 	}
 	// Single-app projects also expose run / cleanup / pre_start at the top level so
 	// a shared croncompose.yml stays easy to read and re-import.

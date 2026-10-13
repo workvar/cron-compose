@@ -33,7 +33,7 @@ export function DeployReview({ repo, branch, serverName, specPath, plan, issues 
           </>
         ) : null}
         . Each app directory is its own block: installs build in parallel, then after the
-        release is activated, env → pre-start → start → health.
+        release is activated each start wave runs env → pre-start → start → health.
       </p>
       <div className="cluster" style={{ marginTop: 12, marginBottom: 4 }}>
         <span className="pill">{repo}</span>

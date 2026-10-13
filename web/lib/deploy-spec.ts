@@ -11,12 +11,16 @@ import {
   DEFAULT_REDEPLOY_ON,
 } from "./project-blocks";
 
+export type WaveFailurePolicy = "stop" | "continue";
+
 export type AdvancedSettings = {
   healthPath: string;
   healthPort: string;
   healthTimeout: string;
   deployTimeout: string;
   autoRollback: boolean;
+  /** When a start wave fails: stop the deploy, or continue to later waves. */
+  onWaveFailure: WaveFailurePolicy;
 };
 
 export const emptyAdvanced: AdvancedSettings = {
@@ -25,7 +29,12 @@ export const emptyAdvanced: AdvancedSettings = {
   healthTimeout: "",
   deployTimeout: "",
   autoRollback: false,
+  onWaveFailure: "stop",
 };
+
+export function normalizeWaveFailure(v?: string | null): WaveFailurePolicy {
+  return v === "continue" ? "continue" : "stop";
+}
 
 /** What a croncompose.yml fills in on the Configure form. */
 export type SpecDraft = {
@@ -137,6 +146,7 @@ export function specToDraft(
       healthPath: app.health?.path || "",
       healthPort: app.health?.port ? String(app.health.port) : "",
       healthTimeout: app.health?.timeout ? String(app.health.timeout) : "",
+      startGroup: app.start_group ?? 0,
     });
     // Keep top-level env separate; per-app list is only this app's own vars.
     appEnv[name] = (app.env || []).map((v) => ({
@@ -160,6 +170,7 @@ export function specToDraft(
       healthTimeout: spec.health?.timeout ? String(spec.health.timeout) : "",
       deployTimeout: spec.deploy_timeout ? String(spec.deploy_timeout) : "",
       autoRollback: !!spec.auto_rollback,
+      onWaveFailure: normalizeWaveFailure(spec.on_wave_failure),
     },
     redeployOn: normalizeRedeployOn(spec.redeploy_on),
   };
@@ -246,6 +257,7 @@ export function draftToYaml(d: ExportInput): string {
   }
   line("deploy_timeout", Number(a.deployTimeout) || 0);
   if (a.autoRollback) line("auto_rollback", true);
+  if (a.onWaveFailure === "continue") line("on_wave_failure", "continue");
   const redeploy = (d.redeployOn || DEFAULT_REDEPLOY_ON).filter(Boolean);
   if (redeploy.length && !(redeploy.length === 1 && redeploy[0] === "branch")) {
     out.push(`redeploy_on: [${redeploy.map((m) => yamlScalar(m)).join(", ")}]`);
@@ -269,6 +281,7 @@ export function draftToYaml(d: ExportInput): string {
     line("pre_start", b.preStart, "    ");
     line("port", Number(b.port) || 0, "    ");
     line("process_manager", b.processManager === "none" ? "" : b.processManager, "    ");
+    line("start_group", b.startGroup > 0 ? b.startGroup : 0, "    ");
     if (b.healthPath.trim()) {
       out.push("    health:");
       line("path", b.healthPath.trim(), "      ");
@@ -352,6 +365,7 @@ export function projectToExportInput(
       healthTimeout: project.health_timeout_seconds ? String(project.health_timeout_seconds) : "",
       deployTimeout: project.deploy_timeout_seconds ? String(project.deploy_timeout_seconds) : "",
       autoRollback: !!project.auto_rollback,
+      onWaveFailure: normalizeWaveFailure(project.on_wave_failure),
     },
     redeployOn: modes.length ? modes : [...DEFAULT_REDEPLOY_ON],
   };

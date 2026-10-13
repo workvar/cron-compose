@@ -347,6 +347,9 @@ message DeployApp {
   // One-shot shell run after the release is activated and before the process
   // manager starts (e.g. database migrations). Empty = skip.
   string pre_start_script  = 11;
+  // Start wave: apps that share a group run pre_start/start/health together;
+  // lower groups finish before higher ones begin. 0 = first / all-together default.
+  int32 start_group = 12;
 }
 
 message DeployCommand {
@@ -379,6 +382,10 @@ message DeployCommand {
   // Deploy project display name. Used to prefix pm2/systemd process names
   // (e.g. "shop-web") so multiple projects on one host do not collide.
   string project_name = 18;
+  // When a start wave fails: "stop" (default) ends the deploy; "continue"
+  // skips the rest of that wave and still runs later waves. The run still
+  // fails at the end if any wave failed.
+  string on_wave_failure = 19;
 }
 
 // ---- Host tools (node, go, python, pm2, …) ----

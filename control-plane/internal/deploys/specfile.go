@@ -96,6 +96,7 @@ type specFile struct {
 	Health         *SpecHealth       `yaml:"health"`
 	DeployTimeout  int               `yaml:"deploy_timeout"`
 	AutoRollback   bool              `yaml:"auto_rollback"`
+	OnWaveFailure  string            `yaml:"on_wave_failure"`
 	RedeployOn     []string          `yaml:"redeploy_on"`
 	Apps           []specFileApp     `yaml:"apps"`
 }
@@ -110,6 +111,7 @@ type specFileApp struct {
 	PreStart       string    `yaml:"pre_start"`
 	Port           int       `yaml:"port"`
 	ProcessManager string    `yaml:"process_manager"`
+	StartGroup     int       `yaml:"start_group"`
 	Env            yaml.Node `yaml:"env"`
 }
 
@@ -154,7 +156,14 @@ func ParseSpecFile(raw []byte) SpecResult {
 		Root: f.Root, Port: f.Port, ProcessManager: strings.ToLower(strings.TrimSpace(f.ProcessManager)),
 		ClonePath: strings.TrimSpace(f.ClonePath), Env: f.Env, Health: f.Health,
 		DeployTimeout: f.DeployTimeout, AutoRollback: f.AutoRollback,
+		OnWaveFailure: NormalizeOnWaveFailure(f.OnWaveFailure),
 		RedeployOn: NormalizeRedeployOn(f.RedeployOn),
+	}
+	if raw := strings.TrimSpace(f.OnWaveFailure); raw != "" {
+		low := strings.ToLower(raw)
+		if low != OnWaveFailureStop && low != OnWaveFailureContinue {
+			add("error", "on_wave_failure", "on_wave_failure must be stop or continue")
+		}
 	}
 
 	switch {
@@ -227,6 +236,11 @@ func ParseSpecFile(raw []byte) SpecResult {
 			Cleanup: strings.TrimSpace(a.Cleanup), PreStart: strings.TrimSpace(a.PreStart),
 			Port: a.Port,
 			ProcessManager: strings.ToLower(strings.TrimSpace(a.ProcessManager)),
+			StartGroup: a.StartGroup,
+		}
+		if app.StartGroup < 0 {
+			add("error", field+".start_group", "start_group must be 0 or more")
+			app.StartGroup = 0
 		}
 		root, err := cleanSpecRoot(a.Root)
 		if err != nil {

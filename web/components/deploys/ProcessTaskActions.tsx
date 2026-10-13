@@ -36,9 +36,13 @@ export function ProcessTaskActions({ row, enabled = true, onChanged }: Props) {
   const running = forced === "running" || (forced === null && isProcessRunning(resource?.state));
   const ready = Boolean(enabled && row.connectorId && ref);
   const label = row.label || row.processName;
-  const blocked = !ready
-    ? "No process manager is connected on this server"
-    : "";
+  const blocked = !enabled
+    ? "Wait for this deploy step to finish"
+    : !row.connectorId
+      ? `No ${row.pm} connector on this server yet — open Connectors`
+      : !ref
+        ? "Process name is missing"
+        : "";
 
   async function run(action: string) {
     if (!row?.connectorId || !ref) return;
@@ -105,6 +109,9 @@ export function ProcessTaskActions({ row, enabled = true, onChanged }: Props) {
           <span>Restart</span>
         </button>
       </div>
+      {!ready && blocked && (
+        <p className="subtle" style={{ margin: "6px 0 0", fontSize: 12 }}>{blocked}</p>
+      )}
       {error && <p className="form-error" style={{ margin: "6px 0 0" }}>{error}</p>}
       {result && result.status !== "succeeded" && (
         <div className="form-error" style={{ margin: "6px 0 0" }}>

@@ -72,6 +72,7 @@ const TOP_KEYS: Row[] = [
   { key: "health", type: "object", desc: "Optional HTTP probe that must pass before a deploy counts as successful." },
   { key: "deploy_timeout", type: "seconds", def: "3600", desc: "Budget for a whole deploy. The agent caps it at 2 hours." },
   { key: "auto_rollback", type: "boolean", def: "false", desc: "When a deploy fails, redeploy the last commit that worked." },
+  { key: "on_wave_failure", type: "stop | continue", def: "stop", desc: <>When a start wave fails: <code>stop</code> ends the deploy; <code>continue</code> skips the rest of that wave and still runs later waves. The run is still marked failed if any wave failed. Configure under Processes → Deploy order.</> },
   { key: "apps", type: "list", desc: "Several apps from one repo (monorepo). Each item takes the keys below." },
 ];
 
@@ -82,6 +83,7 @@ const APP_KEYS: Row[] = [
   { key: "run", type: "shell command", def: "top-level, else from language", desc: "Start command for this app (cwd = activated deploy folder)." },
   { key: "cleanup", type: "shell command", def: "top-level / framework default", desc: "Post-build cleanup for this app." },
   { key: "pre_start", type: "shell command", def: "top-level", desc: "One-shot script after activation, before this app's process starts." },
+  { key: "start_group", type: "integer ≥ 0", def: "0", desc: <>Deploy wave. Apps that share a group run pre-start / start / health together; lower groups finish before higher ones. Install still runs in parallel for every app. Set this in the UI under Processes → Deploy order.</> },
   { key: "language", type: "string", def: "top-level language", desc: "Overrides the top-level value." },
   { key: "port", type: "1–65535", def: "top-level if only one app", desc: <>This app&apos;s <code>PORT</code>.</> },
   { key: "process_manager", type: "string", def: "top-level value", desc: "Overrides the top-level value." },
@@ -329,7 +331,8 @@ export default function DocsPage() {
         <h2 id="apps">apps</h2>
         <p>
           Use <code>apps</code> when one repo holds more than one thing to run. Each app is built in its own folder
-          (install scripts run in parallel) and started on its own. Any top-level <code>install</code>,{" "}
+          (install scripts run in parallel). After the release is activated, start waves run in order — apps that
+          share <code>start_group</code> start together; later groups wait. Any top-level <code>install</code>,{" "}
           <code>run</code>, <code>language</code>, <code>process_manager</code> and <code>env</code> act as defaults.
         </p>
         <KeyTable rows={APP_KEYS} />

@@ -29,6 +29,10 @@ type Project struct {
 	// AutoRollback, when true, redeploys the project's last successful commit
 	// automatically after a failed run, and restarts the process manager on it.
 	AutoRollback bool `json:"auto_rollback"`
+	// OnWaveFailure is "stop" (default) or "continue". When a start wave fails,
+	// stop ends the deploy; continue runs later waves and still fails the run
+	// at the end if any wave failed.
+	OnWaveFailure string `json:"on_wave_failure"`
 	// Health is the opt-in "did it actually come up" probe. With HealthPath empty a
 	// run succeeds as soon as the install script exits 0, which is what every project
 	// did before this existed.
@@ -174,6 +178,7 @@ type CreateInput struct {
 	SpecFromRepo bool `json:"spec_from_repo,omitempty"`
 	// Settings that otherwise need a PATCH after create; croncompose.yml sets them.
 	AutoRollback         bool     `json:"auto_rollback,omitempty"`
+	OnWaveFailure        string   `json:"on_wave_failure,omitempty"`
 	HealthPath           string   `json:"health_path,omitempty"`
 	HealthPort           int      `json:"health_port,omitempty"`
 	HealthTimeoutSeconds int      `json:"health_timeout_seconds,omitempty"`
@@ -188,6 +193,10 @@ func (in CreateInput) extras() (UpdateInput, bool) {
 	ok := false
 	if in.AutoRollback {
 		up.AutoRollback, ok = &in.AutoRollback, true
+	}
+	if in.OnWaveFailure != "" {
+		v := NormalizeOnWaveFailure(in.OnWaveFailure)
+		up.OnWaveFailure, ok = &v, true
 	}
 	if in.HealthPath != "" {
 		up.HealthPath, up.HealthPort, up.HealthTimeoutSeconds, ok = &in.HealthPath, &in.HealthPort, &in.HealthTimeoutSeconds, true

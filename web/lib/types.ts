@@ -365,6 +365,8 @@ export type DeploySpecApp = {
   pre_start?: string;
   port?: number;
   process_manager?: string;
+  /** Deploy wave; same group starts together, lower groups first. */
+  start_group?: number;
   env?: DeployEnvVar[];
   health?: DeployAppHealth;
 };
@@ -392,6 +394,8 @@ export type DeploySpec = {
   health?: { path: string; port?: number; timeout?: number };
   deploy_timeout?: number;
   auto_rollback?: boolean;
+  /** stop (default) or continue when a start wave fails. */
+  on_wave_failure?: "stop" | "continue" | string;
   /** Auto-redeploy modes: branch push, tag push, and/or GitHub release. */
   redeploy_on?: Array<"branch" | "tag" | "release" | string>;
 };
@@ -441,6 +445,11 @@ export type DeployApp = {
   health?: DeployAppHealth;
   /** pm2/systemd name on the host (project-app). Computed by the API. */
   process_name?: string;
+  /**
+   * Deploy wave. Same group = parallel pre-start/start/health; lower groups
+   * finish before higher ones. 0 = first wave / all together.
+   */
+  start_group?: number;
 };
 
 export type ToolStatus = {
@@ -476,6 +485,8 @@ export type DeployProject = {
   write_spec: boolean;
   /** Redeploy the last successful commit automatically after a failed run. */
   auto_rollback: boolean;
+  /** stop (default) or continue when a start wave fails. */
+  on_wave_failure?: "stop" | "continue" | string;
   /**
    * Opt-in health probe. With an empty path a deploy is successful as soon as the
    * install script exits 0; with one set, the app has to answer on

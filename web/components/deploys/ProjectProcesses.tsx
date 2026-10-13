@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { DeployInventory, DeployProject } from "@/lib/types";
+import type { Connector, DeployInventory, DeployProject } from "@/lib/types";
 import { buildProcessRows, processActionRef, type ProcessRow } from "@/lib/project-processes";
 import { useConnectorCommand } from "@/components/connectors/useConnectorCommand";
 import { StepList } from "@/components/connectors/StepList";
@@ -19,6 +19,7 @@ const DESTRUCTIVE = new Set(["delete"]);
 
 export function ProjectProcesses({ project }: { project: DeployProject }) {
   const [inventory, setInventory] = useState<DeployInventory | null>(null);
+  const [connectors, setConnectors] = useState<Connector[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [logsFor, setLogsFor] = useState<string | null>(null);
   const [logsText, setLogsText] = useState<string>("");
@@ -28,10 +29,18 @@ export function ProjectProcesses({ project }: { project: DeployProject }) {
 
   const refresh = useCallback(async () => {
     setLoadError(null);
+    const sid = encodeURIComponent(project.server_id);
     try {
-      const res = await fetch(`/api/servers/${encodeURIComponent(project.server_id)}/deploy-inventory`);
-      if (!res.ok) throw new Error(`Could not load process inventory (${res.status})`);
-      setInventory((await res.json()) as DeployInventory);
+      const [invRes, connRes] = await Promise.all([
+        fetch(`/api/servers/${sid}/deploy-inventory`),
+        fetch(`/api/servers/${sid}/connectors`),
+      ]);
+      if (!invRes.ok) throw new Error(`Could not load process inventory (${invRes.status})`);
+      setInventory((await invRes.json()) as DeployInventory);
+      if (connRes.ok) {
+        const body = (await connRes.json()) as { items?: Connector[] };
+        setConnectors(Array.isArray(body.items) ? body.items : []);
+      }
     } catch (e) {
       setLoadError((e as Error).message);
     }
@@ -41,7 +50,7 @@ export function ProjectProcesses({ project }: { project: DeployProject }) {
     void refresh();
   }, [refresh]);
 
-  const rows = buildProcessRows(project, inventory);
+  const rows = buildProcessRows(project, inventory, connectors);
   const manageable = rows.some((r) => r.pm !== "none");
   const pm2ConnectorId = useMemo(() => {
     const bucket = inventory?.items.find((b) => b.kind === "pm2");

@@ -776,6 +776,7 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 		RollbackSha:    pinSHA,
 		Health:         healthCheckFor(p),
 		TimeoutSeconds: int32(p.DeployTimeoutSeconds),
+		OnWaveFailure:  NormalizeOnWaveFailure(p.OnWaveFailure),
 	}
 	for _, a := range p.Apps {
 		lang, pm := a.Language, a.ProcessManager
@@ -805,7 +806,7 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 			Name: a.Name, RootDirectory: a.Root, InstallScript: a.Install,
 			RunScript: a.Run, CleanupScript: cleanup, PreStartScript: a.PreStart,
 			Language: lang, Port: int32(a.Port), ProcessManager: pm, Env: merged,
-			Health: healthCheckForApp(a),
+			Health: healthCheckForApp(a), StartGroup: int32(a.StartGroup),
 		})
 	}
 	if len(cmd.Apps) == 0 {

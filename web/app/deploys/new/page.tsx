@@ -228,6 +228,7 @@ function NewDeployForm() {
       advanced: {
         ...emptyAdvanced,
         autoRollback: p.auto_rollback,
+        onWaveFailure: p.on_wave_failure === "continue" ? "continue" : "stop",
         healthPath: p.health_path || "",
         healthPort: p.health_port ? String(p.health_port) : "",
         healthTimeout: p.health_timeout_seconds ? String(p.health_timeout_seconds) : "",
@@ -675,6 +676,7 @@ function NewDeployForm() {
         // A repo croncompose.yml (auto-detected or picked) must not be overwritten.
         spec_from_repo: selectedSpecPath !== SPEC_NONE || !!inspect?.spec,
         auto_rollback: a.autoRollback,
+        on_wave_failure: a.onWaveFailure,
         health_path: a.healthPath.trim(),
         health_port: Number(a.healthPort) || 0,
         health_timeout_seconds: Number(a.healthTimeout) || 0,

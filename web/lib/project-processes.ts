@@ -1,4 +1,4 @@
-import type { ConnectorResource, DeployApp, DeployInventory, DeployProject } from "./types";
+import type { Connector, ConnectorResource, DeployApp, DeployInventory, DeployProject } from "./types";
 import { qualifyProcessName } from "./process-name";
 
 /** One project app matched against live deploy-inventory. */
@@ -14,6 +14,7 @@ export type ProcessRow = {
 export function buildProcessRows(
   project: DeployProject,
   inventory: DeployInventory | null,
+  connectors: Connector[] = [],
 ): ProcessRow[] {
   const apps: DeployApp[] =
     project.apps?.length > 0
@@ -48,14 +49,16 @@ export function buildProcessRows(
       objects.find((o) => o.kind === pm && sameProcess(o.resource, processName, app.name || "")) ??
       null;
     const bucket = (inventory?.items ?? []).find((b) => b.kind === pm);
+    const fromList = connectors.find((c) => c.kind === pm)?.id ?? null;
     return {
       label: app.name || processName,
       processName,
       pm,
       resource: hit?.resource ?? null,
       // A failed deploy often dies before the start step, so the process is missing
-      // from inventory. The connector can still address it by name.
-      connectorId: hit?.connectorId || bucket?.connectors[0]?.id || null,
+      // from inventory. Prefer the matched object, then the inventory bucket, then
+      // any connector of that kind on the server.
+      connectorId: hit?.connectorId || bucket?.connectors[0]?.id || fromList || null,
     };
   });
 }
@@ -80,6 +83,9 @@ function sameProcess(resource: ConnectorResource, processName: string, appName: 
 export function processActionRef(row: ProcessRow): string {
   const ref = (row.resource?.ref || "").trim();
   if (ref) return ref;
+  if (row.pm === "systemd" && row.processName && !row.processName.endsWith(".service")) {
+    return `${row.processName}.service`;
+  }
   return row.processName;
 }
 

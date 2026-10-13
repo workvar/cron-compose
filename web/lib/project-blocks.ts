@@ -38,6 +38,11 @@ export type ProjectBlock = {
   healthPath: string;
   healthPort: string;
   healthTimeout: string;
+  /**
+   * Deploy wave index. Apps with the same group start together after the
+   * release; lower groups finish before higher ones. 0 = first / all together.
+   */
+  startGroup: number;
 };
 
 /** Modes that can auto-redeploy a project when the Git provider fires a webhook. */
@@ -92,6 +97,7 @@ export function seedBlockFromInspect(inspect: DeployInspect, repoFullName: strin
     healthPath: "",
     healthPort: "",
     healthTimeout: "",
+    startGroup: 0,
   };
 }
 
@@ -152,6 +158,7 @@ export function emptyBlock(): ProjectBlock {
     healthPath: "",
     healthPort: "",
     healthTimeout: "",
+    startGroup: 0,
   };
 }
 
@@ -196,6 +203,7 @@ export function blocksToDeployApps(
     process_manager: block.processManager,
     port: block.port ? Number(block.port) : undefined,
     env: appEnv[block.name] ?? [],
+    start_group: block.startGroup > 0 ? block.startGroup : undefined,
     health: block.healthPath.trim()
       ? {
           path: block.healthPath.trim(),
@@ -243,5 +251,6 @@ export function blocksFromProject(project: DeployProject): ProjectBlock[] {
     healthPath: app.health?.path || "",
     healthPort: app.health?.port ? String(app.health.port) : "",
     healthTimeout: app.health?.timeout ? String(app.health.timeout) : "",
+    startGroup: app.start_group ?? 0,
   }));
 }

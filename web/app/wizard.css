@@ -228,6 +228,105 @@ p.small { margin: 4px 0 12px; }
   background: var(--surface-2);
 }
 .process-card + .process-card { margin-top: 10px; }
+.deploy-order {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.deploy-order-failure {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.deploy-order-failure-label {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text-2);
+  margin-bottom: 8px;
+}
+.deploy-order-failure-opts {
+  display: grid;
+  gap: 8px;
+}
+.deploy-order-failure-opt {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  cursor: pointer;
+}
+.deploy-order-failure-opt.is-on {
+  border-color: var(--green);
+  background: var(--green-soft);
+}
+.deploy-order-failure-opt input { margin-top: 3px; }
+.deploy-order-failure-opt strong { display: block; font-size: 13px; }
+.deploy-order-failure-opt .subtle {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.deploy-order-waves {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+.deploy-order-wave {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  background: var(--surface-2);
+  min-height: 56px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.deploy-order-wave.is-over {
+  border-color: var(--green);
+  background: var(--green-soft);
+}
+.deploy-order-wave-label {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text-2);
+  margin-bottom: 8px;
+}
+.deploy-order-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-height: 32px;
+}
+.deploy-order-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius-md);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: grab;
+}
+.deploy-order-chip:active { cursor: grabbing; }
+.deploy-order-chip.is-dragging { opacity: 0.45; }
+.deploy-order-chip.is-before {
+  box-shadow: inset 3px 0 0 var(--green);
+}
+.deploy-order-handle {
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: -2px;
+  line-height: 1;
+}
 .redeploy-modes { display: grid; gap: 10px; }
 .redeploy-mode {
   display: flex;
