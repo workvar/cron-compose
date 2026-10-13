@@ -139,3 +139,18 @@ func TestEnrichProcessNamesPreservesOverride(t *testing.T) {
 		t.Errorf("qualified = %q", apps[1].ProcessName)
 	}
 }
+
+func TestProcessNameForDeployOmitsQualifiedPM2(t *testing.T) {
+	a := SpecApp{Name: "Proxy", ProcessName: "peepal-rp-proxy"}
+	if got := ProcessNameForDeploy("peepal-rp", a, "pm2"); got != "" {
+		t.Fatalf("qualified pm2 name should be omitted, got %q", got)
+	}
+	a.ProcessName = "peepal-proxy"
+	if got := ProcessNameForDeploy("peepal-rp", a, "pm2"); got != "peepal-proxy" {
+		t.Fatalf("ecosystem name should be sent, got %q", got)
+	}
+	a.ProcessName = "peepal-rp-proxy"
+	if got := ProcessNameForDeploy("peepal-rp", a, "systemd"); got != "peepal-rp-proxy" {
+		t.Fatalf("non-pm2 keeps name, got %q", got)
+	}
+}

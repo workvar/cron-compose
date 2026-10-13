@@ -44,9 +44,10 @@ func QualifyProcessName(project, app string) string {
 	return prefix + a
 }
 
-// ProcessNameFor returns the host process name for an app: an explicit
-// process_name from the control plane (ecosystem override) wins; otherwise
-// QualifyProcessName(project, app name).
+// ProcessNameFor returns the control-plane view of the host process name:
+// DeployApp.process_name when set, otherwise QualifyProcessName(project, app).
+// For pm2 starts, callers must use ResolveHostProcessName so an on-disk
+// ecosystem.config.js can supersede this value.
 func ProcessNameFor(project string, app *agentv1.DeployApp) string {
 	if app != nil {
 		if n := strings.TrimSpace(app.GetProcessName()); n != "" {
@@ -59,4 +60,24 @@ func ProcessNameFor(project string, app *agentv1.DeployApp) string {
 		return QualifyProcessName(project, name)
 	}
 	return QualifyProcessName(project, "app")
+}
+
+// ResolveHostProcessName picks the pm2/systemd name used for start, wait, and
+// log follow. Order: control-plane process_name (UI field, including
+// ecosystem auto-populate) → on-disk ecosystem apps[].name → project-app.
+// When the UI name differs from the ecosystem file, syncEcosystemProcessName
+// rewrites the file before pm2 start.
+func ResolveHostProcessName(project string, app *agentv1.DeployApp, work string) string {
+	if app != nil {
+		if n := strings.TrimSpace(app.GetProcessName()); n != "" {
+			return n
+		}
+	}
+	eco := findEcosystem(work)
+	if eco != "" {
+		if n := preferEcosystemName("", work, eco); n != "" {
+			return n
+		}
+	}
+	return ProcessNameFor(project, app)
 }

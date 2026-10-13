@@ -46,25 +46,25 @@ function TaskNode({
   return (
     <button
       type="button"
-      className={`deploy-flow-node is-${task.state}${selected ? " is-selected" : ""}`}
+      className={`deploy-wave-node is-${task.state}${selected ? " is-selected" : ""}`}
       onClick={onSelect}
       aria-pressed={selected}
       title={task.label}
     >
       <Mark state={task.state} />
-      <span className="deploy-flow-node-body">
-        <span className="deploy-flow-node-app">{task.app}</span>
-        <span className="deploy-flow-node-phase">{task.phase.replace(/_/g, " ")}</span>
-        <span className={`deploy-flow-node-state is-${task.state}`}>{stateLabel(task.state)}</span>
+      <span className="deploy-wave-node-body">
+        <span className="deploy-wave-node-app">{task.app}</span>
+        <span className="deploy-wave-node-phase">{task.phase.replace(/_/g, " ")}</span>
+        <span className={`deploy-wave-node-state is-${task.state}`}>{stateLabel(task.state)}</span>
       </span>
-      <span className="deploy-flow-node-pct">{task.percent}%</span>
+      <span className="deploy-wave-node-pct">{task.percent}%</span>
     </button>
   );
 }
 
 function Arrow() {
   return (
-    <span className="deploy-flow-arrow" aria-hidden="true">
+    <span className="deploy-wave-arrow" aria-hidden="true">
       <svg width="28" height="12" viewBox="0 0 28 12" fill="none">
         <path
           d="M0 6h22M18 1.5L24.5 6 18 10.5"
@@ -101,23 +101,23 @@ export function WaveVisualizer({
         <div className={`deploy-live-pct sm is-${focus.state}`}>{focus.percent}%</div>
       </div>
 
-      <div className="deploy-flow" role="list" aria-label="Task flow">
+      <div className="deploy-wave-flow" role="list" aria-label="Task flow">
         {waves.map((w, i) => (
-          <div key={w.index} className="deploy-flow-row" role="listitem">
+          <div key={w.index} className="deploy-wave-flow-row" role="listitem">
             {i > 0 && <Arrow />}
             <div
-              className={`deploy-flow-wave is-${w.state}${i === activeIndex ? " is-current" : ""}`}
+              className={`deploy-wave-flow-wave is-${w.state}${i === activeIndex ? " is-current" : ""}`}
             >
-              <div className="deploy-flow-wave-head">
+              <div className="deploy-wave-flow-wave-head">
                 <Mark state={w.state} />
                 <span>W{w.index}</span>
-                <span className="deploy-flow-wave-pct">{w.percent}%</span>
+                <span className="deploy-wave-flow-wave-pct">{w.percent}%</span>
               </div>
-              <div className="deploy-flow-wave-tasks">
+              <div className="deploy-wave-flow-wave-tasks">
                 {w.tasks.map((t, ti) => (
-                  <div key={t.id} className="deploy-flow-wave-task-wrap">
+                  <div key={t.id} className="deploy-wave-flow-wave-task-wrap">
                     {ti > 0 && (
-                      <span className="deploy-flow-parallel" aria-hidden="true">
+                      <span className="deploy-wave-flow-parallel" aria-hidden="true">
                         +
                       </span>
                     )}

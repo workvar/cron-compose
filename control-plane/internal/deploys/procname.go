@@ -58,3 +58,25 @@ func EnrichProcessNames(projectName string, apps []SpecApp) []SpecApp {
 	}
 	return out
 }
+
+// ProcessNameForDeploy is the process_name sent to the agent on DeployCommand.
+// For pm2, the default project-app qualification is omitted: an on-disk
+// ecosystem.config.js apps[].name must supersede that computed token. Explicit
+// names (ecosystem autopopulate, import, operator edit) are still sent as hints.
+func ProcessNameForDeploy(project string, a SpecApp, pm string) string {
+	n := strings.TrimSpace(a.ProcessName)
+	if n == "" {
+		return ""
+	}
+	if !strings.EqualFold(strings.TrimSpace(pm), "pm2") {
+		return n
+	}
+	label := a.Name
+	if label == "" {
+		label = a.Root
+	}
+	if n == QualifyProcessName(project, label) {
+		return ""
+	}
+	return n
+}

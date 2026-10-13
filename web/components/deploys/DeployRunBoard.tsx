@@ -232,10 +232,7 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
         <p className="form-error" style={{ margin: 0 }}>{controlsError}</p>
       )}
 
-      <div
-        className={`deploy-term-grid${view.processes.length > 1 ? " is-multi" : ""}`}
-        style={{ ["--deploy-term-cols" as string]: Math.min(view.processes.length, 3) }}
-      >
+      <div className="deploy-server-term">
         <ProcessTerminal
           title="Server"
           pane="shared"
@@ -247,6 +244,12 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
           onFocus={() => setFocusPane("shared")}
           live={live}
         />
+      </div>
+
+      <div
+        className={`deploy-term-grid${view.processes.length > 1 ? " is-multi" : ""}`}
+        style={{ ["--deploy-term-cols" as string]: Math.min(Math.max(view.processes.length, 1), 3) }}
+      >
         {view.processes.map((proc) => {
           const row = manageable ? rowForProcess(processRows, proc.name) : null;
           const showControls = Boolean(row && row.pm !== "none");

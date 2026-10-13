@@ -150,16 +150,39 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, name
 		return m.runDirect(ctx, runID, token, work, language, runScript, env, cred, tmpDir, phase, port)
 	case "pm2":
 		eco := findEcosystem(work)
-		// Ecosystem apps[].name is what pm2 registers (e.g. peepal-proxy), not
-		// our qualified project-app token. Prefer that for wait + log follow.
-		waitName := preferEcosystemName(name, work, eco)
+		waitName := name
+		// UI process name is authoritative when set; rewrite ecosystem apps[].name
+		// so pm2 start --only / wait match what the operator configured.
+		if eco != "" && strings.TrimSpace(waitName) != "" {
+			if old, changed, err := syncEcosystemProcessName(eco, work, waitName); err != nil {
+				m.phaseLine(runID, token, phase, "ecosystem name sync failed: "+err.Error()+" (in "+work+")")
+			} else if changed {
+				m.phaseLine(runID, token, phase, "updated "+filepath.Base(eco)+" name "+old+" → "+waitName+" (in "+work+")")
+			}
+		} else if eco != "" {
+			if ecoName := preferEcosystemName("", work, eco); ecoName != "" {
+				waitName = ecoName
+			}
+		}
+		aliases := ecosystemNamesForWork(eco, work)
+		if waitName != "" {
+			aliases = append([]string{waitName}, aliases...)
+		}
+		// Start wave after Run: process may already be online — don't restart
+		// and re-enter a long wait when jlist is slow.
+		if real, ok := m.pm2AlreadyOnline(ctx, work, waitName, aliases, cred, tmpDir); ok {
+			m.phaseLine(runID, token, phase, "pm2 already online: "+real+" (in "+work+")")
+			go m.followLogs(ctx, runID, token, work, "pm2", real, cred, tmpDir)
+			if err := m.waitReady(ctx, runID, token, phase, work, port); err != nil {
+				return err
+			}
+			m.phaseLine(runID, token, phase, "done (in "+work+")")
+			return nil
+		}
 		args := pm2StartArgs(waitName, language, eco, runScript)
 		if len(args) == 0 {
 			m.phaseLine(runID, token, phase, "pm2: no start command; add a run script, ecosystem file, or set language to node (in "+work+")")
 			return nil
-		}
-		if waitName != name {
-			m.phaseLine(runID, token, phase, "pm2 process name "+waitName+" (from ecosystem; wanted "+name+") (in "+work+")")
 		}
 		m.phaseLine(runID, token, phase, "pm2 "+strings.Join(args, " ")+" (in "+work+")")
 		if err := m.runCmdStream(ctx, runID, token, work, env, cred, tmpDir, "pm2", args...); err != nil {
@@ -169,7 +192,6 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, name
 		// passed in may not be what pm2 registered. Wait until that process is
 		// online, then tail its real name — otherwise the log pane goes quiet
 		// the moment `pm2 start` returns and the next wave starts too early.
-		aliases := ecosystemNamesForWork(eco, work)
 		real, err := m.waitPM2Online(ctx, runID, token, phase, work, waitName, aliases, cred, tmpDir)
 		if err != nil {
 			return err

@@ -28,6 +28,8 @@ const base = {
   port: "",
   processManager: "none",
   processName: "",
+  processNameAuto: false,
+  ecosystemFile: "",
   autoDetect: true,
   healthPath: "",
   healthPort: "",
@@ -109,12 +111,15 @@ assert.equal(
   assert.equal(blocks[0].name, "peepal-proxy");
   assert.equal(blocks[0].root, "proxy");
   assert.equal(blocks[0].processName, "peepal-proxy");
+  assert.equal(blocks[0].processNameAuto, true);
+  assert.ok(blocks[0].ecosystemFile);
   assert.equal(blocks[0].processManager, "pm2");
   assert.equal(blocks[0].run, "./go run .");
   assert.equal(blocks[0].port, "8080");
   assert.equal(blocks[1].name, "peepal-api");
   assert.equal(blocks[1].root, "api");
   assert.equal(blocks[1].processName, "peepal-api");
+  assert.equal(blocks[1].processNameAuto, true);
 }
 
 {
@@ -131,6 +136,8 @@ assert.equal(
       port: "",
       processManager: "none",
       processName: "",
+      processNameAuto: false,
+      ecosystemFile: "",
       autoDetect: true,
       healthPath: "",
       healthPort: "",
@@ -168,6 +175,8 @@ assert.equal(
       port: "3000",
       processManager: "pm2",
       processName: "shop-web",
+      processNameAuto: false,
+      ecosystemFile: "",
       autoDetect: true,
       healthPath: "",
       healthPort: "",

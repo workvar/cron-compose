@@ -732,7 +732,7 @@ func (m *Manager) startApps(ctx context.Context, cmd *agentv1.DeployCommand, lay
 		if pm == "" {
 			pm = cmd.GetProcessManager()
 		}
-		name := ProcessNameFor(project, app)
+		name := ResolveHostProcessName(project, app, work)
 		port := app.GetPort()
 		if port == 0 {
 			port = cmd.GetPort()

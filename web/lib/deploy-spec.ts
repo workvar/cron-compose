@@ -142,6 +142,8 @@ export function specToDraft(
       port: port ? String(port) : "",
       processManager: app.process_manager || spec.process_manager || "none",
       processName: app.process_name || "",
+      processNameAuto: false,
+      ecosystemFile: "",
       // Came from an explicit croncompose.yml (or a pasted one): never let a later
       // root-folder change silently overwrite what the file said.
       autoDetect: false,

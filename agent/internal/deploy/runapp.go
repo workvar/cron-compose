@@ -38,7 +38,7 @@ func (m *Manager) runApps(ctx context.Context, cmd *agentv1.DeployCommand, layou
 		if pm == "" {
 			pm = cmd.GetProcessManager()
 		}
-		name := ProcessNameFor(project, app)
+		name := ResolveHostProcessName(project, app, work)
 		port := app.GetPort()
 		if port == 0 {
 			port = cmd.GetPort()
@@ -232,15 +232,22 @@ func portFrom(port int32, env map[string]string) int32 {
 
 type pm2Listed struct {
 	Name   string `json:"name"`
+	Pid    int    `json:"pid"`
 	Pm2Env struct {
 		Status string `json:"status"`
 		Cwd    string `json:"pm_cwd"`
+		PmID   int    `json:"pm_id"`
 	} `json:"pm2_env"`
 }
+
+const pm2JlistTimeout = 4 * time.Second
 
 // waitPM2Online polls `pm2 jlist` until the process we just started is online.
 // Ecosystem files choose their own process name, so a name match falls back to
 // aliases and the working directory. The returned name is what log tailing follows.
+//
+// Each jlist call has its own short timeout: a hung `pm2 jlist` must not block
+// past readyBudget (that looked like "forever waiting" on the run page).
 func (m *Manager) waitPM2Online(ctx context.Context, runID, token, phase, work, want string, aliases []string, cred *osuser.Credential, tmpDir string) (string, error) {
 	deadline := time.Now().Add(readyBudget)
 	label := want
@@ -249,29 +256,35 @@ func (m *Manager) waitPM2Online(ctx context.Context, runID, token, phase, work, 
 	}
 	m.phaseLine(runID, token, phase, "waiting for pm2 process "+label+" (in "+work+")")
 	var last string
+	candidates := pm2NameCandidates(want, aliases...)
 	for {
-		out, err := runCmdOut(ctx, work, nil, cred, tmpDir, "pm2", "jlist")
-		if err != nil {
-			return "", fmt.Errorf("pm2 jlist: %w", err)
-		}
-		procs := parsePM2Jlist(out)
-		proc, ok := pickPM2(procs, want, work, aliases...)
-		if ok {
-			status := strings.ToLower(strings.TrimSpace(proc.Pm2Env.Status))
-			last = proc.Name + "=" + status
-			switch status {
-			case "online":
-				m.phaseLine(runID, token, phase, "pm2 online: "+proc.Name+" (in "+work+")")
-				if proc.Name == "" {
-					return want, nil
-				}
-				return proc.Name, nil
-			case "errored", "stopped", "stopping":
-				return "", fmt.Errorf("pm2 process %s is %s", proc.Name, status)
-			}
-		}
 		if time.Now().After(deadline) {
-			if last == "" {
+			break
+		}
+		procs, jerr := m.pm2Jlist(ctx, work, cred, tmpDir)
+		if jerr != nil {
+			last = "jlist: " + jerr.Error()
+		} else {
+			proc, ok := pickPM2(procs, want, work, aliases...)
+			if ok {
+				status := strings.ToLower(strings.TrimSpace(proc.Pm2Env.Status))
+				last = proc.Name + "=" + status
+				if pm2IsReady(proc) {
+					name := proc.Name
+					if name == "" {
+						name = want
+					}
+					m.phaseLine(runID, token, phase, "pm2 online: "+name+" (in "+work+")")
+					return name, nil
+				}
+				switch status {
+				case "errored", "stopped", "stopping":
+					return "", fmt.Errorf("pm2 process %s is %s", proc.Name, status)
+				}
+			} else if real, ok := m.pm2PidOnline(ctx, work, cred, tmpDir, candidates...); ok {
+				m.phaseLine(runID, token, phase, "pm2 online: "+real+" (via pid; in "+work+")")
+				return real, nil
+			} else if last == "" {
 				names := make([]string, 0, len(procs))
 				for _, p := range procs {
 					if p.Name != "" {
@@ -279,19 +292,98 @@ func (m *Manager) waitPM2Online(ctx context.Context, runID, token, phase, work, 
 					}
 				}
 				if len(names) == 0 {
-					last = "pm2 jlist empty — start may have failed (check ecosystem script/cwd)"
+					last = "pm2 jlist empty"
 				} else {
 					last = "jlist has " + strings.Join(names, ", ") + " (wanted " + label + ")"
 				}
 			}
-			return "", fmt.Errorf("pm2 process %s did not come online within %s (%s)", want, readyBudget, last)
+		}
+		if time.Now().After(deadline) {
+			break
 		}
 		select {
 		case <-ctx.Done():
 			return "", ctx.Err()
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(400 * time.Millisecond):
 		}
 	}
+	if last == "" {
+		last = "pm2 jlist empty — start may have failed (check ecosystem script/cwd)"
+	}
+	return "", fmt.Errorf("pm2 process %s did not come online within %s (%s)", want, readyBudget, last)
+}
+
+func (m *Manager) pm2Jlist(ctx context.Context, work string, cred *osuser.Credential, tmpDir string) ([]pm2Listed, error) {
+	jctx, cancel := context.WithTimeout(ctx, pm2JlistTimeout)
+	defer cancel()
+	out, err := runCmdOut(jctx, work, nil, cred, tmpDir, "pm2", "jlist")
+	if err != nil {
+		return nil, err
+	}
+	return parsePM2Jlist(out), nil
+}
+
+func pm2IsReady(p pm2Listed) bool {
+	status := strings.ToLower(strings.TrimSpace(p.Pm2Env.Status))
+	switch status {
+	case "online":
+		return true
+	case "errored", "stopped", "stopping", "one-launch-status":
+		return false
+	}
+	// Some pm2 builds omit status in jlist but still report a live pid.
+	return p.Pid > 0 && status != "stopped" && status != "errored"
+}
+
+func pm2NameCandidates(want string, aliases ...string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, n := range append([]string{want}, aliases...) {
+		n = strings.TrimSpace(n)
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	return out
+}
+
+// pm2PidOnline is a fallback when jlist is empty/unparseable after a successful
+// `pm2 start`: `pm2 pid <name>` returns a positive pid when the process is up.
+func (m *Manager) pm2PidOnline(ctx context.Context, work string, cred *osuser.Credential, tmpDir string, names ...string) (string, bool) {
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		pctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		out, err := runCmdOut(pctx, work, nil, cred, tmpDir, "pm2", "pid", name)
+		cancel()
+		if err != nil {
+			continue
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(out))
+		if err != nil || pid <= 0 {
+			continue
+		}
+		return name, true
+	}
+	return "", false
+}
+
+// pm2AlreadyOnline is a cheap pre-start check so the Start wave after Run does
+// not call `pm2 start` again when the process is already up.
+func (m *Manager) pm2AlreadyOnline(ctx context.Context, work, want string, aliases []string, cred *osuser.Credential, tmpDir string) (string, bool) {
+	procs, err := m.pm2Jlist(ctx, work, cred, tmpDir)
+	if err == nil {
+		if proc, ok := pickPM2(procs, want, work, aliases...); ok && pm2IsReady(proc) {
+			if proc.Name != "" {
+				return proc.Name, true
+			}
+			return want, true
+		}
+	}
+	return m.pm2PidOnline(ctx, work, cred, tmpDir, pm2NameCandidates(want, aliases...)...)
 }
 
 func parsePM2Jlist(out string) []pm2Listed {

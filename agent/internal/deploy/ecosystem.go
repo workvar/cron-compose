@@ -75,20 +75,59 @@ func ecosystemNamesForWork(ecoPath, work string) []string {
 	return names
 }
 
-// preferEcosystemName picks the host process name: explicit override wins, else
-// an ecosystem apps[].name that matches this app folder, else the qualified want.
+// preferEcosystemName returns the ecosystem apps[].name for this work dir.
+// want picks among several entries when more than one could apply.
 func preferEcosystemName(want, work, ecoPath string) string {
 	names := ecosystemNamesForWork(ecoPath, work)
 	if len(names) == 0 {
 		return want
 	}
+	if want == "" {
+		return names[0]
+	}
 	base := filepath.Base(work)
 	for _, n := range names {
-		if pm2NameMatch(n, want, base) || n == want {
+		if n == want || pm2NameMatch(n, want, base) {
 			return n
 		}
 	}
 	return names[0]
+}
+
+// syncEcosystemProcessName rewrites apps[].name for the app that belongs to
+// work so it matches newName (UI edit). No-op when already equal or no file.
+func syncEcosystemProcessName(ecoPath, work, newName string) (oldName string, changed bool, err error) {
+	newName = strings.TrimSpace(newName)
+	if ecoPath == "" || newName == "" {
+		return "", false, nil
+	}
+	old := preferEcosystemName(newName, work, ecoPath)
+	if old == "" || old == newName {
+		return old, false, nil
+	}
+	body, err := os.ReadFile(ecoPath)
+	if err != nil {
+		return old, false, err
+	}
+	updated, n := replaceEcosystemAppName(string(body), old, newName)
+	if n == 0 {
+		return old, false, nil
+	}
+	if err := os.WriteFile(ecoPath, []byte(updated), 0o644); err != nil {
+		return old, false, err
+	}
+	return old, true, nil
+}
+
+func replaceEcosystemAppName(body, oldName, newName string) (string, int) {
+	re := regexp.MustCompile(`(?i)(?:name|"name")\s*:\s*(['"])` + regexp.QuoteMeta(oldName) + `(['"])`)
+	loc := re.FindStringSubmatchIndex(body)
+	if loc == nil || len(loc) < 6 {
+		return body, 0
+	}
+	// loc[2:4] = opening quote, loc[4:6] = closing quote; name sits between them.
+	out := body[:loc[3]] + newName + body[loc[4]:]
+	return out, 1
 }
 
 type ecoApp struct {

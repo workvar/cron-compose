@@ -51,6 +51,23 @@ func TestPm2NameMatch(t *testing.T) {
 	}
 }
 
+func TestPm2IsReady(t *testing.T) {
+	online := pm2Listed{Name: "peepal-proxy", Pid: 12}
+	online.Pm2Env.Status = "online"
+	if !pm2IsReady(online) {
+		t.Fatal("online should be ready")
+	}
+	pidOnly := pm2Listed{Name: "peepal-proxy", Pid: 99}
+	if !pm2IsReady(pidOnly) {
+		t.Fatal("pid without status should be ready")
+	}
+	stopped := pm2Listed{Name: "peepal-proxy", Pid: 1}
+	stopped.Pm2Env.Status = "errored"
+	if pm2IsReady(stopped) {
+		t.Fatal("errored should not be ready")
+	}
+}
+
 func TestPortFromEnv(t *testing.T) {
 	if got := portFrom(0, map[string]string{"PORT": "4010"}); got != 4010 {
 		t.Fatalf("env port: %d", got)

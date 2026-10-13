@@ -111,6 +111,8 @@ assert.equal(yamlScalar(""), '""');
       port: "3000",
       processManager: "pm2",
       processName: "",
+      processNameAuto: false,
+      ecosystemFile: "",
       autoDetect: false,
       healthPath: "",
       healthPort: "",

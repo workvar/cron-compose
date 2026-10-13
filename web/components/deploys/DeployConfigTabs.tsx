@@ -513,6 +513,36 @@ function BuildRunTab({ blocks, onBlocks, clonePath, projectName }: Props) {
   );
 }
 
+function ProcessNameHint({ block }: { block: ProjectBlock }) {
+  const file = block.ecosystemFile || "ecosystem.config.js";
+  if (block.processNameAuto && block.processName.trim()) {
+    return (
+      <p className="field-hint">
+        Auto-populated from <code>{file}</code>. Edit to change the pm2 name; the ecosystem file is
+        updated on deploy.
+      </p>
+    );
+  }
+  if (block.processManager === "pm2" && block.processName.trim() && block.ecosystemFile) {
+    return (
+      <p className="field-hint">
+        Edited — deploy will update <code>{file}</code> <code>apps[].name</code> to match.
+      </p>
+    );
+  }
+  if (block.processManager === "pm2") {
+    return (
+      <p className="field-hint">
+        pm2 name on the host. Filled from the ecosystem file when one is found; edits update that
+        file on deploy.
+      </p>
+    );
+  }
+  return (
+    <p className="field-hint">pm2 / systemd name on the host. Leave blank to use project-app.</p>
+  );
+}
+
 function ProcessManagerTab({ blocks, onBlocks }: Props) {
   return (
     <div className="config-tab-panel">
@@ -551,14 +581,18 @@ function ProcessManagerTab({ blocks, onBlocks }: Props) {
                 onChange={(e) =>
                   onBlocks(
                     blocks.map((b) =>
-                      b.id === block.id ? { ...b, processName: e.target.value } : b,
+                      b.id === block.id
+                        ? {
+                            ...b,
+                            processName: e.target.value,
+                            processNameAuto: false,
+                          }
+                        : b,
                     ),
                   )
                 }
               />
-              <p className="field-hint">
-                pm2 / systemd name on the host. Autofilled from ecosystem when available.
-              </p>
+              <ProcessNameHint block={block} />
             </div>
             <details className="advanced" open={!!block.healthPath} style={{ marginTop: 8 }}>
               <summary>Health check for this process</summary>

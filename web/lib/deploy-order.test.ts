@@ -21,6 +21,8 @@ function block(id: string, name: string, startGroup = 0): ProjectBlock {
     port: "",
     processManager: "pm2",
     processName: "",
+    processNameAuto: false,
+    ecosystemFile: "",
     autoDetect: false,
     healthPath: "",
     healthPort: "",

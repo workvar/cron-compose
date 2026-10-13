@@ -39,6 +39,13 @@ export type ProjectBlock = {
    */
   processName: string;
   /**
+   * True when processName was filled from an ecosystem apps[].name and the
+   * operator has not edited it yet. Drives the “auto-populated” hint.
+   */
+  processNameAuto: boolean;
+  /** Repo-relative ecosystem file path when processName came from pm2_apps. */
+  ecosystemFile: string;
+  /**
    * True while language/install still reflect an automatic detection for this
    * block's root, so a root change (see detectAt in git-detect.ts) is allowed to
    * refresh them. Picking a framework manually, or the block coming from a
@@ -103,13 +110,23 @@ function pickPM2App(apps: PM2AppHint[] | undefined, root: string): PM2AppHint | 
   return undefined;
 }
 
+function ecosystemFileLabel(app: PM2AppHint): string {
+  const file = (app.file || "").trim();
+  if (!file) return "ecosystem.config.js";
+  const base = file.split("/").pop();
+  return base || file;
+}
+
 function applyPM2App(block: ProjectBlock, app: PM2AppHint | undefined): ProjectBlock {
   if (!app) return block;
   const run = runFromPM2App(app);
+  const fromEco = Boolean(app.name);
   return {
     ...block,
     processManager: "pm2",
     processName: app.name || block.processName,
+    processNameAuto: fromEco ? true : block.processNameAuto,
+    ecosystemFile: fromEco ? ecosystemFileLabel(app) : block.ecosystemFile,
     run: run || block.run,
     port: app.port ? String(app.port) : block.port,
   };
@@ -135,6 +152,8 @@ export function seedBlockFromInspect(inspect: DeployInspect, repoFullName: strin
     port: preset?.port || "",
     processManager: pm,
     processName: "",
+    processNameAuto: false,
+    ecosystemFile: "",
     autoDetect: true,
     healthPath: "",
     healthPort: "",
@@ -183,6 +202,8 @@ export function seedBlocksFromInspect(inspect: DeployInspect, repoFullName: stri
       port: app.port ? String(app.port) : preset?.port || "",
       processManager: "pm2",
       processName: app.name || "",
+      processNameAuto: Boolean(app.name),
+      ecosystemFile: app.name ? ecosystemFileLabel(app) : "",
       autoDetect: true,
       healthPath: "",
       healthPort: "",
@@ -208,7 +229,13 @@ export function applyFramework(block: ProjectBlock, frameworkId: string): Projec
       run: block.run || defaultRunForFramework(frameworkId),
     };
   }
-  return { ...block, ...fields, processName: block.processName };
+  return {
+    ...block,
+    ...fields,
+    processName: block.processName,
+    processNameAuto: block.processNameAuto,
+    ecosystemFile: block.ecosystemFile,
+  };
 }
 
 /** Merge repo detection into a block (language / install / run / port / pm). */
@@ -246,9 +273,13 @@ export function applyDetection(
     },
     app,
   );
+  const processName = block.processName || filled.processName;
+  const fromEco = !block.processName && Boolean(filled.processName);
   return {
     ...filled,
-    processName: block.processName || filled.processName,
+    processName,
+    processNameAuto: fromEco ? true : block.processNameAuto,
+    ecosystemFile: fromEco ? filled.ecosystemFile : block.ecosystemFile || filled.ecosystemFile,
     run: block.run || filled.run,
     port: block.port || filled.port,
   };
@@ -268,6 +299,8 @@ export function emptyBlock(): ProjectBlock {
     port: preset.port,
     processManager: preset.processManager,
     processName: "",
+    processNameAuto: false,
+    ecosystemFile: "",
     autoDetect: true,
     healthPath: "",
     healthPort: "",
@@ -363,6 +396,10 @@ export function blocksFromProject(project: DeployProject): ProjectBlock[] {
     port: app.port ? String(app.port) : project.port ? String(project.port) : "",
     processManager: app.process_manager || project.process_manager || "none",
     processName: app.process_name || "",
+    processNameAuto: false,
+    ecosystemFile: app.process_manager === "pm2" || project.process_manager === "pm2"
+      ? "ecosystem.config.js"
+      : "",
     autoDetect: false,
     healthPath: app.health?.path || "",
     healthPort: app.health?.port ? String(app.health.port) : "",
