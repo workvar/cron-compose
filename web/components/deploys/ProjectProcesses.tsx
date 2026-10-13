@@ -158,7 +158,14 @@ export function ProjectProcesses({ project }: { project: DeployProject }) {
                   </td>
                   <td style={{ textAlign: "right" }}>
                     <div className="cluster" style={{ gap: 8, justifyContent: "flex-end", flexWrap: "wrap", alignItems: "center" }}>
-                      <ProcessTaskActions row={row} onChanged={() => void refresh()} />
+                      <ProcessTaskActions
+                        row={row}
+                        projectId={project.id}
+                        appName={row.label}
+                        serverId={project.server_id}
+                        runAsUser={project.run_as_user}
+                        onChanged={() => void refresh()}
+                      />
                       {extras.map((a) => (
                         <button
                           key={a}

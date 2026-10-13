@@ -75,6 +75,16 @@ function sameProcess(resource: ConnectorResource, processName: string, appName: 
     // Numeric pm2 ids are refs, not names.
     if (/^\d+$/.test(g)) continue;
     if (want.includes(g)) return true;
+    // ecosystem.config.js often names the process `peepal-proxy` while we register
+    // `peepal-rp-proxy`. Treat a trailing `-<app>` as the same process.
+    if (appSlug.length >= 2 && (g === appSlug || g.endsWith(`-${appSlug}`))) return true;
+  }
+  // cwd from pm2 jlist: …/current/proxy matches app root "proxy".
+  const cwd = normName(resource.attributes?.cwd || "");
+  if (appSlug.length >= 2 && cwd) {
+    if (cwd.endsWith(`/${appSlug}`) || cwd.endsWith(`\\${appSlug}`) || cwd.endsWith(appSlug)) {
+      return true;
+    }
   }
   return false;
 }

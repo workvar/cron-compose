@@ -194,7 +194,7 @@ func (g *Gateway) Start(ctx context.Context) error {
 	g.lis = lis
 
 	creds := credentials.NewTLS(tlsCfg)
-	g.grpc = grpc.NewServer(grpc.Creds(creds))
+	g.grpc = grpc.NewServer(append(agentKeepaliveOptions(), grpc.Creds(creds))...)
 	svc := newService(g.log, g.pool, g.registry, g.broker, g.terminals, g.pending, g.users, g.tools, g.network, g.logMaxBytes, g.update, g.resolver, g.onFailed, g.onDeployFin, g.progress)
 	svc.rootSent = g.rootSent
 	agentv1.RegisterAgentServiceServer(g.grpc, svc)

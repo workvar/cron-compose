@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { IconPause, IconPlay, IconRestart, IconStop } from "@/components/icons";
 import { useConnectorCommand } from "@/components/connectors/useConnectorCommand";
 import { StepList } from "@/components/connectors/StepList";
@@ -8,6 +9,10 @@ import { isProcessPaused, isProcessRunning, processActionRef, type ProcessRow } 
 
 type Props = {
   row: ProcessRow | null;
+  /** Project id — required for Restart to redeploy the full install→run chain. */
+  projectId?: string;
+  /** App name as stored in the project flow. */
+  appName?: string;
   /** Server that owns the process. Used when no connector row exists yet. */
   serverId?: string;
   /** Deploy user, so pm2 runs against that account's daemon. */
@@ -19,10 +24,21 @@ type Props = {
 
 /**
  * Start / Pause / Stop / Restart for one process card.
- * All four stay visible; Pause/Resume and Start enable based on live state.
+ * Restart starts a new deploy for that app from install, not a pm2 restart alone.
  */
-export function ProcessTaskActions({ row, serverId, runAsUser, enabled = true, onChanged }: Props) {
+export function ProcessTaskActions({
+  row,
+  projectId,
+  appName,
+  serverId,
+  runAsUser,
+  enabled = true,
+  onChanged,
+}: Props) {
+  const router = useRouter();
   const { busy, error, result, send } = useConnectorCommand();
+  const [redeployBusy, setRedeployBusy] = useState(false);
+  const [redeployError, setRedeployError] = useState<string | null>(null);
   const [forced, setForced] = useState<"running" | "stopped" | "paused" | null>(null);
   const reported = row?.resource?.state;
 
@@ -39,6 +55,7 @@ export function ProcessTaskActions({ row, serverId, runAsUser, enabled = true, o
   const direct = Boolean(serverId && ref);
   const ready = Boolean(enabled && ref && (row.connectorId || direct));
   const label = row.label || row.processName;
+  const canRedeploy = Boolean(projectId && (appName || label));
   const blocked = !enabled
     ? "Wait for this deploy step to finish"
     : !ref
@@ -53,8 +70,6 @@ export function ProcessTaskActions({ row, serverId, runAsUser, enabled = true, o
       const ok = window.confirm(`Stop ${label}?`);
       if (!ok) return;
     }
-    // Prefer the server path: it runs as the deploy user and does not need a
-    // connector discovered on the agent service PATH.
     const path = serverId
       ? `/api/servers/${encodeURIComponent(serverId)}/process-actions`
       : row.connectorId
@@ -72,15 +87,50 @@ export function ProcessTaskActions({ row, serverId, runAsUser, enabled = true, o
     if (body?.status === "succeeded") {
       if (action === "pause") setForced("paused");
       else if (action === "stop") setForced("stopped");
-      else if (action === "unpause" || action === "restart" || action === "start") setForced("running");
+      else if (action === "unpause" || action === "start") setForced("running");
       onChanged?.();
     }
   }
 
+  async function redeployChain() {
+    if (!projectId) return;
+    const name = appName || label;
+    const ok = window.confirm(
+      `Redeploy ${name} from the start?\n\nThis runs install → build → cleanup → pre-start → run → start for ${name} only.`,
+    );
+    if (!ok) return;
+    setRedeployBusy(true);
+    setRedeployError(null);
+    try {
+      const res = await fetch(`/api/deploys/${encodeURIComponent(projectId)}/runs`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ apps: [name] }),
+      });
+      const body = (await res.json().catch(() => null)) as
+        | { id?: string; error?: { message?: string }; skipped?: string }
+        | null;
+      if (!res.ok) {
+        setRedeployError(body?.error?.message || `Could not start redeploy (${res.status})`);
+        return;
+      }
+      if (body?.id) {
+        router.push(`/deploys/runs/${body.id}`);
+        return;
+      }
+      setRedeployError(body?.skipped || "Redeploy was skipped");
+    } catch (e) {
+      setRedeployError((e as Error).message || "Could not start redeploy");
+    } finally {
+      setRedeployBusy(false);
+    }
+  }
+
+  const waiting = busy || redeployBusy;
   const canStart = ready && (!running || paused);
   const canPause = ready && running && !paused;
   const canStop = ready;
-  const canRestart = ready;
+  const canRestart = canRedeploy && enabled;
 
   return (
     <div className="deploy-proc-actions">
@@ -88,7 +138,7 @@ export function ProcessTaskActions({ row, serverId, runAsUser, enabled = true, o
         <button
           type="button"
           className="button secondary sm deploy-proc-action"
-          disabled={busy || !canStart}
+          disabled={waiting || !canStart}
           title={
             blocked ||
             (paused ? `Resume ${label}` : running ? `${label} is already running` : `Start ${label}`)
@@ -101,7 +151,7 @@ export function ProcessTaskActions({ row, serverId, runAsUser, enabled = true, o
         <button
           type="button"
           className="button secondary sm deploy-proc-action"
-          disabled={busy || !canPause}
+          disabled={waiting || !canPause}
           title={blocked || (running ? `Pause ${label}` : `${label} is not running`)}
           onClick={() => void run("pause")}
         >
@@ -111,7 +161,7 @@ export function ProcessTaskActions({ row, serverId, runAsUser, enabled = true, o
         <button
           type="button"
           className="button danger sm deploy-proc-action"
-          disabled={busy || !canStop}
+          disabled={waiting || !canStop}
           title={blocked || `Stop ${label}`}
           onClick={() => void run("stop")}
         >
@@ -121,18 +171,24 @@ export function ProcessTaskActions({ row, serverId, runAsUser, enabled = true, o
         <button
           type="button"
           className="button secondary sm deploy-proc-action"
-          disabled={busy || !canRestart}
-          title={blocked || `Restart ${label}`}
-          onClick={() => void run("restart")}
+          disabled={waiting || !canRestart}
+          title={
+            canRedeploy
+              ? `Redeploy ${label} from install through run`
+              : "Project is missing — cannot redeploy"
+          }
+          onClick={() => void redeployChain()}
         >
           <IconRestart />
-          <span>Restart</span>
+          <span>{redeployBusy ? "Redeploying…" : "Restart"}</span>
         </button>
       </div>
       {!ready && blocked && (
         <p className="subtle" style={{ margin: "6px 0 0", fontSize: 12 }}>{blocked}</p>
       )}
-      {error && <p className="form-error" style={{ margin: "6px 0 0" }}>{error}</p>}
+      {(error || redeployError) && (
+        <p className="form-error" style={{ margin: "6px 0 0" }}>{redeployError || error}</p>
+      )}
       {result && result.status !== "succeeded" && (
         <div className="form-error" style={{ margin: "6px 0 0" }}>
           <strong>{result.status}</strong>

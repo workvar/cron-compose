@@ -83,7 +83,7 @@ func (h *handler) DeployRunFinished(serverID, runID, status, phase string, exitC
 	h.log.Warn("deploy: auto-rolling back after failed run",
 		"project_id", p.ID, "failed_run_id", runID, "rollback_to_commit", good.CommitSha)
 
-	rollback, err := h.startRun(ctx, p, triggerRollback, good.Branch, good.CommitSha)
+	rollback, err := h.startRun(ctx, p, triggerRollback, good.Branch, good.CommitSha, nil)
 	if err != nil {
 		h.log.Warn("deploy: auto-rollback failed to start", "project_id", p.ID, "err", err)
 		return

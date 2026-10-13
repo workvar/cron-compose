@@ -48,7 +48,8 @@ func mountWeb(app *fiber.App, upstream string) {
 	// Cookie present → dashboard; signed out → marketing landing (PublicChrome).
 	app.Get("/", func(c fiber.Ctx) error {
 		if strings.TrimSpace(c.Cookies("cc_session")) != "" {
-			return c.Redirect().Status(fiber.StatusFound).To("/app/")
+			// Prefer /app (no trailing slash) — Next 308s /app/ → /app by default.
+			return c.Redirect().Status(fiber.StatusFound).To("/app")
 		}
 		return c.Redirect().Status(fiber.StatusFound).To("/app/landing")
 	})
@@ -102,10 +103,10 @@ font-family: Tahoma, Verdana, Arial, sans-serif; }
 <p>If you see this page, the web server is successfully installed and
 working. Further configuration is required.</p>
 
-<p>The control plane UI is at <a href="/app/">/app/</a>.<br/>
+<p>The control plane UI is at <a href="/app">/app</a>.<br/>
 REST API is at <a href="/api/">/api/</a>.</p>
 
-<p><a class="btn" href="/app/">Open control plane</a></p>
+<p><a class="btn" href="/app">Open control plane</a></p>
 
 <p><em>Thank you for using CronCompose.</em></p>
 </body>

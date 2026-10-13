@@ -21,6 +21,9 @@ function next(req: NextRequest) {
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  // Full URL path before basePath stripping. Dashboard is also pathname "/" after
+  // /app is removed — must not treat that as the bare site root.
+  const rawPath = new URL(req.url).pathname;
 
   // Always allow next-internal, static assets, and /api. /api reaches the control
   // plane via a Next rewrite (dev/standalone) or the control plane directly (prod,
@@ -39,14 +42,13 @@ export function proxy(req: NextRequest) {
 
   const hasSession = req.cookies.has("cc_session");
 
-  // Site root (outside basePath /app). Redirect so the browser URL matches the
-  // chrome: dashboard when signed in, marketing landing when signed out. Never
-  // reverse-proxy / → landing (that left AppShell wrapped around landing HTML).
-  // Use an absolute /app/… path — nextUrl.pathname is basePath-relative for
-  // in-app routes and would otherwise turn "/landing" into a wrong location.
-  if (pathname === "/") {
+  // Bare host root only (outside basePath). Control plane does the same when it
+  // fronts the site; this covers direct hits on the Next port (dev / tunnel).
+  // Use /app not /app/ — Next's default trailingSlash:false 308s /app/ → /app,
+  // and bouncing the dashboard root here used to 404 soft navigations to "/".
+  if (rawPath === "/") {
     return NextResponse.redirect(
-      new URL(hasSession ? "/app/" : "/app/landing", req.url),
+      new URL(hasSession ? "/app" : "/app/landing", req.url),
     );
   }
 
@@ -63,5 +65,9 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|ico|webp)$).*)"],
+  // Include "/" so the dashboard root (basePath-stripped) still gets x-cc-pathname.
+  matcher: [
+    "/",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|ico|webp)$).*)",
+  ],
 };

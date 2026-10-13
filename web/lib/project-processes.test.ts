@@ -99,4 +99,34 @@ const systemdNameOnly = buildProcessRows(
 );
 assert.equal(processActionRef(systemdNameOnly[0]), "shop-api.service");
 
+{
+  // ecosystem.config.js name `peepal-proxy` still matches app Proxy.
+  const eco = buildProcessRows(project, {
+    server_id: "srv",
+    total: 1,
+    items: [
+      {
+        kind: "pm2",
+        connectors: [{ id: "conn-pm2" } as DeployInventory["items"][number]["connectors"][number]],
+        objects: [
+          {
+            id: "obj-eco",
+            connector_id: "conn-pm2",
+            type: "object",
+            ref: "7",
+            name: "peepal-proxy",
+            state: "online",
+            attributes: { cwd: "/opt/apps/node/peepal-rp/current/proxy" },
+            updated_at: "",
+          },
+        ],
+        count: 1,
+      },
+    ],
+  } as DeployInventory);
+  assert.equal(eco[0].resource?.name, "peepal-proxy");
+  assert.equal(processActionRef(eco[0]), "7");
+  assert.equal(eco[1].resource, null);
+}
+
 console.log("project-processes: ok");

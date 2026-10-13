@@ -33,7 +33,7 @@ func (h *handler) triggerFromWebhook(c fiber.Ctx, p Project, branch, deliveryID,
 		h.log.Info("deploy: skipping duplicate webhook trigger", "project_id", p.ID, "reason", reason)
 		return c.SendStatus(fiber.StatusOK)
 	}
-	if _, err := h.startRun(ctx, p, "webhook", branch, ""); err != nil {
+	if _, err := h.startRun(ctx, p, "webhook", branch, "", nil); err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "run_failed", err)
 	}
 	return c.SendStatus(fiber.StatusAccepted)

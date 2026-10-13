@@ -346,7 +346,7 @@ func (h *handler) create(c fiber.Ctx) error {
 	}
 	h.audit.Write(c.Context(), auth.CurrentUserID(c), "deploy.create", "deploy", p.ID, map[string]any{"repo": p.RepoFullName, "from_spec": in.SpecFromRepo})
 	warnings := h.provisionRemote(c.Context(), p, in.SpecFromRepo)
-	run, err := h.startRun(c.Context(), p, "manual", p.DefaultBranch, "")
+	run, err := h.startRun(c.Context(), p, "manual", p.DefaultBranch, "", nil)
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "run_failed", err)
 	}
@@ -380,7 +380,7 @@ func (h *handler) patch(c fiber.Ctx) error {
 	out := fiber.Map{"project": RedactProject(p)}
 	pmChanged := in.ProcessManager != nil && p.ProcessManager != before.ProcessManager
 	if pmChanged && p.ProcessManager != "" && p.ProcessManager != "none" {
-		run, err := h.startRun(c.Context(), p, "manual", p.DefaultBranch, "")
+		run, err := h.startRun(c.Context(), p, "manual", p.DefaultBranch, "", nil)
 		if err != nil {
 			return jsonError(c, fiber.StatusInternalServerError, "run_failed", err)
 		}
@@ -466,9 +466,10 @@ func (h *handler) createRun(c fiber.Ctx) error {
 		trigger = "api"
 	}
 	var body struct {
-		Trigger string `json:"trigger"`
-		Branch  string `json:"branch"`
-		Commit  string `json:"commit"`
+		Trigger string   `json:"trigger"`
+		Branch  string   `json:"branch"`
+		Commit  string   `json:"commit"`
+		Apps    []string `json:"apps"`
 	}
 	_ = c.Bind().Body(&body)
 	// "rollback" is reserved for runs this control plane starts itself: a caller able
@@ -489,8 +490,11 @@ func (h *handler) createRun(c fiber.Ctx) error {
 			return c.JSON(fiber.Map{"skipped": reason})
 		}
 	}
-	run, err := h.startRun(c.Context(), p, trigger, branch, "")
+	run, err := h.startRun(c.Context(), p, trigger, branch, "", body.Apps)
 	if err != nil {
+		if strings.Contains(err.Error(), "no matching apps") {
+			return jsonError(c, fiber.StatusBadRequest, "bad_request", err)
+		}
 		return jsonError(c, fiber.StatusInternalServerError, "run_failed", err)
 	}
 	return c.Status(fiber.StatusAccepted).JSON(run)
@@ -771,7 +775,10 @@ func (h *handler) gitlabWebhook(c fiber.Ctx) error {
 // automatic rollback (see DeployRunFinished) sets it to the commit to return to, and
 // the agent prefers a release already on disk carrying that commit over refetching
 // it, because the commit may be gone from the remote by then.
-func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinSHA string) (Run, error) {
+//
+// onlyApps, when non-empty, limits the command to those app names (and flow tasks
+// that mention them). Used by Restart on a process card to redeploy one chain.
+func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinSHA string, onlyApps []string) (Run, error) {
 	// A rollback already knows its commit; a push or CI trigger reported one, and it
 	// reached us through duplicateTrigger. Recording it now rather than waiting for the
 	// agent lets the commit status go pending immediately and makes the de-duplication
@@ -785,6 +792,15 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 	if p.CreatedBy != nil {
 		token, _ = h.conns.Token(ctx, *p.CreatedBy, p.Provider)
 	}
+	allow := map[string]bool{}
+	for _, name := range onlyApps {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			allow[name] = true
+		}
+	}
+	filterApps := len(allow) > 0
+
 	cmd := &agentv1.DeployCommand{
 		RunId: run.ID, Op: "start",
 		CloneUrl: p.CloneURL, CloneToken: token,
@@ -799,6 +815,9 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 		OnWaveFailure:  NormalizeOnWaveFailure(p.OnWaveFailure),
 	}
 	for _, a := range p.Apps {
+		if filterApps && !allow[a.Name] {
+			continue
+		}
 		lang, pm := a.Language, a.ProcessManager
 		if lang == "" {
 			lang = p.Language
@@ -830,6 +849,9 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 		})
 	}
 	if len(cmd.Apps) == 0 {
+		if filterApps {
+			return Run{}, fmt.Errorf("no matching apps for redeploy")
+		}
 		cmd.Apps = []*agentv1.DeployApp{{
 			Name: p.Name, RootDirectory: p.RootDirectory, InstallScript: p.InstallScript,
 			CleanupScript: DefaultCleanup(p.Language),
@@ -839,6 +861,9 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 	for _, wave := range p.Flow {
 		fw := &agentv1.DeployFlowWave{}
 		for _, t := range wave {
+			if filterApps && !allow[t.App] {
+				continue
+			}
 			fw.Tasks = append(fw.Tasks, &agentv1.DeployFlowTask{App: t.App, Phase: t.Phase})
 		}
 		if len(fw.Tasks) > 0 {

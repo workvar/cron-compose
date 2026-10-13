@@ -130,8 +130,14 @@ func (r *Runtime) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
+		started := time.Now()
 		if err := r.connectAndServe(ctx, addr); err != nil {
 			r.log.Warn("connect cycle ended", "err", err, "pending_outbox", r.outbox.Len())
+		}
+		// A link that stayed up was healthy. The next drop should redial in a
+		// second, not climb toward the 30s cap left over from earlier blips.
+		if time.Since(started) >= 30*time.Second {
+			backoff = newBackoff()
 		}
 		select {
 		case <-ctx.Done():

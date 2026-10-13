@@ -46,10 +46,11 @@ func (g *Gateway) startEdge(svc agentv1.AgentServiceServer) error {
 		return fmt.Errorf("listen %s (edge): %w", g.edgeAddr, err)
 	}
 	auth := newEdgeAuth(g.edgeSecretHash, g.log)
-	g.edgeGRPC = grpc.NewServer(
+	g.edgeGRPC = grpc.NewServer(append(
+		agentKeepaliveOptions(),
 		grpc.StreamInterceptor(auth.streamInterceptor),
 		grpc.UnaryInterceptor(auth.unaryInterceptor),
-	)
+	)...)
 	agentv1.RegisterAgentServiceServer(g.edgeGRPC, svc)
 	go func() {
 		g.log.Info("grpc listening (edge, secret auth, plain h2c)", "addr", g.edgeAddr)

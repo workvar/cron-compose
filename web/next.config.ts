@@ -32,7 +32,7 @@ const config: NextConfig = {
   // Next is hit directly (e.g. `next dev`, or a Cloudflare Tunnel aimed at :3000).
   // basePath: false keeps the source at the real root (/api/*, not /app/api/*).
   //
-  // Bare / is redirected by proxy.ts / the control plane (session → /app/, else
+  // Bare / is redirected by proxy.ts / the control plane (session → /app, else
   // → /app/landing). Rewrites only proxy /api onto the control plane.
   async rewrites() {
     return {
