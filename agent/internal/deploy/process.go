@@ -88,7 +88,12 @@ func parseRunScript(runScript string) (string, []string, bool) {
 
 func pm2StartArgs(name, language, eco, runScript string) []string {
 	if eco != "" {
-		return []string{"start", eco, "--update-env"}
+		args := []string{"start", eco, "--update-env"}
+		// Monorepo ecosystems list every app; start only the one for this wave.
+		if strings.TrimSpace(name) != "" {
+			args = append(args, "--only", name)
+		}
+		return args
 	}
 	bin, extra := startCommand(language, runScript, name)
 	if bin == "" {
@@ -145,10 +150,16 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, name
 		return m.runDirect(ctx, runID, token, work, language, runScript, env, cred, tmpDir, phase, port)
 	case "pm2":
 		eco := findEcosystem(work)
-		args := pm2StartArgs(name, language, eco, runScript)
+		// Ecosystem apps[].name is what pm2 registers (e.g. peepal-proxy), not
+		// our qualified project-app token. Prefer that for wait + log follow.
+		waitName := preferEcosystemName(name, work, eco)
+		args := pm2StartArgs(waitName, language, eco, runScript)
 		if len(args) == 0 {
 			m.phaseLine(runID, token, phase, "pm2: no start command; add a run script, ecosystem file, or set language to node (in "+work+")")
 			return nil
+		}
+		if waitName != name {
+			m.phaseLine(runID, token, phase, "pm2 process name "+waitName+" (from ecosystem; wanted "+name+") (in "+work+")")
 		}
 		m.phaseLine(runID, token, phase, "pm2 "+strings.Join(args, " ")+" (in "+work+")")
 		if err := m.runCmdStream(ctx, runID, token, work, env, cred, tmpDir, "pm2", args...); err != nil {
@@ -158,7 +169,8 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, name
 		// passed in may not be what pm2 registered. Wait until that process is
 		// online, then tail its real name — otherwise the log pane goes quiet
 		// the moment `pm2 start` returns and the next wave starts too early.
-		real, err := m.waitPM2Online(ctx, runID, token, phase, work, name, cred, tmpDir)
+		aliases := ecosystemNamesForWork(eco, work)
+		real, err := m.waitPM2Online(ctx, runID, token, phase, work, waitName, aliases, cred, tmpDir)
 		if err != nil {
 			return err
 		}

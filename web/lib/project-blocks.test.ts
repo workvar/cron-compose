@@ -8,6 +8,7 @@ import {
   nameFromRoot,
   normalizeBlockRoot,
   seedBlockFromInspect,
+  seedBlocksFromInspect,
 } from "./project-blocks.ts";
 
 assert.equal(normalizeBlockRoot(""), ".");
@@ -26,10 +27,12 @@ const base = {
   preStart: "",
   port: "",
   processManager: "none",
+  processName: "",
   autoDetect: true,
   healthPath: "",
   healthPort: "",
   healthTimeout: "",
+  startGroup: 0,
 } as const;
 
 const dup = ensureUniqueBlockNames([
@@ -79,6 +82,39 @@ assert.equal(
   assert.equal(block.run, "npm start");
   assert.equal(block.processManager, "pm2");
   assert.equal(block.port, "3000");
+  assert.equal(block.processName, "");
+}
+
+{
+  const blocks = seedBlocksFromInspect(
+    {
+      language: "go",
+      install_script: "go build -o proxy .",
+      has_pm2_ecosystem: true,
+      supports_port: true,
+      workspaces: [],
+      root_directory: ".",
+      clone_url: "https://github.com/acme/peepal.git",
+      default_branch: "main",
+      clone_path: "/opt/apps/peepal",
+      process_manager: "pm2",
+      pm2_apps: [
+        { name: "peepal-proxy", script: "./go", args: "run .", cwd: "proxy", port: 8080 },
+        { name: "peepal-api", script: "./api", cwd: "api", port: 3000 },
+      ],
+    },
+    "acme/peepal",
+  );
+  assert.equal(blocks.length, 2);
+  assert.equal(blocks[0].name, "peepal-proxy");
+  assert.equal(blocks[0].root, "proxy");
+  assert.equal(blocks[0].processName, "peepal-proxy");
+  assert.equal(blocks[0].processManager, "pm2");
+  assert.equal(blocks[0].run, "./go run .");
+  assert.equal(blocks[0].port, "8080");
+  assert.equal(blocks[1].name, "peepal-api");
+  assert.equal(blocks[1].root, "api");
+  assert.equal(blocks[1].processName, "peepal-api");
 }
 
 {
@@ -94,10 +130,12 @@ assert.equal(
       preStart: "",
       port: "",
       processManager: "none",
+      processName: "",
       autoDetect: true,
       healthPath: "",
       healthPort: "",
       healthTimeout: "",
+      startGroup: 0,
     },
     "nextjs",
   );
@@ -129,13 +167,16 @@ assert.equal(
       preStart: "npx prisma migrate deploy",
       port: "3000",
       processManager: "pm2",
+      processName: "shop-web",
       autoDetect: true,
       healthPath: "",
       healthPort: "",
       healthTimeout: "",
+      startGroup: 0,
     }],
     { web: [{ key: "PORT", value: "3000", sensitive: false }] },
   );
+  assert.equal(apps[0].process_name, "shop-web");
   assert.equal(apps.length, 1);
   assert.equal(apps[0].name, "web");
   assert.equal(apps[0].root, "apps/web");

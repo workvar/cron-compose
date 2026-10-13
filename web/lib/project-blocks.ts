@@ -1,4 +1,10 @@
-import type { DeployApp, DeployEnvVar, DeployInspect, DeployProject } from "./types";
+import type {
+  DeployApp,
+  DeployEnvVar,
+  DeployInspect,
+  DeployProject,
+  PM2AppHint,
+} from "./types";
 import { defaultRunForFramework, fieldsForFramework, frameworkPreset } from "./frameworks";
 
 export type ProjectBlock = {
@@ -26,6 +32,12 @@ export type ProjectBlock = {
   preStart: string;
   port: string;
   processManager: string;
+  /**
+   * Explicit pm2/systemd name on the host. When set (typically from
+   * ecosystem.config.js), deploys and process actions use it instead of
+   * project-app.
+   */
+  processName: string;
   /**
    * True while language/install still reflect an automatic detection for this
    * block's root, so a root change (see detectAt in git-detect.ts) is allowed to
@@ -74,15 +86,44 @@ export function nameFromRoot(root: string, repoFullName: string): string {
   return segment || "app";
 }
 
+/** Build a start command from an ecosystem apps[] entry. */
+export function runFromPM2App(app: PM2AppHint): string {
+  const script = (app.script || "").trim();
+  const args = (app.args || "").trim();
+  if (!script) return "";
+  return args ? `${script} ${args}` : script;
+}
+
+function pickPM2App(apps: PM2AppHint[] | undefined, root: string): PM2AppHint | undefined {
+  if (!apps?.length) return undefined;
+  const want = normalizeBlockRoot(root);
+  const exact = apps.find((a) => normalizeBlockRoot(a.cwd || ".") === want);
+  if (exact) return exact;
+  if (want === "." || apps.length === 1) return apps[0];
+  return undefined;
+}
+
+function applyPM2App(block: ProjectBlock, app: PM2AppHint | undefined): ProjectBlock {
+  if (!app) return block;
+  const run = runFromPM2App(app);
+  return {
+    ...block,
+    processManager: "pm2",
+    processName: app.name || block.processName,
+    run: run || block.run,
+    port: app.port ? String(app.port) : block.port,
+  };
+}
+
 export function seedBlockFromInspect(inspect: DeployInspect, repoFullName: string): ProjectBlock {
   const root = inspect.root_directory || ".";
   const language = inspect.language || "unknown";
   const preset = frameworkPreset(language);
   const pm =
-    inspect.process_manager === "pm2"
+    inspect.process_manager === "pm2" || inspect.has_pm2_ecosystem
       ? "pm2"
       : preset?.processManager || "none";
-  return {
+  const base: ProjectBlock = {
     id: newBlockId(),
     name: nameFromRoot(root, repoFullName),
     root,
@@ -93,12 +134,62 @@ export function seedBlockFromInspect(inspect: DeployInspect, repoFullName: strin
     preStart: "",
     port: preset?.port || "",
     processManager: pm,
+    processName: "",
     autoDetect: true,
     healthPath: "",
     healthPort: "",
     healthTimeout: "",
     startGroup: 0,
   };
+  const app = pickPM2App(inspect.pm2_apps, root);
+  const filled = applyPM2App(base, app);
+  // Prefer a human folder name for the block label; keep ecosystem name as processName.
+  if (app?.name && normalizeBlockRoot(root) === ".") {
+    // Single-app at repo root: use ecosystem name as the block name too when
+    // it is more specific than the repo slug.
+    if (!filled.name || filled.name === nameFromRoot(".", repoFullName)) {
+      return { ...filled, name: app.name };
+    }
+  }
+  return filled;
+}
+
+/**
+ * Seed one or more blocks from inspect. When the ecosystem lists several apps
+ * with distinct cwd values, each becomes its own block.
+ */
+export function seedBlocksFromInspect(inspect: DeployInspect, repoFullName: string): ProjectBlock[] {
+  const apps = inspect.pm2_apps || [];
+  const distinctCwd = new Set(
+    apps.map((a) => normalizeBlockRoot(a.cwd || ".")).filter(Boolean),
+  );
+  if (apps.length <= 1 || distinctCwd.size <= 1) {
+    return [seedBlockFromInspect(inspect, repoFullName)];
+  }
+  const language = inspect.language || "unknown";
+  const preset = frameworkPreset(language);
+  return apps.map((app, i) => {
+    const root = normalizeBlockRoot(app.cwd || ".");
+    const run = runFromPM2App(app);
+    return {
+      id: newBlockId(),
+      name: app.name || nameFromRoot(root, repoFullName),
+      root,
+      language,
+      install: i === 0 ? inspect.install_script || preset?.install || "" : preset?.install || "",
+      run: run || defaultRunForLanguage(language),
+      cleanup: preset?.cleanup || "",
+      preStart: "",
+      port: app.port ? String(app.port) : preset?.port || "",
+      processManager: "pm2",
+      processName: app.name || "",
+      autoDetect: true,
+      healthPath: "",
+      healthPort: "",
+      healthTimeout: "",
+      startGroup: i,
+    } satisfies ProjectBlock;
+  });
 }
 
 /** Sensible start command when the process manager has nothing else to go on. */
@@ -117,17 +208,22 @@ export function applyFramework(block: ProjectBlock, frameworkId: string): Projec
       run: block.run || defaultRunForFramework(frameworkId),
     };
   }
-  return { ...block, ...fields };
+  return { ...block, ...fields, processName: block.processName };
 }
 
 /** Merge repo detection into a block (language / install / run / port / pm). */
 export function applyDetection(
   block: ProjectBlock,
-  det: { language?: string; install_script?: string; has_pm2_ecosystem?: boolean },
+  det: {
+    language?: string;
+    install_script?: string;
+    has_pm2_ecosystem?: boolean;
+    pm2_apps?: PM2AppHint[];
+  },
 ): ProjectBlock {
   const lang = det.language || "unknown";
   const preset = frameworkPreset(lang);
-  return {
+  const next: ProjectBlock = {
     ...block,
     language: lang,
     install: det.install_script || preset?.install || block.install,
@@ -138,6 +234,23 @@ export function applyDetection(
       block.processManager !== "none"
         ? block.processManager
         : preset?.processManager || (det.has_pm2_ecosystem ? "pm2" : block.processManager),
+  };
+  const app = pickPM2App(det.pm2_apps, block.root);
+  // Only fill empty fields from ecosystem so a manual edit is not wiped on re-detect.
+  const filled = applyPM2App(
+    {
+      ...next,
+      processName: block.processName,
+      run: block.run || next.run,
+      port: block.port || next.port,
+    },
+    app,
+  );
+  return {
+    ...filled,
+    processName: block.processName || filled.processName,
+    run: block.run || filled.run,
+    port: block.port || filled.port,
   };
 }
 
@@ -154,6 +267,7 @@ export function emptyBlock(): ProjectBlock {
     preStart: "",
     port: preset.port,
     processManager: preset.processManager,
+    processName: "",
     autoDetect: true,
     healthPath: "",
     healthPort: "",
@@ -201,6 +315,7 @@ export function blocksToDeployApps(
     cleanup: block.cleanup.trim() || undefined,
     pre_start: block.preStart.trim() || undefined,
     process_manager: block.processManager,
+    process_name: block.processName.trim() || undefined,
     port: block.port ? Number(block.port) : undefined,
     env: appEnv[block.name] ?? [],
     start_group: block.startGroup > 0 ? block.startGroup : undefined,
@@ -247,6 +362,7 @@ export function blocksFromProject(project: DeployProject): ProjectBlock[] {
     preStart: app.pre_start || "",
     port: app.port ? String(app.port) : project.port ? String(project.port) : "",
     processManager: app.process_manager || project.process_manager || "none",
+    processName: app.process_name || "",
     autoDetect: false,
     healthPath: app.health?.path || "",
     healthPort: app.health?.port ? String(app.health.port) : "",

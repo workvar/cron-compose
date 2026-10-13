@@ -344,6 +344,16 @@ export type GitRef = {
   default?: boolean;
 };
 
+/** One apps[] entry parsed from ecosystem.config.* / pm2.json during inspect. */
+export type PM2AppHint = {
+  name: string;
+  script?: string;
+  args?: string;
+  cwd?: string;
+  port?: number;
+  file?: string;
+};
+
 export type DeployDetection = {
   language: string;
   install_script: string;
@@ -351,6 +361,8 @@ export type DeployDetection = {
   supports_port: boolean;
   workspaces: string[];
   root_directory: string;
+  /** Parsed from ecosystem / pm2.json when present — used to autopopulate blocks. */
+  pm2_apps?: PM2AppHint[];
 };
 
 export type DeploySpecApp = {
@@ -365,6 +377,8 @@ export type DeploySpecApp = {
   pre_start?: string;
   port?: number;
   process_manager?: string;
+  /** Explicit pm2/systemd name (e.g. from ecosystem.config.js). */
+  process_name?: string;
   /** Deploy wave; same group starts together, lower groups first. */
   start_group?: number;
   env?: DeployEnvVar[];
@@ -443,7 +457,10 @@ export type DeployApp = {
   env?: DeployEnvVar[];
   /** Per-app health check path. Unset falls back to the project's shared check. */
   health?: DeployAppHealth;
-  /** pm2/systemd name on the host (project-app). Computed by the API. */
+  /**
+   * pm2/systemd name on the host. When set (ecosystem / import), stored and
+   * sent to the agent as-is; otherwise the API fills project-app.
+   */
   process_name?: string;
   /**
    * Deploy wave. Same group = parallel pre-start/start/health; lower groups

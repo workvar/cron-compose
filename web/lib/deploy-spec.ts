@@ -119,6 +119,7 @@ export function specToDraft(
         pre_start: spec.pre_start,
         port: spec.port,
         process_manager: spec.process_manager,
+        process_name: undefined,
         env: [] as DeployEnvVar[],
       }];
 
@@ -140,6 +141,7 @@ export function specToDraft(
       preStart: app.pre_start || spec.pre_start || "",
       port: port ? String(port) : "",
       processManager: app.process_manager || spec.process_manager || "none",
+      processName: app.process_name || "",
       // Came from an explicit croncompose.yml (or a pasted one): never let a later
       // root-folder change silently overwrite what the file said.
       autoDetect: false,
@@ -292,6 +294,7 @@ export function draftToYaml(d: ExportInput): string {
     line("pre_start", b.preStart, "    ");
     line("port", Number(b.port) || 0, "    ");
     line("process_manager", b.processManager === "none" ? "" : b.processManager, "    ");
+    line("process_name", b.processName.trim(), "    ");
     line("start_group", b.startGroup > 0 ? b.startGroup : 0, "    ");
     if (b.healthPath.trim()) {
       out.push("    health:");
@@ -326,6 +329,7 @@ cleanup: rm -rf .git node_modules/.cache   # after build; frameworks set this
 pre_start: npx prisma migrate deploy       # after every deploy, before start
 port: 3000
 process_manager: pm2         # none | pm2 | systemd | docker
+# process_name: shop-web     # optional; defaults to project-app. Autofilled from ecosystem.config.js
 redeploy_on: [branch]        # branch | tag | release
 
 env:

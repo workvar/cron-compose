@@ -27,7 +27,7 @@ import {
   emptyBlock,
   ensureUniqueBlockNames,
   hasDuplicateRoots,
-  seedBlockFromInspect,
+  seedBlocksFromInspect,
   DEFAULT_REDEPLOY_ON,
   type ProjectBlock,
   type RedeployMode,
@@ -440,7 +440,7 @@ function NewDeployForm() {
         runAsUser: form.runAsUser,
         branch: ins?.default_branch || src.defaultBranch || "main",
         clonePath: ins?.clone_path || "",
-        blocks: ins ? [seedBlockFromInspect(ins, src.fullName)] : [emptyBlock()],
+        blocks: ins ? seedBlocksFromInspect(ins, src.fullName) : [emptyBlock()],
       };
       if (!ins) next.blocks[0] = { ...next.blocks[0], root: ".", name: repoName };
       if (fileSpec && fileSpec.valid) {
@@ -623,7 +623,7 @@ function NewDeployForm() {
       runAsUser: form.runAsUser,
       branch: form.branch || ins?.default_branch || src.defaultBranch || "main",
       clonePath: ins?.clone_path || "",
-      blocks: ins ? [seedBlockFromInspect(ins, src.fullName)] : [emptyBlock()],
+      blocks: ins ? seedBlocksFromInspect(ins, src.fullName) : [emptyBlock()],
     });
   }
 

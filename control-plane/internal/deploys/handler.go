@@ -846,6 +846,7 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 			RunScript: a.Run, CleanupScript: cleanup, PreStartScript: a.PreStart,
 			Language: lang, Port: int32(a.Port), ProcessManager: pm, Env: merged,
 			Health: healthCheckForApp(a), StartGroup: int32(a.StartGroup),
+			ProcessName: a.ProcessName,
 		})
 	}
 	if len(cmd.Apps) == 0 {

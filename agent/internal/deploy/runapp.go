@@ -38,7 +38,7 @@ func (m *Manager) runApps(ctx context.Context, cmd *agentv1.DeployCommand, layou
 		if pm == "" {
 			pm = cmd.GetProcessManager()
 		}
-		name := QualifyProcessName(project, appName)
+		name := ProcessNameFor(project, app)
 		port := app.GetPort()
 		if port == 0 {
 			port = cmd.GetPort()
@@ -240,17 +240,22 @@ type pm2Listed struct {
 
 // waitPM2Online polls `pm2 jlist` until the process we just started is online.
 // Ecosystem files choose their own process name, so a name match falls back to
-// the working directory. The returned name is what log tailing should follow.
-func (m *Manager) waitPM2Online(ctx context.Context, runID, token, phase, work, want string, cred *osuser.Credential, tmpDir string) (string, error) {
+// aliases and the working directory. The returned name is what log tailing follows.
+func (m *Manager) waitPM2Online(ctx context.Context, runID, token, phase, work, want string, aliases []string, cred *osuser.Credential, tmpDir string) (string, error) {
 	deadline := time.Now().Add(readyBudget)
-	m.phaseLine(runID, token, phase, "waiting for pm2 process "+want+" (in "+work+")")
+	label := want
+	if len(aliases) > 0 && aliases[0] != want {
+		label = want + " / " + strings.Join(aliases, ", ")
+	}
+	m.phaseLine(runID, token, phase, "waiting for pm2 process "+label+" (in "+work+")")
 	var last string
 	for {
 		out, err := runCmdOut(ctx, work, nil, cred, tmpDir, "pm2", "jlist")
 		if err != nil {
 			return "", fmt.Errorf("pm2 jlist: %w", err)
 		}
-		proc, ok := pickPM2(parsePM2Jlist(out), want, work)
+		procs := parsePM2Jlist(out)
+		proc, ok := pickPM2(procs, want, work, aliases...)
 		if ok {
 			status := strings.ToLower(strings.TrimSpace(proc.Pm2Env.Status))
 			last = proc.Name + "=" + status
@@ -267,7 +272,17 @@ func (m *Manager) waitPM2Online(ctx context.Context, runID, token, phase, work, 
 		}
 		if time.Now().After(deadline) {
 			if last == "" {
-				last = "not in pm2 jlist"
+				names := make([]string, 0, len(procs))
+				for _, p := range procs {
+					if p.Name != "" {
+						names = append(names, p.Name)
+					}
+				}
+				if len(names) == 0 {
+					last = "pm2 jlist empty — start may have failed (check ecosystem script/cwd)"
+				} else {
+					last = "jlist has " + strings.Join(names, ", ") + " (wanted " + label + ")"
+				}
 			}
 			return "", fmt.Errorf("pm2 process %s did not come online within %s (%s)", want, readyBudget, last)
 		}
@@ -292,28 +307,122 @@ func parsePM2Jlist(out string) []pm2Listed {
 	return nil
 }
 
-// pickPM2 finds the process pm2 actually registered. A qualified name wins;
-// otherwise the single process whose cwd is the app directory (ecosystem files
-// name themselves).
-func pickPM2(procs []pm2Listed, want, work string) (pm2Listed, bool) {
-	work = filepath.Clean(work)
+// pickPM2 finds the process pm2 actually registered. Ecosystem files choose
+// their own name (peepal-proxy) while we register peepal-rp-proxy, and pm2's
+// cwd is often the release path while work is …/current/proxy — Resolve those.
+func pickPM2(procs []pm2Listed, want, work string, aliases ...string) (pm2Listed, bool) {
+	work = resolvePath(work)
 	base := filepath.Base(work)
-	var cwdHits []pm2Listed
+	wants := make([]string, 0, 1+len(aliases))
+	wants = append(wants, want)
+	wants = append(wants, aliases...)
+	var nameHits, cwdHits []pm2Listed
 	for _, p := range procs {
-		if p.Name != "" && (p.Name == want || p.Name == base) {
-			return p, true
+		if p.Name == "" {
+			continue
 		}
-		if filepath.Clean(p.Pm2Env.Cwd) == work {
+		hit := false
+		for _, w := range wants {
+			if w != "" && (p.Name == w || pm2NameMatch(p.Name, w, base)) {
+				hit = true
+				break
+			}
+		}
+		if hit {
+			nameHits = append(nameHits, p)
+			continue
+		}
+		if sameWorkDir(p.Pm2Env.Cwd, work, base) {
 			cwdHits = append(cwdHits, p)
 		}
 	}
-	for _, p := range cwdHits {
+	if hit, ok := preferOnline(nameHits); ok {
+		return hit, true
+	}
+	if hit, ok := preferOnline(cwdHits); ok {
+		return hit, true
+	}
+	return pm2Listed{}, false
+}
+
+func preferOnline(procs []pm2Listed) (pm2Listed, bool) {
+	for _, p := range procs {
 		if strings.EqualFold(p.Pm2Env.Status, "online") {
 			return p, true
 		}
 	}
-	if len(cwdHits) > 0 {
-		return cwdHits[0], true
+	if len(procs) > 0 {
+		return procs[0], true
 	}
 	return pm2Listed{}, false
+}
+
+func resolvePath(p string) string {
+	p = filepath.Clean(p)
+	if p == "" {
+		return p
+	}
+	if real, err := filepath.EvalSymlinks(p); err == nil && real != "" {
+		return real
+	}
+	return p
+}
+
+func sameWorkDir(cwd, work, base string) bool {
+	cwd = strings.TrimSpace(cwd)
+	if cwd == "" {
+		return false
+	}
+	c := resolvePath(cwd)
+	w := resolvePath(work)
+	if c == w {
+		return true
+	}
+	// Release dir vs current/ symlink, or trailing segment only.
+	if base != "" && (strings.HasSuffix(c, string(filepath.Separator)+base) || filepath.Base(c) == base) {
+		// Prefer a hit under the same project tree when both paths share a parent.
+		if w == "" {
+			return true
+		}
+		wp := filepath.Dir(w)
+		cp := filepath.Dir(c)
+		if wp == cp {
+			return true
+		}
+		// …/releases/<id>/proxy vs …/current/proxy after EvalSymlinks failed on one side.
+		if strings.Contains(c, string(filepath.Separator)+"releases"+string(filepath.Separator)) &&
+			strings.Contains(w, string(filepath.Separator)+"current") &&
+			filepath.Base(c) == base && filepath.Base(w) == base {
+			return true
+		}
+		if strings.Contains(w, string(filepath.Separator)+"releases"+string(filepath.Separator)) &&
+			strings.Contains(c, string(filepath.Separator)+"current") &&
+			filepath.Base(c) == base && filepath.Base(w) == base {
+			return true
+		}
+	}
+	return false
+}
+
+// pm2NameMatch: peepal-rp-proxy ↔ peepal-proxy ↔ proxy.
+func pm2NameMatch(got, want, appBase string) bool {
+	got = strings.TrimSpace(got)
+	want = strings.TrimSpace(want)
+	if got == "" {
+		return false
+	}
+	if got == want || got == appBase {
+		return true
+	}
+	if appBase != "" && (got == appBase || strings.HasSuffix(got, "-"+appBase)) {
+		return true
+	}
+	if want != "" && strings.HasSuffix(want, "-"+got) {
+		return true
+	}
+	// peepal-rp-proxy vs peepal-proxy: same trailing segment.
+	if appBase != "" && strings.HasSuffix(want, "-"+appBase) && strings.HasSuffix(got, "-"+appBase) {
+		return true
+	}
+	return false
 }

@@ -2674,7 +2674,10 @@ type DeployApp struct {
 	PreStartScript string `protobuf:"bytes,11,opt,name=pre_start_script,json=preStartScript,proto3" json:"pre_start_script,omitempty"`
 	// Start wave: apps that share a group run pre_start/start/health together;
 	// lower groups finish before higher ones begin. 0 = first / all-together default.
-	StartGroup    int32 `protobuf:"varint,12,opt,name=start_group,json=startGroup,proto3" json:"start_group,omitempty"`
+	StartGroup int32 `protobuf:"varint,12,opt,name=start_group,json=startGroup,proto3" json:"start_group,omitempty"`
+	// Explicit pm2/systemd process name (e.g. from ecosystem.config.js). When set,
+	// the agent uses it instead of QualifyProcessName(project, name).
+	ProcessName   string `protobuf:"bytes,13,opt,name=process_name,json=processName,proto3" json:"process_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2791,6 +2794,13 @@ func (x *DeployApp) GetStartGroup() int32 {
 		return x.StartGroup
 	}
 	return 0
+}
+
+func (x *DeployApp) GetProcessName() string {
+	if x != nil {
+		return x.ProcessName
+	}
+	return ""
 }
 
 // One task in a deploy flow wave (e.g. Proxy · install).
@@ -4133,7 +4143,7 @@ const file_agent_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x126\n" +
 	"\x05users\x18\x02 \x03(\v2 .croncompose.agent.v1.SystemUserR\x05users\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"\x86\x04\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\xa9\x04\n" +
 	"\tDeployApp\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12%\n" +
 	"\x0eroot_directory\x18\x02 \x01(\tR\rrootDirectory\x12%\n" +
@@ -4149,7 +4159,8 @@ const file_agent_proto_rawDesc = "" +
 	" \x01(\tR\rcleanupScript\x12(\n" +
 	"\x10pre_start_script\x18\v \x01(\tR\x0epreStartScript\x12\x1f\n" +
 	"\vstart_group\x18\f \x01(\x05R\n" +
-	"startGroup\x1a6\n" +
+	"startGroup\x12!\n" +
+	"\fprocess_name\x18\r \x01(\tR\vprocessName\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"8\n" +

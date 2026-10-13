@@ -3,6 +3,8 @@ package deploy
 import (
 	"regexp"
 	"strings"
+
+	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
 )
 
 var processNameRe = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
@@ -40,4 +42,21 @@ func QualifyProcessName(project, app string) string {
 		return a
 	}
 	return prefix + a
+}
+
+// ProcessNameFor returns the host process name for an app: an explicit
+// process_name from the control plane (ecosystem override) wins; otherwise
+// QualifyProcessName(project, app name).
+func ProcessNameFor(project string, app *agentv1.DeployApp) string {
+	if app != nil {
+		if n := strings.TrimSpace(app.GetProcessName()); n != "" {
+			return n
+		}
+		name := app.GetName()
+		if name == "" {
+			name = "app"
+		}
+		return QualifyProcessName(project, name)
+	}
+	return QualifyProcessName(project, "app")
 }

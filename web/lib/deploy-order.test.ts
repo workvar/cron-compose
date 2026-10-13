@@ -20,6 +20,7 @@ function block(id: string, name: string, startGroup = 0): ProjectBlock {
     preStart: "",
     port: "",
     processManager: "pm2",
+    processName: "",
     autoDetect: false,
     healthPath: "",
     healthPort: "",

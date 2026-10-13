@@ -75,9 +75,10 @@ type SpecApp struct {
 	// app that doesn't set its own keeps behaving exactly as it did before this
 	// existed.
 	Health *SpecHealth `yaml:"health,omitempty" json:"health,omitempty"`
-	// ProcessName is the pm2/systemd name on the host (project-app). Computed for
-	// API responses; not stored in croncompose.yml.
-	ProcessName string `yaml:"-" json:"process_name,omitempty"`
+	// ProcessName is the pm2/systemd name on the host. When set (e.g. from an
+	// ecosystem.config.js apps[].name), it is stored and sent to the agent as-is.
+	// When empty, EnrichProcessNames fills project-app for API responses.
+	ProcessName string `yaml:"process_name,omitempty" json:"process_name,omitempty"`
 	// StartGroup is the deploy wave. Apps in the same group run pre-start/start/
 	// health together; lower groups finish before higher ones. 0 = first wave.
 	StartGroup int `yaml:"start_group,omitempty" json:"start_group,omitempty"`

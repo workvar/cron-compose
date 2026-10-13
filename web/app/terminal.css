@@ -370,95 +370,166 @@
   .deploy-proc-strip { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 }
 .deploy-proc-compact { padding: 14px; }
-.deploy-wave-board { display: grid; gap: 12px; }
-.deploy-wave-strip {
-  list-style: none;
+.deploy-wave-board { display: grid; gap: 14px; }
+
+/* Wave flow: waves connected by arrows; parallel tasks within a wave */
+.deploy-flow {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  padding: 4px 2px 10px;
+  scrollbar-width: thin;
 }
-.deploy-wave-pill {
+.deploy-flow-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex: none;
+}
+.deploy-flow-arrow {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--muted);
+  color: var(--faint);
+  padding: 0 6px;
+  flex: none;
 }
-.deploy-wave-pill.is-current {
-  border-color: var(--green);
-  background: var(--green-soft);
-  color: var(--text);
-}
-.deploy-wave-pill.is-done { color: var(--text-2); }
-.deploy-wave-pill.is-failed { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
-.deploy-wave-pill-pct {
-  font-variant-numeric: tabular-nums;
-  color: var(--green);
-  font-size: 12px;
-}
-.deploy-wave-tasks {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: 1fr;
-}
-@media (min-width: 800px) {
-  .deploy-wave-tasks { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-}
-.deploy-wave-task {
+.deploy-flow-wave {
   display: grid;
   gap: 8px;
-  text-align: left;
-  padding: 12px;
+  min-width: 140px;
+  padding: 10px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--surface-2);
+}
+.deploy-flow-wave.is-current {
+  border-color: var(--green);
+  background: var(--green-soft);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 18%, transparent);
+}
+.deploy-flow-wave.is-failed {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+}
+.deploy-flow-wave-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.deploy-flow-wave.is-current .deploy-flow-wave-head { color: var(--text); }
+.deploy-flow-wave-pct {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.deploy-flow-wave-tasks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 6px;
+}
+.deploy-flow-wave-task-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.deploy-flow-parallel {
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 2px;
+}
+.deploy-flow-node {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  text-align: left;
+  min-width: 148px;
+  padding: 8px 10px;
+  border-radius: calc(var(--radius) - 2px);
+  border: 1px solid var(--border);
+  background: var(--surface);
   color: inherit;
   cursor: pointer;
   font: inherit;
 }
-.deploy-wave-task.is-selected {
-  border-color: var(--green);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 20%, transparent);
-}
-.deploy-wave-task-top {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-.deploy-wave-task-copy {
+.deploy-flow-node-body {
   flex: 1;
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 1px;
 }
-.deploy-wave-task-copy strong {
-  font-size: 13.5px;
+.deploy-flow-node-app {
+  font-size: 13px;
+  font-weight: 700;
   color: var(--text);
 }
-.deploy-wave-task-copy span {
-  font-size: 12px;
+.deploy-flow-node-phase {
+  font-size: 11.5px;
   color: var(--muted);
   text-transform: capitalize;
 }
-.deploy-wave-task-pct {
-  font-size: 13px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-}
-.deploy-wave-task-state {
-  font-size: 12px;
+.deploy-flow-node-state {
+  font-size: 11px;
   color: var(--muted);
 }
-.deploy-wave-task-state.is-active { color: var(--green); }
-.deploy-wave-task-state.is-failed { color: var(--danger); }
+.deploy-flow-node-state.is-active { color: var(--green); }
+.deploy-flow-node-state.is-failed { color: var(--danger); }
+.deploy-flow-node-pct {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  padding-top: 1px;
+}
+.deploy-flow-node.is-selected {
+  border-color: var(--green);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 22%, transparent);
+}
+.deploy-flow-node.is-failed {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+/* One terminal panel per process (+ server) */
+.deploy-term-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 960px) {
+  .deploy-term-grid.is-multi {
+    grid-template-columns: repeat(var(--deploy-term-cols, 2), minmax(0, 1fr));
+  }
+}
+.deploy-proc-term {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  min-width: 0;
+}
+.deploy-proc-term.is-focused {
+  border-color: color-mix(in srgb, var(--green) 45%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--green) 25%, transparent);
+}
+.deploy-proc-term.is-failed {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+}
+.deploy-term-embedded {
+  margin: 0 -14px -14px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--radius) var(--radius);
+  overflow: hidden;
+}
 .deploy-term-tabs {
   padding: 0;
   overflow: hidden;
@@ -475,12 +546,13 @@
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
-  padding: 10px 14px;
+  padding: 8px 12px;
   cursor: pointer;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+  text-transform: capitalize;
 }
 .deploy-term-tab.is-active {
   color: var(--text);

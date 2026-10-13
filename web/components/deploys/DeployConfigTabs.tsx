@@ -429,10 +429,11 @@ function BuildRunTab({ blocks, onBlocks, clonePath, projectName }: Props) {
           <em>build script</em> runs inside that release folder; <em>cleanup</em> then drops
           source and caches. After activation, optional <em>pre-start</em> runs once (migrations),
           then the <em>run script</em> starts the process (pm2 / systemd / docker) — for example{" "}
-          <code>./app</code> or <code>npm start</code>. Process names are prefixed with the project
-          name (e.g. <code>shop-web</code>) so apps from different projects do not collide. With pm2,
-          CronCompose also runs <code>pm2 save</code> and best-effort <code>pm2 startup</code> so
-          the app returns after reboot.
+          <code>./app</code> or <code>npm start</code>. Process names default to{" "}
+          <code>project-app</code>; when an <code>ecosystem.config.js</code> is present,{" "}
+          <code>apps[].name</code> is used instead. With pm2, CronCompose also runs{" "}
+          <code>pm2 save</code> and best-effort <code>pm2 startup</code> so the app returns after
+          reboot.
         </p>
       </div>
       <div className="stack">
@@ -517,7 +518,9 @@ function ProcessManagerTab({ blocks, onBlocks }: Props) {
     <div className="config-tab-panel">
       <p className="field-hint" style={{ marginTop: 0 }}>
         Choose what keeps each process running after the release is activated. The run script is
-        handed to the manager as the start command when set.
+        handed to the manager as the start command when set. When an{" "}
+        <code>ecosystem.config.js</code> is present, the process name is filled from{" "}
+        <code>apps[].name</code>.
       </p>
       <div className="stack">
         {blocks.map((block) => (
@@ -536,6 +539,26 @@ function ProcessManagerTab({ blocks, onBlocks }: Props) {
                 }
                 aria-label="Process manager"
               />
+            </div>
+            <div className="field" style={{ marginTop: 12 }}>
+              <label htmlFor={`block-pname-${block.id}`}>Process name</label>
+              <input
+                id={`block-pname-${block.id}`}
+                type="text"
+                value={block.processName}
+                placeholder="Leave blank to use project-app"
+                spellCheck={false}
+                onChange={(e) =>
+                  onBlocks(
+                    blocks.map((b) =>
+                      b.id === block.id ? { ...b, processName: e.target.value } : b,
+                    ),
+                  )
+                }
+              />
+              <p className="field-hint">
+                pm2 / systemd name on the host. Autofilled from ecosystem when available.
+              </p>
             </div>
             <details className="advanced" open={!!block.healthPath} style={{ marginTop: 8 }}>
               <summary>Health check for this process</summary>

@@ -1,6 +1,21 @@
 package deploy
 
-import "testing"
+import (
+	"testing"
+
+	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
+)
+
+func TestProcessNameForOverride(t *testing.T) {
+	app := &agentv1.DeployApp{Name: "Proxy", ProcessName: "peepal-proxy"}
+	if got := ProcessNameFor("peepal-rp", app); got != "peepal-proxy" {
+		t.Fatalf("got %q", got)
+	}
+	plain := &agentv1.DeployApp{Name: "Proxy"}
+	if got := ProcessNameFor("peepal-rp", plain); got != "peepal-rp-proxy" {
+		t.Fatalf("got %q", got)
+	}
+}
 
 func TestQualifyProcessName(t *testing.T) {
 	cases := []struct {

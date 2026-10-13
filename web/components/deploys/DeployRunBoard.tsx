@@ -1,8 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   buildDeployLive,
+  type LiveProcess,
   type LiveStep,
   type LiveView,
   type ProgressApp,
@@ -25,6 +33,19 @@ type Props = {
   status: string;
   live: boolean;
 };
+
+const PHASE_ORDER = [
+  "install",
+  "build",
+  "cleanup",
+  "pre_start",
+  "run",
+  "start",
+  "health",
+  "preflight",
+  "clone",
+  "release",
+] as const;
 
 function appsOf(project: DeployProject | null): ProgressApp[] {
   if (!project) return [];
@@ -52,8 +73,32 @@ function appsOf(project: DeployProject | null): ProgressApp[] {
   }];
 }
 
-function paneText(view: LiveView, pane: string): string {
-  return view.lines.filter((l) => l.pane === pane).map((l) => l.text).join("\n");
+function paneText(view: LiveView, pane: string, phase?: string): string {
+  return view.lines
+    .filter((l) => l.pane === pane && (!phase || phase === "all" || l.phase === phase))
+    .map((l) => l.text)
+    .join("\n");
+}
+
+function phasesForProcess(proc: LiveProcess): { id: string; label: string }[] {
+  const seen = new Set<string>();
+  const out: { id: string; label: string }[] = [{ id: "all", label: "All" }];
+  for (const kind of PHASE_ORDER) {
+    if (proc.steps.some((s) => s.kind === kind) && !seen.has(kind)) {
+      seen.add(kind);
+      out.push({ id: kind, label: kind.replace(/_/g, " ") });
+    }
+  }
+  return out;
+}
+
+function activePhase(proc: LiveProcess): string {
+  const active = proc.steps.find((s) => s.state === "active");
+  if (active) return active.kind;
+  const failed = proc.steps.find((s) => s.state === "failed");
+  if (failed) return failed.kind;
+  const lastDone = [...proc.steps].reverse().find((s) => s.state === "done");
+  return lastDone?.kind || "all";
 }
 
 function rowForProcess(rows: ProcessRow[], name: string): ProcessRow | null {
@@ -89,17 +134,19 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
   );
   const waveIdx = useMemo(() => activeWaveIndex(waves), [waves]);
 
-  const [termPane, setTermPane] = useState<string>("shared");
+  const [focusPane, setFocusPane] = useState<string>("shared");
+  const [phaseByPane, setPhaseByPane] = useState<Record<string, string>>({});
   const [inventory, setInventory] = useState<DeployInventory | null>(null);
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [controlsError, setControlsError] = useState<string | null>(null);
 
-  // Follow the active wave's first active task into the terminal tabs.
   useEffect(() => {
     const w = waves[waveIdx];
     if (!w) return;
-    const active = w.tasks.find((t) => t.state === "active");
-    if (active) setTermPane(active.pane);
+    const active = w.tasks.find((t) => t.state === "active") || w.tasks[0];
+    if (!active) return;
+    setFocusPane(active.pane);
+    setPhaseByPane((prev) => ({ ...prev, [active.pane]: active.phase }));
   }, [waveIdx, waves]);
 
   const refreshInventory = useCallback(async () => {
@@ -145,15 +192,10 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
   const manageable = processRows.some((r) => r.pm !== "none");
   const runFailed = status === "failed" || status === "canceled" || status === "agent_offline";
 
-  const tabs = useMemo(() => {
-    const out: { id: string; label: string }[] = [{ id: "shared", label: "Server" }];
-    for (const p of view.processes) out.push({ id: p.id, label: p.name });
-    return out;
-  }, [view.processes]);
-
-  useEffect(() => {
-    if (!tabs.some((t) => t.id === termPane)) setTermPane(tabs[0]?.id || "shared");
-  }, [tabs, termPane]);
+  const selectTask = useCallback((pane: string, phase: string) => {
+    setFocusPane(pane);
+    setPhaseByPane((prev) => ({ ...prev, [pane]: phase }));
+  }, []);
 
   return (
     <div className="deploy-live">
@@ -181,15 +223,30 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
       <WaveVisualizer
         waves={waves}
         activeIndex={waveIdx}
-        selectedPane={termPane}
-        onSelectPane={setTermPane}
+        selectedPane={focusPane}
+        selectedPhase={phaseByPane[focusPane]}
+        onSelectTask={selectTask}
       />
 
       {controlsError && (
         <p className="form-error" style={{ margin: 0 }}>{controlsError}</p>
       )}
 
-      <div className="deploy-proc-strip">
+      <div
+        className={`deploy-term-grid${view.processes.length > 1 ? " is-multi" : ""}`}
+        style={{ ["--deploy-term-cols" as string]: Math.min(view.processes.length, 3) }}
+      >
+        <ProcessTerminal
+          title="Server"
+          pane="shared"
+          view={view}
+          steps={view.shared}
+          phase={phaseByPane.shared || "all"}
+          onPhase={(p) => setPhaseByPane((prev) => ({ ...prev, shared: p }))}
+          focused={focusPane === "shared"}
+          onFocus={() => setFocusPane("shared")}
+          live={live}
+        />
         {view.processes.map((proc) => {
           const row = manageable ? rowForProcess(processRows, proc.name) : null;
           const showControls = Boolean(row && row.pm !== "none");
@@ -206,20 +263,24 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
             knownRunning ||
             startDone ||
             Boolean(row?.resource);
+          const phase = phaseByPane[proc.id] || activePhase(proc);
           return (
-            <section key={proc.id} className="panel deploy-proc deploy-proc-compact">
-              <div className="deploy-proc-top">
-                <div>
-                  <div className="deploy-proc-name">{proc.name}</div>
-                  <div className={`deploy-proc-state is-${proc.state}`}>
-                    {stateLabel(proc.state)}
-                    {row?.resource?.state ? ` · pm2 ${row.resource.state}` : ""}
-                  </div>
-                </div>
-                <div className="deploy-live-pct sm" aria-hidden="true">{proc.percent}%</div>
-              </div>
-              {showControls && (
-                <div className="deploy-proc-actions-wrap">
+            <ProcessTerminal
+              key={proc.id}
+              title={proc.name}
+              pane={proc.id}
+              view={view}
+              steps={proc.steps}
+              phase={phase}
+              onPhase={(p) => setPhaseByPane((prev) => ({ ...prev, [proc.id]: p }))}
+              focused={focusPane === proc.id}
+              onFocus={() => setFocusPane(proc.id)}
+              live={live}
+              state={proc.state}
+              percent={proc.percent}
+              pmState={row?.resource?.state}
+              actions={
+                showControls ? (
                   <ProcessTaskActions
                     row={row}
                     projectId={project?.id}
@@ -229,46 +290,114 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
                     enabled={controlsEnabled}
                     onChanged={() => void refreshInventory()}
                   />
-                </div>
-              )}
-              <div
-                className={`deploy-meter${proc.state === "failed" ? " is-failed" : ""}`}
-                role="progressbar"
-                aria-label={proc.name}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={proc.percent}
-              >
-                <span style={{ width: `${proc.percent}%` }} />
-              </div>
-            </section>
+                ) : null
+              }
+            />
           );
         })}
       </div>
+    </div>
+  );
+}
 
-      <div className="panel deploy-term-tabs">
-        <div className="deploy-term-tablist" role="tablist" aria-label="Deploy logs">
+function ProcessTerminal({
+  title,
+  pane,
+  view,
+  steps,
+  phase,
+  onPhase,
+  focused,
+  onFocus,
+  live,
+  state,
+  percent,
+  pmState,
+  actions,
+}: {
+  title: string;
+  pane: string;
+  view: LiveView;
+  steps: LiveStep[];
+  phase: string;
+  onPhase: (phase: string) => void;
+  focused: boolean;
+  onFocus: () => void;
+  live: boolean;
+  state?: StepState;
+  percent?: number;
+  pmState?: string | null;
+  actions?: ReactNode;
+}) {
+  const tabs =
+    pane === "shared"
+      ? [
+          { id: "all", label: "All" },
+          ...["preflight", "clone", "release"]
+            .filter((k) => steps.some((s) => s.kind === k))
+            .map((k) => ({ id: k, label: k })),
+        ]
+      : phasesForProcess({
+          id: pane,
+          name: title,
+          state: state || "pending",
+          percent: percent || 0,
+          steps,
+        });
+  const text = paneText(view, pane, phase);
+
+  return (
+    <section
+      className={`panel deploy-proc-term${focused ? " is-focused" : ""}${state === "failed" ? " is-failed" : ""}`}
+      onClick={onFocus}
+    >
+      <div className="deploy-proc-top">
+        <div>
+          <div className="deploy-proc-name">{title}</div>
+          <div className={`deploy-proc-state is-${state || "pending"}`}>
+            {state ? stateLabel(state) : "Server"}
+            {pmState ? ` · pm2 ${pmState}` : ""}
+          </div>
+        </div>
+        {typeof percent === "number" && (
+          <div className="deploy-live-pct sm" aria-hidden="true">{percent}%</div>
+        )}
+      </div>
+      {actions && <div className="deploy-proc-actions-wrap">{actions}</div>}
+      {typeof percent === "number" && (
+        <div
+          className={`deploy-meter${state === "failed" ? " is-failed" : ""}`}
+          role="progressbar"
+          aria-label={title}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percent}
+        >
+          <span style={{ width: `${percent}%` }} />
+        </div>
+      )}
+      <div className="deploy-term-tabs deploy-term-embedded">
+        <div className="deploy-term-tablist" role="tablist" aria-label={`${title} phases`}>
           {tabs.map((t) => (
             <button
               key={t.id}
               type="button"
               role="tab"
-              aria-selected={termPane === t.id}
-              className={`deploy-term-tab${termPane === t.id ? " is-active" : ""}`}
-              onClick={() => setTermPane(t.id)}
+              aria-selected={phase === t.id}
+              className={`deploy-term-tab${phase === t.id ? " is-active" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onPhase(t.id);
+                onFocus();
+              }}
             >
               {t.label}
             </button>
           ))}
         </div>
-        <LogTerminal
-          title={tabs.find((t) => t.id === termPane)?.label || "Log"}
-          text={paneText(view, termPane)}
-          live={live}
-          tall
-        />
+        <LogTerminal title={`${title}${phase !== "all" ? ` · ${phase}` : ""}`} text={text} live={live} />
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -315,12 +444,10 @@ function LogTerminal({
   title,
   text,
   live,
-  tall,
 }: {
   title: string;
   text: string;
   live: boolean;
-  tall: boolean;
 }) {
   const ref = useRef<HTMLPreElement>(null);
   const stick = useRef(true);
@@ -336,7 +463,7 @@ function LogTerminal({
     <TerminalFrame title={`${title} · ${count} ${count === 1 ? "line" : "lines"}`}>
       <pre
         ref={ref}
-        className={`term-log${tall ? "" : " is-short"}`}
+        className="term-log is-short"
         onScroll={(e) => {
           const el = e.currentTarget;
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;

@@ -26,6 +26,7 @@ function block(id: string, name: string, partial: Partial<ProjectBlock> = {}): P
     preStart: "",
     port: "",
     processManager: "pm2",
+    processName: "",
     autoDetect: false,
     healthPath: "",
     healthPort: "",

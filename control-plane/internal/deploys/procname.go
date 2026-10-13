@@ -38,7 +38,8 @@ func QualifyProcessName(project, app string) string {
 	return prefix + a
 }
 
-// EnrichProcessNames fills SpecApp.ProcessName for API responses.
+// EnrichProcessNames fills SpecApp.ProcessName for API responses when the app
+// did not already set an explicit override (ecosystem name, import, etc.).
 func EnrichProcessNames(projectName string, apps []SpecApp) []SpecApp {
 	if len(apps) == 0 {
 		return apps
@@ -46,6 +47,9 @@ func EnrichProcessNames(projectName string, apps []SpecApp) []SpecApp {
 	out := make([]SpecApp, len(apps))
 	copy(out, apps)
 	for i := range out {
+		if strings.TrimSpace(out[i].ProcessName) != "" {
+			continue
+		}
 		name := out[i].Name
 		if name == "" {
 			name = out[i].Root

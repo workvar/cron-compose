@@ -18,6 +18,7 @@ function block(partial: Partial<ProjectBlock> & { id: string }): ProjectBlock {
     preStart: "",
     port: "3000",
     processManager: "pm2",
+    processName: "",
     autoDetect: false,
     healthPath: "",
     healthPort: "",

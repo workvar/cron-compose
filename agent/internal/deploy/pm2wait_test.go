@@ -15,11 +15,39 @@ func TestPickPM2EcosystemName(t *testing.T) {
 	}
 }
 
+func TestPickPM2PeepalProxyAlias(t *testing.T) {
+	// Real host: ecosystem names the process peepal-proxy; we wait for peepal-rp-proxy.
+	// cwd is the release folder while work is …/current/proxy.
+	procs := parsePM2Jlist(`[{"name":"peepal-proxy","pm2_env":{"status":"online","pm_cwd":"/opt/apps/node/peepal-rp/releases/20261013T104257Z-6d65186/proxy"}}]`)
+	got, ok := pickPM2(procs, "peepal-rp-proxy", "/opt/apps/node/peepal-rp/current/proxy")
+	if !ok || got.Name != "peepal-proxy" {
+		t.Fatalf("got %+v ok=%v", got, ok)
+	}
+}
+
 func TestPickPM2QualifiedName(t *testing.T) {
 	procs := parsePM2Jlist(`[{"name":"peepal-rp-proxy","pm2_env":{"status":"launching","pm_cwd":"/opt/apps/proxy"}}]`)
 	got, ok := pickPM2(procs, "peepal-rp-proxy", "/opt/apps/proxy")
 	if !ok || got.Pm2Env.Status != "launching" {
 		t.Fatalf("got %+v ok=%v", got, ok)
+	}
+}
+
+func TestPm2NameMatch(t *testing.T) {
+	cases := []struct {
+		got, want, base string
+		ok              bool
+	}{
+		{"peepal-proxy", "peepal-rp-proxy", "proxy", true},
+		{"peepal-rp-proxy", "peepal-rp-proxy", "proxy", true},
+		{"proxy", "peepal-rp-proxy", "proxy", true},
+		{"backend", "peepal-rp-proxy", "proxy", false},
+		{"peepal-backend", "peepal-rp-proxy", "proxy", false},
+	}
+	for _, c := range cases {
+		if got := pm2NameMatch(c.got, c.want, c.base); got != c.ok {
+			t.Fatalf("%s vs %s base=%s: got %v want %v", c.got, c.want, c.base, got, c.ok)
+		}
 	}
 }
 

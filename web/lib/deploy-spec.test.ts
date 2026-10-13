@@ -110,6 +110,7 @@ assert.equal(yamlScalar(""), '""');
       preStart: "npx prisma migrate deploy",
       port: "3000",
       processManager: "pm2",
+      processName: "",
       autoDetect: false,
       healthPath: "",
       healthPort: "",

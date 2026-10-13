@@ -28,7 +28,12 @@ export type LiveProcess = {
   steps: LiveStep[];
 };
 
-export type LiveLogLine = { pane: string; text: string };
+export type LiveLogLine = {
+  pane: string;
+  text: string;
+  /** Active phase for this line (install/build/run/…); used by per-process terminal tabs. */
+  phase?: string;
+};
 
 export type LiveView = {
   percent: number;
@@ -277,6 +282,18 @@ export function buildDeployLive(input: LiveInput): LiveView {
   let failed = false;
   let pane = "shared";
   const lines: LiveLogLine[] = [];
+  /** Last known phase per pane — tags subsequent output for phase tabs. */
+  const panePhase: Record<string, string> = { shared: "preflight" };
+
+  function pushLine(targetPane: string, text: string, phase?: string) {
+    if (phase) panePhase[targetPane] = phase;
+    else if (cur.step) panePhase[targetPane] = cur.step.kind;
+    lines.push({
+      pane: targetPane,
+      text,
+      phase: phase || panePhase[targetPane] || cur.step?.kind,
+    });
+  }
 
   function ownerOf(step: Mutable): Proc | undefined {
     return processes.find(
@@ -452,7 +469,7 @@ export function buildDeployLive(input: LiveInput): LiveView {
   for (const raw of parts) {
     let line = raw.trim();
     if (!line) {
-      lines.push({ pane, text: "" });
+      pushLine(pane, "");
       continue;
     }
 
@@ -464,7 +481,7 @@ export function buildDeployLive(input: LiveInput): LiveView {
       pane = proc.id;
       line = body.trim();
       if (!line) {
-        lines.push({ pane, text: "" });
+        pushLine(pane, "");
         continue;
       }
     }
@@ -473,7 +490,7 @@ export function buildDeployLive(input: LiveInput): LiveView {
     const phase = line.match(PHASE_RE);
 
     if (failedLine) {
-      lines.push({ pane: cur.step ? paneFor(cur.step) : pane, text: line });
+      pushLine(cur.step ? paneFor(cur.step) : pane, line);
       failHere();
       continue;
     }
@@ -483,7 +500,7 @@ export function buildDeployLive(input: LiveInput): LiveView {
       const msg = phase[2].trim();
       if (kind === "clone" && msg.startsWith("removing tmp clone")) {
         pane = "shared";
-        lines.push({ pane, text: line });
+        pushLine(pane, line, kind);
         continue;
       }
       if (kind === "preflight") {
@@ -611,13 +628,13 @@ export function buildDeployLive(input: LiveInput): LiveView {
           pane = "shared";
         }
       }
-      lines.push({ pane, text: line });
+      pushLine(pane, line, kind);
       continue;
     }
 
     if (/^pm2 (save|startup)\b/.test(line)) {
       if (cur.step && cur.step.kind === "start") cur.step.ticks++;
-      lines.push({ pane, text: line });
+      pushLine(pane, line, "start");
       continue;
     }
 
@@ -637,14 +654,14 @@ export function buildDeployLive(input: LiveInput): LiveView {
         }
         pane = proc.id;
       }
-      lines.push({ pane, text: line });
+      pushLine(pane, line, "start");
       continue;
     }
 
     const owner = processes.find((p) => p.id === pane);
     if (owner) maybeAdvance(owner, line);
     else if (cur.step && !failed) cur.step.ticks++;
-    lines.push({ pane, text: line });
+    pushLine(pane, line);
   }
 
   const terminalFail =

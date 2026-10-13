@@ -350,6 +350,9 @@ message DeployApp {
   // Start wave: apps that share a group run pre_start/start/health together;
   // lower groups finish before higher ones begin. 0 = first / all-together default.
   int32 start_group = 12;
+  // Explicit pm2/systemd process name (e.g. from ecosystem.config.js). When set,
+  // the agent uses it instead of QualifyProcessName(project, name).
+  string process_name = 13;
 }
 
 // One task in a deploy flow wave (e.g. Proxy · install).

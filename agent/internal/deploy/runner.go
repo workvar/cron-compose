@@ -732,7 +732,7 @@ func (m *Manager) startApps(ctx context.Context, cmd *agentv1.DeployCommand, lay
 		if pm == "" {
 			pm = cmd.GetProcessManager()
 		}
-		name := QualifyProcessName(project, appName)
+		name := ProcessNameFor(project, app)
 		port := app.GetPort()
 		if port == 0 {
 			port = cmd.GetPort()
@@ -873,19 +873,6 @@ func appEnv(cmd *agentv1.DeployCommand, app *agentv1.DeployApp) map[string]strin
 		env["PORT"] = fmt.Sprintf("%d", port)
 	}
 	return env
-}
-
-func findEcosystem(dir string) string {
-	for _, name := range []string{
-		"ecosystem.config.js", "ecosystem.config.cjs", "ecosystem.config.mjs",
-		"ecosystem.config.ts", "pm2.json",
-	} {
-		p := filepath.Join(dir, name)
-		if st, err := os.Stat(p); err == nil && !st.IsDir() {
-			return p
-		}
-	}
-	return ""
 }
 
 // cloneInto clones into an empty directory. Releases are immutable, so there is no

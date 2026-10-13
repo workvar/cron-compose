@@ -10,12 +10,15 @@ import (
 
 // Detection is the Vercel-style guess we make from a repo's file tree.
 type Detection struct {
-	Language        string   `json:"language"`
-	InstallScript   string   `json:"install_script"`
-	HasPM2Ecosystem bool     `json:"has_pm2_ecosystem"`
-	SupportsPort    bool     `json:"supports_port"`
-	Workspaces      []string `json:"workspaces"`
-	SuggestedRoot   string   `json:"root_directory"`
+	Language        string       `json:"language"`
+	InstallScript   string       `json:"install_script"`
+	HasPM2Ecosystem bool         `json:"has_pm2_ecosystem"`
+	SupportsPort    bool         `json:"supports_port"`
+	Workspaces      []string     `json:"workspaces"`
+	SuggestedRoot   string       `json:"root_directory"`
+	// PM2Apps are parsed from ecosystem.config.* / pm2.json when present.
+	// Used by the UI to autopopulate process name, run script, and port.
+	PM2Apps []PM2AppHint `json:"pm2_apps,omitempty"`
 }
 
 // DetectAt scopes Detect to one subfolder of the repo, so a monorepo block (say,
@@ -23,7 +26,8 @@ type Detection struct {
 // tree. Without this, a package.json anywhere in the repo (even in a sibling
 // frontend/) made Detect flag every block as Node, because Detect's own anyHas
 // check matches a filename at any depth. root == "" or "." runs unscoped, same as
-// Detect(files).
+// Detect(files). Ecosystem files at the repo root still contribute when their
+// cwd points at this subfolder.
 func DetectAt(files map[string]string, root string) Detection {
 	root = strings.Trim(strings.TrimSpace(root), "/")
 	if root == "" || root == "." {
@@ -36,7 +40,20 @@ func DetectAt(files map[string]string, root string) Detection {
 			scoped[rel] = body
 		}
 	}
-	return Detect(scoped)
+	d := Detect(scoped)
+	// Prefer ecosystem apps from the full tree scoped to this root. That picks up
+	// both a local ecosystem.config.js under root/ and a repo-root ecosystem whose
+	// cwd points here — without double-counting (Detect(scoped) already parsed the
+	// local file relative to ".").
+	if apps := CollectPM2Apps(files, root); len(apps) > 0 {
+		d.HasPM2Ecosystem = true
+		d.PM2Apps = apps
+		if d.Language == "unknown" {
+			d.Language = "node"
+			d.SupportsPort = true
+		}
+	}
+	return d
 }
 
 // Detect inspects a map of path -> file contents (root-relative).
@@ -133,12 +150,22 @@ func Detect(files map[string]string) Detection {
 		d.InstallScript = "docker compose up -d"
 	}
 
-	d.HasPM2Ecosystem = anyHas("ecosystem.config.js", "ecosystem.config.cjs", "ecosystem.config.mjs", "ecosystem.config.ts", "pm2.json")
+	d.PM2Apps = CollectPM2Apps(files, ".")
+	d.HasPM2Ecosystem = len(d.PM2Apps) > 0 || anyHas("ecosystem.config.js", "ecosystem.config.cjs", "ecosystem.config.mjs", "ecosystem.config.ts", "pm2.json")
 	if d.HasPM2Ecosystem && d.Language == "unknown" {
 		d.Language = "node"
 	}
 	if d.Language == "node" {
 		d.SupportsPort = true
+	}
+	// Prefer PORT from the first ecosystem app when nothing else set SupportsPort.
+	if !d.SupportsPort {
+		for _, a := range d.PM2Apps {
+			if a.Port > 0 {
+				d.SupportsPort = true
+				break
+			}
+		}
 	}
 	for _, body := range files {
 		if strings.Contains(body, "process.env.PORT") || strings.Contains(body, "PORT=") {
