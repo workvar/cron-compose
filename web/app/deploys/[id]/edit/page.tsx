@@ -21,6 +21,16 @@ import {
   emptyAdvanced,
   type AdvancedSettings,
 } from "@/lib/deploy-spec";
+import {
+  blocksWithStartGroupsFromFlow,
+  defaultFlow,
+  flowFromSpec,
+  flowProblems,
+  flowSignature,
+  flowToSpec,
+  reconcileFlow,
+  type FlowWave,
+} from "@/lib/deploy-flow";
 import { listBranches } from "@/lib/git-detect";
 import type { SelectOption } from "@/lib/ui-helpers";
 import type { DeployApp, DeployEnvVar, DeployProject } from "@/lib/types";
@@ -42,6 +52,7 @@ export default function EditDeployPage() {
   const [clonePath, setClonePath] = useState("");
   const [runAsUser, setRunAsUser] = useState("");
   const [blocks, setBlocks] = useState<ProjectBlock[]>([]);
+  const [flow, setFlow] = useState<FlowWave[]>([]);
   const [globalEnv, setGlobalEnv] = useState<DeployEnvVar[]>([]);
   const [appEnv, setAppEnv] = useState<Record<string, DeployEnvVar[]>>({});
   const [advanced, setAdvanced] = useState<AdvancedSettings>({ ...emptyAdvanced });
@@ -64,7 +75,10 @@ export default function EditDeployPage() {
         setBranch(p.default_branch);
         setClonePath(p.clone_path);
         setRunAsUser(p.run_as_user || "");
-        setBlocks(blocksFromProject(p));
+        const nextBlocks = blocksFromProject(p);
+        setBlocks(nextBlocks);
+        const fromSpec = flowFromSpec(nextBlocks, p.flow ?? null);
+        setFlow(fromSpec ?? defaultFlow(nextBlocks));
         setGlobalEnv(
           Object.entries(p.env || {}).map(([key, value]) => ({
             key,
@@ -127,9 +141,28 @@ export default function EditDeployPage() {
     };
   }, [project]);
 
+  // Keep flow tasks in sync when processes / scripts change (old deploys get a default).
+  useEffect(() => {
+    if (blocks.length === 0) return;
+    setFlow((prev) => {
+      const base = prev.length ? prev : defaultFlow(blocks);
+      const next = reconcileFlow(blocks, base);
+      return flowSignature(next) === flowSignature(prev) ? prev : next;
+    });
+  }, [
+    blocks
+      .map((b) => `${b.id}:${b.install}:${b.cleanup}:${b.preStart}:${b.processManager}:${b.healthPath}`)
+      .join("|"),
+  ]);
+
+  const orderedBlocks = useMemo(
+    () => blocksWithStartGroupsFromFlow(ensureUniqueBlockNames(blocks), flow),
+    [blocks, flow],
+  );
+
   const apps: DeployApp[] = useMemo(
-    () => blocksToDeployApps(ensureUniqueBlockNames(blocks), appEnv),
-    [blocks, appEnv],
+    () => blocksToDeployApps(orderedBlocks, appEnv),
+    [orderedBlocks, appEnv],
   );
 
   const problems = useMemo(() => {
@@ -137,8 +170,9 @@ export default function EditDeployPage() {
     if (!name.trim()) out.push("Name is required");
     if (!blocksReady(blocks)) out.push("Each process needs a root folder");
     if (hasDuplicateRoots(blocks)) out.push("Two processes share the same root");
+    out.push(...flowProblems(flow));
     return out;
-  }, [name, blocks]);
+  }, [name, blocks, flow]);
 
   const exportYaml = useMemo(() => {
     if (!project) return "";
@@ -149,13 +183,14 @@ export default function EditDeployPage() {
       branch: branch || project.default_branch,
       server: project.server_id,
       clonePath: clonePath || undefined,
-      blocks: ensureUniqueBlockNames(blocks),
+      blocks: orderedBlocks,
       globalEnv,
       appEnv,
       advanced,
       redeployOn,
+      flow: flowToSpec(orderedBlocks, flow),
     });
-  }, [project, name, branch, clonePath, blocks, globalEnv, appEnv, advanced, redeployOn]);
+  }, [project, name, branch, clonePath, orderedBlocks, globalEnv, appEnv, advanced, redeployOn, flow]);
 
   function shareYaml() {
     if (!project || !exportYaml) return;
@@ -187,6 +222,7 @@ export default function EditDeployPage() {
           deploy_timeout_seconds: advanced.deployTimeout ? Number(advanced.deployTimeout) : 0,
           redeploy_on: redeployOn,
           apps,
+          flow: flowToSpec(orderedBlocks, flow),
           env: Object.fromEntries(
             globalEnv.filter((e) => e.key.trim()).map((e) => [e.key.trim(), e.value || ""]),
           ),
@@ -263,6 +299,8 @@ export default function EditDeployPage() {
         onRedeployOn={setRedeployOn}
         gitConnected
         branchesBusy={branchesBusy}
+        flow={flow}
+        onFlow={setFlow}
       />
 
       {error && <p className="form-error">{error}</p>}

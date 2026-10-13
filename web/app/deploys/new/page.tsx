@@ -43,6 +43,15 @@ import {
   specToDraft,
   type AdvancedSettings,
 } from "@/lib/deploy-spec";
+import {
+  blocksWithStartGroupsFromFlow,
+  defaultFlow,
+  flowProblems,
+  flowSignature,
+  flowToSpec,
+  reconcileFlow,
+  type FlowWave,
+} from "@/lib/deploy-flow";
 import { buildDeployPlan } from "@/lib/deploy-steps";
 import { clonePathForUser } from "@/lib/deploy-user-path";
 import { filterGitRepos, listGitRepoOwners, toggleOwnerFilter } from "@/lib/git-repos";
@@ -84,6 +93,7 @@ type Form = {
   clonePath: string;
   runAsUser: string;
   blocks: ProjectBlock[];
+  flow: FlowWave[];
   globalEnv: DeployEnvVar[];
   appEnv: Record<string, DeployEnvVar[]>;
   advanced: AdvancedSettings;
@@ -97,11 +107,17 @@ const emptyForm: Form = {
   clonePath: "",
   runAsUser: "",
   blocks: [],
+  flow: [],
   globalEnv: [],
   appEnv: {},
   advanced: emptyAdvanced,
   redeployOn: [...DEFAULT_REDEPLOY_ON],
 };
+
+/** Attach a default (or reconciled) flow whenever blocks are (re)seeded. */
+function withDefaultFlow(f: Form): Form {
+  return { ...f, flow: defaultFlow(f.blocks) };
+}
 
 async function errorText(res: Response): Promise<string> {
   const raw = await res.text();
@@ -216,26 +232,29 @@ function NewDeployForm() {
     inspectBranchRef.current = null;
     setSpec(null);
     setSelectedSpecPath(SPEC_NONE);
-    setForm({
-      name: p.name,
-      serverId,
-      branch: p.default_branch || "main",
-      clonePath: p.clone_path || "",
-      runAsUser: p.run_as_user || "",
-      blocks,
-      globalEnv: recordToEnvVars(p.env),
-      appEnv,
-      advanced: {
-        ...emptyAdvanced,
-        autoRollback: p.auto_rollback,
-        onWaveFailure: p.on_wave_failure === "continue" ? "continue" : "stop",
-        healthPath: p.health_path || "",
-        healthPort: p.health_port ? String(p.health_port) : "",
-        healthTimeout: p.health_timeout_seconds ? String(p.health_timeout_seconds) : "",
-        deployTimeout: p.deploy_timeout_seconds ? String(p.deploy_timeout_seconds) : "",
-      },
-      redeployOn: modes.length ? modes : [...DEFAULT_REDEPLOY_ON],
-    });
+    setForm(
+      withDefaultFlow({
+        name: p.name,
+        serverId,
+        branch: p.default_branch || "main",
+        clonePath: p.clone_path || "",
+        runAsUser: p.run_as_user || "",
+        blocks,
+        flow: [],
+        globalEnv: recordToEnvVars(p.env),
+        appEnv,
+        advanced: {
+          ...emptyAdvanced,
+          autoRollback: p.auto_rollback,
+          onWaveFailure: p.on_wave_failure === "continue" ? "continue" : "stop",
+          healthPath: p.health_path || "",
+          healthPort: p.health_port ? String(p.health_port) : "",
+          healthTimeout: p.health_timeout_seconds ? String(p.health_timeout_seconds) : "",
+          deployTimeout: p.deploy_timeout_seconds ? String(p.deploy_timeout_seconds) : "",
+        },
+        redeployOn: modes.length ? modes : [...DEFAULT_REDEPLOY_ON],
+      }),
+    );
     setShowYaml(false);
     setPhase("configure");
     window.scrollTo({ top: 0 });
@@ -452,7 +471,7 @@ function NewDeployForm() {
       if (pasted) setSelectedSpecPath(SPEC_NONE);
       else if (fileSpec?.path) setSelectedSpecPath(fileSpec.path);
       else setSelectedSpecPath(SPEC_NONE);
-      setForm(next);
+      setForm(withDefaultFlow(next));
       setShowYaml(false);
       setPhase("configure");
       window.scrollTo({ top: 0 });
@@ -526,9 +545,29 @@ function NewDeployForm() {
     setYamlIssues([]);
   }
 
+  // Keep flow chips aligned with process scripts as the configure form changes.
+  useEffect(() => {
+    if (form.blocks.length === 0) return;
+    setForm((f) => {
+      const base = f.flow.length ? f.flow : defaultFlow(f.blocks);
+      const next = reconcileFlow(f.blocks, base);
+      if (flowSignature(next) === flowSignature(f.flow)) return f;
+      return { ...f, flow: next };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- block script signature
+  }, [
+    form.blocks
+      .map((b) => `${b.id}:${b.install}:${b.cleanup}:${b.preStart}:${b.processManager}:${b.healthPath}`)
+      .join("|"),
+  ]);
+
+  const orderedBlocks = useMemo(
+    () => blocksWithStartGroupsFromFlow(ensureUniqueBlockNames(form.blocks), form.flow),
+    [form.blocks, form.flow],
+  );
   const apps: DeployApp[] = useMemo(
-    () => blocksToDeployApps(ensureUniqueBlockNames(form.blocks), form.appEnv),
-    [form.blocks, form.appEnv],
+    () => blocksToDeployApps(orderedBlocks, form.appEnv),
+    [orderedBlocks, form.appEnv],
   );
   const duplicateRoots = hasDuplicateRoots(form.blocks);
   const problems: string[] = [];
@@ -538,6 +577,7 @@ function NewDeployForm() {
   if (spec && !spec.valid && selectedSpecPath !== SPEC_NONE) {
     problems.push("Fix the selected croncompose.yml before continuing.");
   }
+  problems.push(...flowProblems(form.flow));
   const canContinue = problems.length === 0 && !busy;
 
   const selectedServer = useMemo(
@@ -575,7 +615,7 @@ function NewDeployForm() {
   /** Seeds the form from detection only (no croncompose.yml). */
   function formFromInspect(src: Source, ins: DeployInspect | null): Form {
     const repoName = src.fullName.split("/").pop() || src.fullName;
-    return {
+    return withDefaultFlow({
       ...emptyForm,
       name: repoName,
       // Keep the server / branch the operator already picked when clearing a YAML.
@@ -584,7 +624,7 @@ function NewDeployForm() {
       branch: form.branch || ins?.default_branch || src.defaultBranch || "main",
       clonePath: ins?.clone_path || "",
       blocks: ins ? [seedBlockFromInspect(ins, src.fullName)] : [emptyBlock()],
-    };
+    });
   }
 
   function applySpecToForm(src: Source, ins: DeployInspect | null, fileSpec: DeploySpecResult): Form {
@@ -603,7 +643,7 @@ function NewDeployForm() {
     next.appEnv = d.appEnv;
     next.advanced = d.advanced;
     next.redeployOn = d.redeployOn;
-    return next;
+    return withDefaultFlow(next);
   }
 
   async function onSelectSpecPath(path: string) {
@@ -640,11 +680,12 @@ function NewDeployForm() {
         branch: form.branch,
         server: servers.find((s) => s.id === form.serverId)?.name,
         clonePath: form.clonePath,
-        blocks: ensureUniqueBlockNames(form.blocks),
+        blocks: orderedBlocks,
         globalEnv: form.globalEnv,
         appEnv: form.appEnv,
         advanced: form.advanced,
         redeployOn: form.redeployOn,
+        flow: flowToSpec(orderedBlocks, form.flow),
       })
     : "";
 
@@ -653,7 +694,7 @@ function NewDeployForm() {
     setBusy("deploy");
     setError(null);
     try {
-      const submitApps = blocksToDeployApps(ensureUniqueBlockNames(form.blocks), form.appEnv);
+      const submitApps = blocksToDeployApps(orderedBlocks, form.appEnv);
       const first = submitApps[0];
       const a = form.advanced;
       const body = {
@@ -673,6 +714,7 @@ function NewDeployForm() {
         run_as_user: form.runAsUser.trim() || undefined,
         env: envVarsToRecord(form.globalEnv),
         apps: submitApps,
+        flow: flowToSpec(orderedBlocks, form.flow),
         // A repo croncompose.yml (auto-detected or picked) must not be overwritten.
         spec_from_repo: selectedSpecPath !== SPEC_NONE || !!inspect?.spec,
         auto_rollback: a.autoRollback,
@@ -954,6 +996,8 @@ function NewDeployForm() {
           gitConnected={gitConnected}
           branchesBusy={branchesBusy}
           repoBusy={inspectBusy || specFilesBusy}
+          flow={form.flow}
+          onFlow={(flow) => setForm((f) => ({ ...f, flow }))}
         />
 
         {showYaml && (

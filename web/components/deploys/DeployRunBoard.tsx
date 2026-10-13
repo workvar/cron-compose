@@ -9,7 +9,11 @@ import {
   type StepState,
 } from "@/lib/deploy-progress";
 import type { Connector, DeployInventory, DeployProject, LogLine } from "@/lib/types";
-import { buildProcessRows, type ProcessRow } from "@/lib/project-processes";
+import {
+  buildProcessRows,
+  isProcessRunning,
+  type ProcessRow,
+} from "@/lib/project-processes";
 import { TerminalFrame } from "@/components/terminal/TerminalFrame";
 import { ProcessTaskActions } from "@/components/deploys/ProcessTaskActions";
 
@@ -196,6 +200,20 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
         {view.processes.map((proc) => {
           const row = manageable ? rowForProcess(processRows, proc.name) : null;
           const showControls = Boolean(row && row.pm !== "none");
+          // Unlock controls once the process exists on the host (or start finished),
+          // even while a later wave / cleanup is still running — otherwise a stuck
+          // progress rail leaves Start/Stop/Pause greyed out forever.
+          const startDone = proc.steps.some(
+            (s) => s.kind === "start" && (s.state === "done" || s.state === "active"),
+          );
+          const knownRunning = Boolean(row?.resource && isProcessRunning(row.resource.state));
+          const controlsEnabled =
+            !live ||
+            proc.state === "done" ||
+            proc.state === "failed" ||
+            knownRunning ||
+            startDone ||
+            Boolean(row?.resource);
           return (
             <section key={proc.id} className={multi ? "panel deploy-proc" : "deploy-proc"}>
               {multi ? (
@@ -211,7 +229,7 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
                     <div className="deploy-proc-actions-wrap">
                       <ProcessTaskActions
                         row={row}
-                        enabled={!live || proc.state === "done" || proc.state === "failed"}
+                        enabled={controlsEnabled}
                         onChanged={() => void refreshInventory()}
                       />
                     </div>
@@ -233,7 +251,7 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
                   <div className="deploy-proc-actions-wrap">
                     <ProcessTaskActions
                       row={row}
-                      enabled={!live || proc.state === "done" || proc.state === "failed"}
+                      enabled={controlsEnabled}
                       onChanged={() => void refreshInventory()}
                     />
                   </div>

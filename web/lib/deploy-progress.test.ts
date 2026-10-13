@@ -193,4 +193,36 @@ still migrating
   assert.equal(backend?.state, "failed");
 }
 
+{
+  // install:done / cleanup without a prior install:script start line (missed or
+  // routed away) must still mark Installing/Building done — otherwise the rail
+  // sits on Cleaning with prior steps empty and percent frozen.
+  const apps: ProgressApp[] = [
+    {
+      name: "Proxy",
+      root: "proxy",
+      language: "go",
+      install: "go mod download && go build -o proxy .",
+      cleanup: "rm -rf .git",
+      processManager: "pm2",
+    },
+  ];
+  const view = buildDeployLive({
+    status: "running",
+    apps,
+    logs: lines(`clone: tmp clone ready (abc1234)
+go: no module dependencies to download
+install: done (in /opt/apps/node/peepal-rp/releases/r1/proxy)
+install: cleanup: rm -rf .git (in /opt/apps/node/peepal-rp/releases/r1/proxy)
+still cleaning
+`),
+  });
+  const proc = view.processes[0];
+  assert.equal(proc.steps.find((s) => s.kind === "install")?.state, "done");
+  assert.equal(proc.steps.find((s) => s.kind === "build")?.state, "done");
+  assert.equal(proc.steps.find((s) => s.kind === "cleanup")?.state, "active");
+  assert.ok((proc.steps.find((s) => s.kind === "cleanup")?.percent || 0) > 18);
+  assert.ok(proc.percent > 5, `percent ${proc.percent} should move past empty install steps`);
+}
+
 console.log("deploy-progress: ok");

@@ -5,39 +5,45 @@ import type { ProjectBlock } from "@/lib/project-blocks";
 import type { WaveFailurePolicy } from "@/lib/deploy-spec";
 import {
   addEmptyWave,
-  allTogetherWaves,
-  blocksWithWaves,
-  moveBlockToWave,
-  oneByOneWaves,
-  wavesFromBlocks,
-  type DeployWave,
-} from "@/lib/deploy-order";
+  defaultFlow,
+  flowProblems,
+  moveTask,
+  phaseLabel,
+  removeWave,
+  type FlowPhase,
+  type FlowWave,
+} from "@/lib/deploy-flow";
 
 type Props = {
   blocks: ProjectBlock[];
-  onBlocks: (blocks: ProjectBlock[]) => void;
+  flow: FlowWave[];
+  onFlow: (flow: FlowWave[]) => void;
   onWaveFailure: WaveFailurePolicy;
   onOnWaveFailure: (policy: WaveFailurePolicy) => void;
 };
 
 /**
- * Drag-and-drop start waves. Apps in one wave run pre-start/start/health
- * together; wave 2 waits for wave 1. Install/build stay parallel for every app.
+ * Column drag-and-drop deploy flow. Each chip is one task (install/build/… for
+ * one process). Same column runs in parallel; later columns wait. Empty columns
+ * must be filled or deleted before save.
  */
-export function DeployOrderBoard({ blocks, onBlocks, onWaveFailure, onOnWaveFailure }: Props) {
-  const waves = wavesFromBlocks(blocks);
+export function DeployOrderBoard({
+  blocks,
+  flow,
+  onFlow,
+  onWaveFailure,
+  onOnWaveFailure,
+}: Props) {
   const [dragId, setDragId] = useState<string | null>(null);
-  const [over, setOver] = useState<{ group: number; beforeId: string | null } | null>(null);
+  const [over, setOver] = useState<{ waveId: string; beforeId: string | null } | null>(null);
 
-  if (blocks.length < 2) return null;
+  if (blocks.length < 1) return null;
 
-  function apply(next: DeployWave[]) {
-    onBlocks(blocksWithWaves(blocks, next));
-  }
+  const problems = flowProblems(flow);
 
-  function onDrop(group: number, beforeId: string | null) {
+  function onDrop(waveId: string, beforeId: string | null) {
     if (!dragId) return;
-    apply(moveBlockToWave(waves, dragId, group, beforeId));
+    onFlow(moveTask(flow, dragId, waveId, beforeId));
     setDragId(null);
     setOver(null);
   }
@@ -46,31 +52,25 @@ export function DeployOrderBoard({ blocks, onBlocks, onWaveFailure, onOnWaveFail
     <div className="deploy-order">
       <div className="cluster" style={{ justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
         <div>
-          <div className="card-title">Deploy order</div>
+          <div className="card-title">Deploy flow</div>
           <p className="field-hint" style={{ margin: "4px 0 0" }}>
-            Drag processes into waves. Same wave starts together; later waves wait.
-            Builds still run in parallel for every app.
+            Drag tasks into columns (waves). Tasks in one wave run together; later waves wait.
+            Mix install / build / cleanup across apps — e.g. build A after install B.
+            Release activates between cleanup and pre-start automatically.
           </p>
         </div>
         <div className="cluster" style={{ gap: 6, flexWrap: "wrap" }}>
           <button
             type="button"
             className="button ghost sm"
-            onClick={() => apply(allTogetherWaves(blocks))}
+            onClick={() => onFlow(defaultFlow(blocks))}
           >
-            All together
+            Reset default
           </button>
           <button
             type="button"
             className="button ghost sm"
-            onClick={() => apply(oneByOneWaves(blocks))}
-          >
-            One by one
-          </button>
-          <button
-            type="button"
-            className="button ghost sm"
-            onClick={() => apply(addEmptyWave(waves))}
+            onClick={() => onFlow(addEmptyWave(flow))}
           >
             + Wave
           </button>
@@ -103,49 +103,72 @@ export function DeployOrderBoard({ blocks, onBlocks, onWaveFailure, onOnWaveFail
               <strong>Continue to the next wave</strong>
               <span className="subtle">
                 Skip the rest of this wave; later waves still run. The deploy is still marked failed
-                if any wave failed. Within a wave, sibling processes still finish together.
+                if any wave failed.
               </span>
             </span>
           </label>
         </div>
       </div>
 
-      <div className="deploy-order-waves">
-        {waves.map((wave, i) => (
+      {problems.length > 0 && (
+        <p className="form-error" style={{ marginTop: 12 }}>{problems[0]}</p>
+      )}
+
+      <div className="deploy-order-columns" role="list">
+        {flow.map((wave, i) => (
           <div
-            key={wave.group}
-            className={`deploy-order-wave${over?.group === wave.group && !over.beforeId ? " is-over" : ""}`}
+            key={wave.id}
+            role="listitem"
+            className={`deploy-order-wave deploy-order-column${
+              over?.waveId === wave.id && !over.beforeId ? " is-over" : ""
+            }${wave.tasks.length === 0 ? " is-empty" : ""}`}
             onDragOver={(e) => {
               e.preventDefault();
-              setOver({ group: wave.group, beforeId: null });
+              setOver({ waveId: wave.id, beforeId: null });
             }}
             onDrop={(e) => {
               e.preventDefault();
-              onDrop(wave.group, null);
+              onDrop(wave.id, null);
             }}
           >
             <div className="deploy-order-wave-label">
-              Wave {i + 1}
-              <span className="subtle">
-                {wave.blockIds.length > 1 ? " · together" : wave.blockIds.length === 1 ? " · alone" : " · empty"}
+              <span>
+                Wave {i + 1}
+                <span className="subtle">
+                  {wave.tasks.length === 0
+                    ? " · empty"
+                    : wave.tasks.length === 1
+                      ? " · 1 task"
+                      : ` · ${wave.tasks.length} together`}
+                </span>
               </span>
+              {wave.tasks.length === 0 && (
+                <button
+                  type="button"
+                  className="button ghost sm"
+                  onClick={() => onFlow(removeWave(flow, wave.id))}
+                  title="Delete empty wave"
+                >
+                  Delete
+                </button>
+              )}
             </div>
             <div className="deploy-order-chips">
-              {wave.blockIds.map((id) => {
-                const block = blocks.find((b) => b.id === id);
+              {wave.tasks.map((task) => {
+                const block = blocks.find((b) => b.id === task.blockId);
                 if (!block) return null;
                 return (
                   <button
-                    key={id}
+                    key={task.id}
                     type="button"
-                    className={`deploy-order-chip${dragId === id ? " is-dragging" : ""}${
-                      over?.beforeId === id ? " is-before" : ""
+                    className={`deploy-order-chip${dragId === task.id ? " is-dragging" : ""}${
+                      over?.beforeId === task.id ? " is-before" : ""
                     }`}
                     draggable
                     onDragStart={(e) => {
-                      setDragId(id);
+                      setDragId(task.id);
                       e.dataTransfer.effectAllowed = "move";
-                      e.dataTransfer.setData("text/plain", id);
+                      e.dataTransfer.setData("text/plain", task.id);
                     }}
                     onDragEnd={() => {
                       setDragId(null);
@@ -154,21 +177,26 @@ export function DeployOrderBoard({ blocks, onBlocks, onWaveFailure, onOnWaveFail
                     onDragOver={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setOver({ group: wave.group, beforeId: id });
+                      setOver({ waveId: wave.id, beforeId: task.id });
                     }}
                     onDrop={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      onDrop(wave.group, id);
+                      onDrop(wave.id, task.id);
                     }}
                   >
                     <span className="deploy-order-handle" aria-hidden="true">⋮⋮</span>
-                    {block.name || "Process"}
+                    <span className="deploy-order-chip-body">
+                      <span className="deploy-order-chip-name">{block.name || "Process"}</span>
+                      <span className={`deploy-order-chip-phase phase-${task.phase as FlowPhase}`}>
+                        {phaseLabel(task.phase)}
+                      </span>
+                    </span>
                   </button>
                 );
               })}
-              {wave.blockIds.length === 0 && (
-                <span className="subtle" style={{ fontSize: 13 }}>Drop a process here</span>
+              {wave.tasks.length === 0 && (
+                <span className="subtle" style={{ fontSize: 13 }}>Drop a task here</span>
               )}
             </div>
           </div>

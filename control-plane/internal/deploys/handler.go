@@ -816,6 +816,15 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 			Language: p.Language, Port: int32(p.Port), ProcessManager: p.ProcessManager, Env: p.Env,
 		}}
 	}
+	for _, wave := range p.Flow {
+		fw := &agentv1.DeployFlowWave{}
+		for _, t := range wave {
+			fw.Tasks = append(fw.Tasks, &agentv1.DeployFlowTask{App: t.App, Phase: t.Phase})
+		}
+		if len(fw.Tasks) > 0 {
+			cmd.Flow = append(cmd.Flow, fw)
+		}
+	}
 	if err := h.gateway.SendDeploy(p.ServerID, cmd); err != nil {
 		_ = h.store.MarkRun(ctx, run.ID, "agent_offline", 0, err.Error())
 		run.Status = "agent_offline"

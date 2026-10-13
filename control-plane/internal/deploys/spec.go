@@ -42,6 +42,8 @@ type Spec struct {
 	OnWaveFailure string `yaml:"on_wave_failure,omitempty" json:"on_wave_failure,omitempty"`
 	// RedeployOn lists Git events that should start a new deploy: branch, tag, release.
 	RedeployOn []string `yaml:"redeploy_on,omitempty" json:"redeploy_on,omitempty"`
+	// Flow is ordered waves of {app, phase} tasks. Empty = default scheduling.
+	Flow [][]FlowTask `yaml:"flow,omitempty" json:"flow,omitempty"`
 }
 
 // SpecHealth is the optional post-deploy HTTP probe.

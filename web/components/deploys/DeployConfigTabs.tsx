@@ -23,6 +23,7 @@ import { HealthCheckFields } from "./HealthCheckFields";
 import { RepoFolderPicker } from "./RepoFolderPicker";
 import { GitConnections } from "./GitConnections";
 import { UserSwitcher } from "@/components/terminal/UserSwitcher";
+import type { FlowWave } from "@/lib/deploy-flow";
 
 export type ConfigTabId =
   | "processes"
@@ -30,7 +31,8 @@ export type ConfigTabId =
   | "env"
   | "process-manager"
   | "advanced"
-  | "redeploy";
+  | "redeploy"
+  | "flow";
 
 type Props = {
   projectName: string;
@@ -71,6 +73,9 @@ type Props = {
   repoBusy?: boolean;
   activeTab?: ConfigTabId;
   onTabChange?: (tab: ConfigTabId) => void;
+  /** Deploy flow waves (install/build/… tasks). Required for the Flow tab. */
+  flow: FlowWave[];
+  onFlow: (flow: FlowWave[]) => void;
 };
 
 const TABS: { id: ConfigTabId; label: string }[] = [
@@ -80,6 +85,7 @@ const TABS: { id: ConfigTabId; label: string }[] = [
   { id: "process-manager", label: "Process manager" },
   { id: "advanced", label: "Advanced" },
   { id: "redeploy", label: "Redeploy" },
+  { id: "flow", label: "Flow" },
 ];
 
 function toggleMode(modes: RedeployMode[], mode: RedeployMode): RedeployMode[] {
@@ -124,6 +130,7 @@ export function DeployConfigTabs(props: Props) {
     "process-manager": <ProcessManagerTab {...props} />,
     advanced: <AdvancedTab {...props} />,
     redeploy: <RedeployTab {...props} />,
+    flow: <FlowTab {...props} />,
   };
 
   return (
@@ -207,8 +214,6 @@ function ProcessesTab({
   repo,
   branch,
   repoBusy,
-  advanced,
-  onAdvanced,
 }: Props) {
   return (
     <div className="config-tab-panel">
@@ -240,9 +245,23 @@ function ProcessesTab({
       >
         + Add another process
       </button>
+    </div>
+  );
+}
+
+function FlowTab({
+  blocks,
+  flow,
+  onFlow,
+  advanced,
+  onAdvanced,
+}: Props) {
+  return (
+    <div className="config-tab-panel">
       <DeployOrderBoard
         blocks={blocks}
-        onBlocks={onBlocks}
+        flow={flow}
+        onFlow={onFlow}
         onWaveFailure={advanced.onWaveFailure}
         onOnWaveFailure={(onWaveFailure) => onAdvanced({ ...advanced, onWaveFailure })}
       />

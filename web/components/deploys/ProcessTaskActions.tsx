@@ -15,9 +15,7 @@ type Props = {
 
 /**
  * Start / Pause / Stop / Restart for one process card.
- * Start is shown until the process is running; Pause toggles to Resume when frozen.
- * Actions target the live inventory ref, or the process name when the deploy
- * never registered it.
+ * All four stay visible; Pause/Resume and Start enable based on live state.
  */
 export function ProcessTaskActions({ row, enabled = true, onChanged }: Props) {
   const { busy, error, result, send } = useConnectorCommand();
@@ -62,36 +60,41 @@ export function ProcessTaskActions({ row, enabled = true, onChanged }: Props) {
     }
   }
 
+  const canStart = ready && (!running || paused);
+  const canPause = ready && running && !paused;
+  const canStop = ready;
+  const canRestart = ready;
+
   return (
     <div className="deploy-proc-actions">
       <div className="deploy-proc-actions-btns" role="group" aria-label={`${label} process controls`}>
-        {running && !paused ? (
-          <button
-            type="button"
-            className="button secondary sm deploy-proc-action"
-            disabled={busy || !ready}
-            title={blocked || `Pause ${label}`}
-            onClick={() => void run("pause")}
-          >
-            <IconPause />
-            <span>Pause</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="button secondary sm deploy-proc-action"
-            disabled={busy || !ready}
-            title={blocked || (paused ? `Resume ${label}` : `Start ${label}`)}
-            onClick={() => void run(paused ? "unpause" : "start")}
-          >
-            <IconPlay />
-            <span>{paused ? "Resume" : "Start"}</span>
-          </button>
-        )}
+        <button
+          type="button"
+          className="button secondary sm deploy-proc-action"
+          disabled={busy || !canStart}
+          title={
+            blocked ||
+            (paused ? `Resume ${label}` : running ? `${label} is already running` : `Start ${label}`)
+          }
+          onClick={() => void run(paused ? "unpause" : "start")}
+        >
+          <IconPlay />
+          <span>{paused ? "Resume" : "Start"}</span>
+        </button>
+        <button
+          type="button"
+          className="button secondary sm deploy-proc-action"
+          disabled={busy || !canPause}
+          title={blocked || (running ? `Pause ${label}` : `${label} is not running`)}
+          onClick={() => void run("pause")}
+        >
+          <IconPause />
+          <span>Pause</span>
+        </button>
         <button
           type="button"
           className="button danger sm deploy-proc-action"
-          disabled={busy || !ready}
+          disabled={busy || !canStop}
           title={blocked || `Stop ${label}`}
           onClick={() => void run("stop")}
         >
@@ -101,7 +104,7 @@ export function ProcessTaskActions({ row, enabled = true, onChanged }: Props) {
         <button
           type="button"
           className="button secondary sm deploy-proc-action"
-          disabled={busy || !ready}
+          disabled={busy || !canRestart}
           title={blocked || `Restart ${label}`}
           onClick={() => void run("restart")}
         >

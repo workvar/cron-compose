@@ -229,9 +229,7 @@ p.small { margin: 4px 0 12px; }
 }
 .process-card + .process-card { margin-top: 10px; }
 .deploy-order {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
+  margin-top: 0;
 }
 .deploy-order-failure {
   margin-top: 14px;
@@ -272,18 +270,27 @@ p.small { margin: 4px 0 12px; }
   font-size: 12.5px;
   line-height: 1.4;
 }
-.deploy-order-waves {
+.deploy-order-columns {
   display: grid;
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
   margin-top: 14px;
+  align-items: stretch;
 }
-.deploy-order-wave {
+.deploy-order-wave,
+.deploy-order-column {
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-md);
   padding: 10px 12px;
   background: var(--surface-2);
-  min-height: 56px;
+  min-height: 140px;
   transition: border-color 0.15s ease, background 0.15s ease;
+  display: flex;
+  flex-direction: column;
+}
+.deploy-order-wave.is-empty {
+  border-style: dashed;
+  opacity: 0.92;
 }
 .deploy-order-wave.is-over {
   border-color: var(--green);
@@ -294,38 +301,65 @@ p.small { margin: 4px 0 12px; }
   font-weight: 650;
   color: var(--text-2);
   margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
 }
 .deploy-order-chips {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  flex-wrap: nowrap;
   gap: 8px;
-  align-items: center;
-  min-height: 32px;
+  align-items: stretch;
+  min-height: 48px;
+  flex: 1;
 }
 .deploy-order-chip {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   border: 1px solid var(--border-strong);
   background: var(--surface);
   color: var(--text);
   border-radius: var(--radius-md);
-  padding: 6px 10px;
+  padding: 8px 10px;
   font: inherit;
   font-size: 13px;
   font-weight: 600;
   cursor: grab;
+  text-align: left;
+  width: 100%;
 }
 .deploy-order-chip:active { cursor: grabbing; }
 .deploy-order-chip.is-dragging { opacity: 0.45; }
 .deploy-order-chip.is-before {
-  box-shadow: inset 3px 0 0 var(--green);
+  box-shadow: inset 0 3px 0 var(--green);
+}
+.deploy-order-chip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.deploy-order-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deploy-order-chip-phase {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 .deploy-order-handle {
   color: var(--faint);
   font-size: 11px;
   letter-spacing: -2px;
   line-height: 1;
+  flex: none;
 }
 .redeploy-modes { display: grid; gap: 10px; }
 .redeploy-mode {

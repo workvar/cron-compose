@@ -16,7 +16,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/creack/pty"
 	"github.com/croncompose/croncompose/agent/internal/osuser"
 	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
 )
@@ -69,7 +68,7 @@ func failedPhase(err error) string {
 type Sender func(*agentv1.DeployEvent)
 
 // Manager owns in-flight deploys, keyed by run id, so stdin can be forwarded into the
-// installer PTY and cancel can kill the process.
+// installer and cancel can kill the process.
 type Manager struct {
 	log  *slog.Logger
 	send Sender
@@ -302,28 +301,38 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 	_ = writeSpec(release, cmd)
 	_ = chownTree(release, cred)
 
-	if err := m.installApps(ctx, cmd, release, cred, tmpDir); err != nil {
-		return phaseError{phaseInstall, err}
-	}
-	if err := m.cleanupApps(ctx, cmd, release, cred, tmpDir); err != nil {
-		return phaseError{phaseInstall, err}
-	}
+	if len(cmd.GetFlow()) > 0 {
+		if err := m.runDeployFlow(ctx, cmd, layout, cred, tmpDir, release); err != nil {
+			return err
+		}
+	} else {
+		if err := m.installApps(ctx, cmd, release, cred, tmpDir); err != nil {
+			return phaseError{phaseInstall, err}
+		}
+		if err := m.cleanupApps(ctx, cmd, release, cred, tmpDir); err != nil {
+			return phaseError{phaseInstall, err}
+		}
 
-	if size := dirSize(release); size > 0 {
+		if size := dirSize(release); size > 0 {
+			m.setReleaseBytes(runID, size)
+			m.phaseLine(runID, token, phaseInstall, "release size: "+humanBytes(uint64(size)))
+		}
+
+		// Nothing serves from the new release until this point, which is what makes a
+		// deploy atomic: a failed install leaves the previous release live.
+		if err := layout.Swap(release); err != nil {
+			return phaseError{phaseRelease, fmt.Errorf("activate release: %w", err)}
+		}
+		_ = chownTree(base, cred)
+		m.phaseLine(runID, token, phaseRelease, "current -> "+filepath.Base(release))
+
+		if err := m.activateAppWaves(ctx, cmd, layout, cred, tmpDir); err != nil {
+			return err
+		}
+	}
+	if size := dirSize(release); size > 0 && len(cmd.GetFlow()) > 0 {
 		m.setReleaseBytes(runID, size)
 		m.phaseLine(runID, token, phaseInstall, "release size: "+humanBytes(uint64(size)))
-	}
-
-	// Nothing serves from the new release until this point, which is what makes a
-	// deploy atomic: a failed install leaves the previous release live.
-	if err := layout.Swap(release); err != nil {
-		return phaseError{phaseRelease, fmt.Errorf("activate release: %w", err)}
-	}
-	_ = chownTree(base, cred)
-	m.phaseLine(runID, token, phaseRelease, "current -> "+filepath.Base(release))
-
-	if err := m.activateAppWaves(ctx, cmd, layout, cred, tmpDir); err != nil {
-		return err
 	}
 	if pruned := layout.Prune(); len(pruned) > 0 {
 		m.phaseLine(runID, token, phaseRelease, "pruned old releases: "+strings.Join(pruned, ", "))
@@ -551,9 +560,9 @@ func (m *Manager) cleanupApps(ctx context.Context, cmd *agentv1.DeployCommand, r
 }
 
 // runAppScripts runs one or more app scripts. A single job stays sequential (and
-// keeps stdin attached for interactive installers). Two or more run in parallel.
+// keeps stdin attached for typed answers). Two or more run in parallel.
 // Apps are independent: one failure does not cancel siblings. All errors are
-// collected and returned together. PTY log lines are tagged with their work
+// collected and returned together. Parallel log lines are tagged with their work
 // directory so the UI can route interleaved output. logPhase is the DeployEvent
 // phase label (install, pre_start, …).
 func (m *Manager) runAppScripts(ctx context.Context, runID, token string, cred *osuser.Credential, tmpDir, logPhase string, jobs []appScript) error {
@@ -568,7 +577,7 @@ func (m *Manager) runAppScripts(ctx context.Context, runID, token string, cred *
 		if j.phase != "" {
 			m.phaseLine(runID, token, logPhase, j.phase+" (in "+j.work+")")
 		}
-		if err := m.runPTY(ctx, runID, token, j.work, j.script, j.env, cred, tmpDir, false); err != nil {
+		if err := m.runScript(ctx, runID, token, j.work, j.script, j.env, cred, tmpDir, false); err != nil {
 			return fmt.Errorf("%s: %w", j.label, err)
 		}
 		if j.done != "" {
@@ -589,7 +598,7 @@ func (m *Manager) runAppScripts(ctx context.Context, runID, token string, cred *
 			if j.phase != "" {
 				m.phaseLine(runID, token, logPhase, j.phase+" (in "+j.work+")")
 			}
-			if err := m.runPTY(ctx, runID, token, j.work, j.script, j.env, cred, tmpDir, true); err != nil {
+			if err := m.runScript(ctx, runID, token, j.work, j.script, j.env, cred, tmpDir, true); err != nil {
 				mu.Lock()
 				errs = append(errs, fmt.Errorf("%s: %w", j.label, err))
 				mu.Unlock()
@@ -878,18 +887,20 @@ func isGitDir(dir string) bool {
 	return err == nil && st.IsDir()
 }
 
-// runPTY runs script in dir under a PTY. When tagLogs is true (parallel multi-app
-// installs), each complete log line is prefixed with `[in <dir>]` so the UI can
-// attribute interleaved output, and stdin is not attached — only one PTY can own
-// interactive input per run, and CI installers do not need it.
-func (m *Manager) runPTY(ctx context.Context, runID, token, dir, script string, env map[string]string, cred *osuser.Credential, tmpDir string, tagLogs bool) error {
+// runScript runs script in dir over pipes (not a PTY). Package managers like
+// pnpm gate interactive prompts (approve-builds) on stdin.isTTY; a PTY made
+// CI=true useless and hung the deploy. Pipes keep stdin non-TTY so unapproved
+// builds fail or warn instead of waiting forever. When tagLogs is false, a
+// pipe still accepts forwarded stdin for rare typed prompts. When tagLogs is
+// true (parallel multi-app), stdin is /dev/null and each log line is prefixed
+// with `[in <dir>]` for pane routing.
+func (m *Manager) runScript(ctx context.Context, runID, token, dir, script string, env map[string]string, cred *osuser.Credential, tmpDir string, tagLogs bool) error {
 	// Wrap so nvm/fnm under the deploy user are on PATH (non-interactive bash -lc
 	// otherwise skips ~/.bashrc and npm "disappears").
 	cmd := exec.CommandContext(ctx, "/bin/bash", "-lc", osuser.WrapScript(script))
 	cmd.Dir = dir
-	// Quiet installer chrome: npm's PTY spinner is ESC[1G ESC[0K spam in a log
-	// pane that is not a real terminal emulator. CI/NO_COLOR/progress=false cut
-	// most of it at the source; scrubPTYLog strips whatever remains.
+	// Quiet installer chrome: CI/NO_COLOR/progress=false cut spinner spam;
+	// scrubPTYLog still strips whatever ANSI remains.
 	merged := map[string]string{
 		"CI":                  "true",
 		"NO_COLOR":            "1",
@@ -902,32 +913,71 @@ func (m *Manager) runPTY(ctx context.Context, runID, token, dir, script string, 
 	}
 	cmd.Env = credEnv(cred, tmpDir, merged)
 	applyCredential(cmd, cred)
-	ptmx, err := pty.Start(cmd)
+
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
 	}
+	cmd.Stderr = cmd.Stdout
+
+	var stdinR, stdinW *os.File
 	if !tagLogs {
+		stdinR, stdinW, err = os.Pipe()
+		if err != nil {
+			return err
+		}
+		cmd.Stdin = stdinR
 		m.mu.Lock()
-		m.stdin[runID] = ptmx
+		m.stdin[runID] = stdinW
 		m.mu.Unlock()
+	} else {
+		devNull, err := os.Open(os.DevNull)
+		if err != nil {
+			return err
+		}
+		cmd.Stdin = devNull
+		defer devNull.Close()
 	}
-	defer func() {
-		if !tagLogs {
+
+	if err := cmd.Start(); err != nil {
+		if stdinR != nil {
+			_ = stdinR.Close()
+		}
+		if stdinW != nil {
 			m.mu.Lock()
-			if m.stdin[runID] == ptmx {
+			if m.stdin[runID] == stdinW {
 				delete(m.stdin, runID)
 			}
 			m.mu.Unlock()
+			_ = stdinW.Close()
 		}
-		_ = ptmx.Close()
+		return err
+	}
+	// Parent closes the read end; only the child and our write end remain.
+	if stdinR != nil {
+		_ = stdinR.Close()
+	}
+	// Close the stdin writer after Wait so a late UI keystroke does not race.
+	defer func() {
+		if stdinW != nil {
+			m.mu.Lock()
+			if m.stdin[runID] == stdinW {
+				delete(m.stdin, runID)
+			}
+			m.mu.Unlock()
+			_ = stdinW.Close()
+		}
 	}()
 
-	go m.pumpPTY(runID, token, dir, ptmx, tagLogs)
+	donePump := make(chan struct{})
+	go func() {
+		defer close(donePump)
+		m.pumpOutput(runID, token, dir, stdout, tagLogs)
+	}()
 	waitErr := cmd.Wait()
-	// Give the PTY reader a beat to flush the installer’s final lines (npm ERR!,
-	// stack traces) before the caller emits FAILED — otherwise the UI often shows
-	// a bare failure with no trailing output.
-	time.Sleep(100 * time.Millisecond)
+	<-donePump
+	// Brief pause so the last emit flush is visible before FAILED.
+	time.Sleep(50 * time.Millisecond)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -941,10 +991,10 @@ func (m *Manager) runPTY(ctx context.Context, runID, token, dir, script string, 
 	return waitErr
 }
 
-// pumpPTY streams PTY output into deploy log events. When tag is set, complete
-// lines are prefixed with `[in <dir>]` for multi-app pane routing.
-func (m *Manager) pumpPTY(runID, token, dir string, ptmx *os.File, tag bool) {
-	r := bufio.NewReader(ptmx)
+// pumpOutput streams installer stdout/stderr into deploy log events. When tag
+// is set, complete lines are prefixed with `[in <dir>]` for multi-app panes.
+func (m *Manager) pumpOutput(runID, token, dir string, r interface{ Read([]byte) (int, error) }, tag bool) {
+	br := bufio.NewReader(r)
 	prefix := ""
 	if tag && dir != "" {
 		prefix = "[in " + dir + "] "
@@ -960,7 +1010,7 @@ func (m *Manager) pumpPTY(runID, token, dir string, ptmx *os.File, tag bool) {
 		})
 	}
 	for {
-		n, err := r.Read(buf)
+		n, err := br.Read(buf)
 		if n > 0 {
 			if prefix == "" {
 				emit(append([]byte(nil), buf[:n]...))

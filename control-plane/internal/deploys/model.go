@@ -33,6 +33,9 @@ type Project struct {
 	// stop ends the deploy; continue runs later waves and still fails the run
 	// at the end if any wave failed.
 	OnWaveFailure string `json:"on_wave_failure"`
+	// Flow is ordered waves of {app, phase} tasks. Empty = agent default
+	// (parallel install/cleanup, start_group for pre-start/start/health).
+	Flow [][]FlowTask `json:"flow,omitempty"`
 	// Health is the opt-in "did it actually come up" probe. With HealthPath empty a
 	// run succeeds as soon as the install script exits 0, which is what every project
 	// did before this existed.
@@ -154,6 +157,12 @@ type Ref struct {
 	Default bool   `json:"default,omitempty"`
 }
 
+// FlowTask is one app/phase chip in a deploy flow wave.
+type FlowTask struct {
+	App   string `json:"app" yaml:"app"`
+	Phase string `json:"phase" yaml:"phase"`
+}
+
 // CreateInput is POST /deploys.
 type CreateInput struct {
 	Name           string            `json:"name"`
@@ -182,8 +191,9 @@ type CreateInput struct {
 	HealthPath           string   `json:"health_path,omitempty"`
 	HealthPort           int      `json:"health_port,omitempty"`
 	HealthTimeoutSeconds int      `json:"health_timeout_seconds,omitempty"`
-	DeployTimeoutSeconds int      `json:"deploy_timeout_seconds,omitempty"`
-	RedeployOn           []string `json:"redeploy_on,omitempty"`
+	DeployTimeoutSeconds int         `json:"deploy_timeout_seconds,omitempty"`
+	RedeployOn           []string    `json:"redeploy_on,omitempty"`
+	Flow                 [][]FlowTask `json:"flow,omitempty"`
 }
 
 // extras returns the post-insert update for the create-time settings that the
@@ -207,6 +217,10 @@ func (in CreateInput) extras() (UpdateInput, bool) {
 	if len(in.RedeployOn) > 0 {
 		modes := NormalizeRedeployOn(in.RedeployOn)
 		up.RedeployOn, ok = &modes, true
+	}
+	if len(in.Flow) > 0 {
+		flow := in.Flow
+		up.Flow, ok = &flow, true
 	}
 	return up, ok
 }

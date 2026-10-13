@@ -231,6 +231,8 @@ export type ExportInput = {
   appEnv: Record<string, DeployEnvVar[]>;
   advanced: AdvancedSettings;
   redeployOn?: RedeployMode[];
+  /** Deploy flow waves as {app, phase}[][]; omitted when empty. */
+  flow?: Array<Array<{ app: string; phase: string }>>;
 };
 
 /** Renders the form as a croncompose.yml. Sensitive values are never written. */
@@ -261,6 +263,15 @@ export function draftToYaml(d: ExportInput): string {
   const redeploy = (d.redeployOn || DEFAULT_REDEPLOY_ON).filter(Boolean);
   if (redeploy.length && !(redeploy.length === 1 && redeploy[0] === "branch")) {
     out.push(`redeploy_on: [${redeploy.map((m) => yamlScalar(m)).join(", ")}]`);
+  }
+  if (d.flow && d.flow.length > 0) {
+    out.push("flow:");
+    for (const wave of d.flow) {
+      out.push("  -");
+      for (const t of wave) {
+        out.push(`    - { app: ${yamlScalar(t.app)}, phase: ${yamlScalar(t.phase)} }`);
+      }
+    }
   }
 
   const shared = (d.globalEnv || []).filter((v) => v.key.trim() && !v.sensitive);

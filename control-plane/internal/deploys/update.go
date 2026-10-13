@@ -22,7 +22,8 @@ type UpdateInput struct {
 	HealthPort           *int     `json:"health_port"`
 	HealthTimeoutSeconds *int     `json:"health_timeout_seconds"`
 	DeployTimeoutSeconds *int     `json:"deploy_timeout_seconds"`
-	RedeployOn           *[]string `json:"redeploy_on"`
+	RedeployOn           *[]string     `json:"redeploy_on"`
+	Flow                 *[][]FlowTask `json:"flow"`
 }
 
 func applyUpdate(p Project, in UpdateInput) Project {
@@ -85,6 +86,9 @@ func applyUpdate(p Project, in UpdateInput) Project {
 	}
 	if in.RedeployOn != nil {
 		p.RedeployOn = NormalizeRedeployOn(*in.RedeployOn)
+	}
+	if in.Flow != nil {
+		p.Flow = *in.Flow
 	}
 	return p
 }

@@ -32,19 +32,20 @@ const projectCols = `
   coalesce(nullif(on_wave_failure,''), 'stop'),
   health_path, health_port, health_timeout_seconds, deploy_timeout_seconds, health_state,
   coalesce(redeploy_on::text,'["branch"]'),
+  coalesce(flow::text,'[]'),
   created_by, created_at, updated_at
 `
 
 func scanProject(row pgx.Row) (Project, error) {
 	var p Project
-	var envJSON, appsJSON, redeployJSON string
+	var envJSON, appsJSON, redeployJSON, flowJSON string
 	err := row.Scan(
 		&p.ID, &p.Name, &p.Provider, &p.RepoFullName, &p.RepoID, &p.CloneURL, &p.DefaultBranch, &p.ServerID,
 		&p.Language, &p.InstallScript, &p.RootDirectory, &p.ClonePath, &p.Port, &p.ProcessManager,
 		&p.RunAsUser,
 		&envJSON, &appsJSON, &p.WriteSpec, &p.AutoRollback, &p.OnWaveFailure,
 		&p.HealthPath, &p.HealthPort, &p.HealthTimeoutSeconds, &p.DeployTimeoutSeconds, &p.HealthState,
-		&redeployJSON,
+		&redeployJSON, &flowJSON,
 		&p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {
@@ -58,6 +59,8 @@ func scanProject(row pgx.Row) (Project, error) {
 	_ = json.Unmarshal([]byte(redeployJSON), &p.RedeployOn)
 	p.RedeployOn = NormalizeRedeployOn(p.RedeployOn)
 	p.OnWaveFailure = NormalizeOnWaveFailure(p.OnWaveFailure)
+	p.Flow = [][]FlowTask{}
+	_ = json.Unmarshal([]byte(flowJSON), &p.Flow)
 	return p, nil
 }
 
@@ -214,6 +217,10 @@ func (s *Store) Update(ctx context.Context, id string, in UpdateInput) (Project,
 	appsJSON, _ := json.Marshal(p.Apps)
 	p.RedeployOn = NormalizeRedeployOn(p.RedeployOn)
 	redeployJSON, _ := json.Marshal(p.RedeployOn)
+	if p.Flow == nil {
+		p.Flow = [][]FlowTask{}
+	}
+	flowJSON, _ := json.Marshal(p.Flow)
 	_, err = s.pool.Exec(ctx, `
 		update deploy_projects set
 		  name=$2, default_branch=$3, server_id=$4, language=$5, install_script=$6,
@@ -221,12 +228,12 @@ func (s *Store) Update(ctx context.Context, id string, in UpdateInput) (Project,
 		  run_as_user=$11,
 		  env=$12, apps=$13, write_spec=$14, auto_rollback=$15, on_wave_failure=$16,
 		  health_path=$17, health_port=$18, health_timeout_seconds=$19,
-		  deploy_timeout_seconds=$20, redeploy_on=$21, updated_at=now()
+		  deploy_timeout_seconds=$20, redeploy_on=$21, flow=$22, updated_at=now()
 		where id=$1
 	`, p.ID, p.Name, p.DefaultBranch, p.ServerID, p.Language, p.InstallScript,
 		p.RootDirectory, p.ClonePath, p.Port, p.ProcessManager, p.RunAsUser,
 		envJSON, appsJSON, p.WriteSpec, p.AutoRollback, NormalizeOnWaveFailure(p.OnWaveFailure),
-		p.HealthPath, p.HealthPort, p.HealthTimeoutSeconds, p.DeployTimeoutSeconds, redeployJSON)
+		p.HealthPath, p.HealthPort, p.HealthTimeoutSeconds, p.DeployTimeoutSeconds, redeployJSON, flowJSON)
 	if err != nil {
 		return Project{}, err
 	}

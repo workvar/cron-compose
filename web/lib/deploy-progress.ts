@@ -307,12 +307,15 @@ export function buildDeployLive(input: LiveInput): LiveView {
     cur.step = step;
   }
 
-  function completeCommands(p: Proc) {
+  /** Mark install/build command steps done for one process.
+   * force=true when this process emitted install:done or install:cleanup — even
+   * if we never saw the start line (common when pane routing missed it). Without
+   * force, skip processes that never started so a sibling's release does not
+   * mark every later app done. */
+  function completeCommands(p: Proc, force = false) {
     if (failed) return;
-    // A process that has not started yet must stay pending. Calling this when the
-    // next app's install begins was marking every later app done.
     const started = p.commandSteps.some((s) => s.state === "active" || s.state === "done");
-    if (!started) return;
+    if (!started && !force) return;
     for (const s of p.commandSteps) {
       if (s.state === "active" || s.state === "pending") s.state = "done";
     }
@@ -375,13 +378,23 @@ export function buildDeployLive(input: LiveInput): LiveView {
   function maybeAdvance(p: Proc, line: string) {
     if (failed) return;
     const idx = p.commandSteps.findIndex((s) => s.state === "active");
-    if (idx < 0) return;
-    const next = p.commandSteps[idx + 1];
-    if (next && lineStartsCommand(line, next.detail || "", next.kind)) {
-      activate(next);
+    if (idx >= 0) {
+      const next = p.commandSteps[idx + 1];
+      if (next && lineStartsCommand(line, next.detail || "", next.kind)) {
+        activate(next);
+        return;
+      }
+      p.commandSteps[idx].ticks++;
       return;
     }
-    p.commandSteps[idx].ticks++;
+    // Cleanup / pre-start / start / health are not command steps — still tick
+    // them from log traffic so the rail percent moves while they run.
+    for (const s of [p.cleanup, p.preStart, p.start, p.health]) {
+      if (s && s.state === "active") {
+        s.ticks++;
+        break;
+      }
+    }
   }
 
   function paneFor(step: Mutable): string {
@@ -483,14 +496,14 @@ export function buildDeployLive(input: LiveInput): LiveView {
           const dir = work[3].trim();
           const proc = ensure(dir);
           if (isCleanup) {
-            completeCommands(proc);
+            completeCommands(proc, true);
             if (!proc.cleanup) {
               proc.cleanup = makeStep(`${proc.id}-cleanup`, `Cleaning ${proc.name}`, "cleanup", script);
               refresh(proc);
             }
             activate(proc.cleanup);
           } else if (script === "done") {
-            completeCommands(proc);
+            completeCommands(proc, true);
           } else {
             // Do not complete sibling apps: installs run in parallel.
             setCommands(proc, script);

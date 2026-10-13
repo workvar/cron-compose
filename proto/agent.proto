@@ -352,6 +352,17 @@ message DeployApp {
   int32 start_group = 12;
 }
 
+// One task in a deploy flow wave (e.g. Proxy · install).
+message DeployFlowTask {
+  string app = 1;
+  // install | build | cleanup | pre_start | start | health
+  string phase = 2;
+}
+
+message DeployFlowWave {
+  repeated DeployFlowTask tasks = 1;
+}
+
 message DeployCommand {
   string run_id          = 1;
   string op              = 2; // start | stdin | cancel
@@ -386,6 +397,10 @@ message DeployCommand {
   // skips the rest of that wave and still runs later waves. The run still
   // fails at the end if any wave failed.
   string on_wave_failure = 19;
+  // Optional ordered flow. When non-empty, the agent runs these waves instead
+  // of the default parallel-install + start_group schedule. Release activates
+  // between the last install/build/cleanup wave and the first pre_start/start/health.
+  repeated DeployFlowWave flow = 20;
 }
 
 // ---- Host tools (node, go, python, pm2, …) ----

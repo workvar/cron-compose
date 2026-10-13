@@ -488,6 +488,11 @@ export type DeployProject = {
   /** stop (default) or continue when a start wave fails. */
   on_wave_failure?: "stop" | "continue" | string;
   /**
+   * Ordered deploy waves. Each wave is a list of {app, phase} tasks that run
+   * together. Null/empty = agent default (parallel install, start_group waves).
+   */
+  flow?: Array<Array<{ app: string; phase: string }>> | null;
+  /**
    * Opt-in health probe. With an empty path a deploy is successful as soon as the
    * install script exits 0; with one set, the app has to answer on
    * 127.0.0.1:<health_port || port><health_path> before the run counts.
