@@ -357,6 +357,22 @@ func (s *Store) LastSucceededRun(ctx context.Context, projectID string) (Run, er
 	return r, err
 }
 
+// LastSucceededRunOnBranch is the latest successful deploy of a specific branch tip
+// (the project's connected branch for update checks). ErrNotFound when that branch
+// has never landed cleanly.
+func (s *Store) LastSucceededRunOnBranch(ctx context.Context, projectID, branch string) (Run, error) {
+	r, err := scanRun(s.pool.QueryRow(ctx, `
+		select `+runCols+`
+		from deploy_runs
+		where project_id = $1 and status = 'succeeded' and commit_sha <> '' and branch = $2
+		order by created_at desc limit 1
+	`, projectID, branch))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Run{}, ErrNotFound
+	}
+	return r, err
+}
+
 // MarkRun updates status fields. exit_code is only written for terminal statuses —
 // marking a run "running" used to stamp exit_code=0, which the UI showed as "exit 0"
 // alongside a still-live deploy.

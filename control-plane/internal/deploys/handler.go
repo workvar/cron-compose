@@ -508,6 +508,84 @@ func (h *handler) listRuns(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"items": items})
 }
 
+// checkBranchUpdate is GET /deploys/:id/update-check. Compares the last successful
+// deploy of the project's connected branch against the current remote tip so the UI
+// can offer an "Update deploy" action when new commits landed.
+func (h *handler) checkBranchUpdate(c fiber.Ctx) error {
+	p, err := h.store.Get(c.Context(), c.Params("id"))
+	if errors.Is(err, ErrNotFound) {
+		return jsonError(c, fiber.StatusNotFound, "not_found", err)
+	}
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "get_failed", err)
+	}
+	branch := strings.TrimSpace(c.Query("branch"))
+	if branch == "" {
+		branch = p.DefaultBranch
+	}
+	out := BranchUpdateStatus{Branch: branch}
+
+	busy, err := h.store.ActiveRun(c.Context(), p.ID)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "check_failed", err)
+	}
+	out.Busy = busy
+
+	deployed, err := h.store.LastSucceededRunOnBranch(c.Context(), p.ID, branch)
+	if errors.Is(err, ErrNotFound) {
+		out.Message = "No successful deploy of " + branch + " yet — use Redeploy to ship it."
+		return c.JSON(out)
+	}
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "check_failed", err)
+	}
+	out.DeployedSHA = deployed.CommitSha
+	if deployed.FinishedAt != nil {
+		out.DeployedAt = deployed.FinishedAt
+	} else {
+		t := deployed.CreatedAt
+		out.DeployedAt = &t
+	}
+
+	token, tokErr := h.conns.Token(c.Context(), auth.CurrentUserID(c), p.Provider)
+	if (tokErr != nil || token == "") && p.CreatedBy != nil {
+		token, _ = h.conns.Token(c.Context(), *p.CreatedBy, p.Provider)
+	}
+
+	remote, err := h.git.BranchTip(c.Context(), p.Provider, token, p.RepoFullName, branch)
+	if err != nil {
+		return jsonError(c, fiber.StatusBadGateway, "git_api", err)
+	}
+	out.RemoteSHA = remote
+
+	if sameCommit(out.DeployedSHA, remote) {
+		out.Message = "Deployed commit matches " + branch + "."
+		return c.JSON(out)
+	}
+
+	out.UpdateAvailable = !busy
+	ahead, behind, cmpErr := h.git.CompareCommits(c.Context(), p.Provider, token, p.RepoFullName, out.DeployedSHA, remote)
+	if cmpErr == nil {
+		out.AheadBy = ahead
+		out.BehindBy = behind
+	}
+	if busy {
+		out.Message = "A deploy is already running."
+	} else if ahead > 0 {
+		out.Message = fmt.Sprintf("%s is %d commit%s ahead of the live deploy.", branch, ahead, plural(ahead))
+	} else {
+		out.Message = branch + " has moved since " + shortSHA(out.DeployedSHA) + "."
+	}
+	return c.JSON(out)
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
 func (h *handler) projectAnalytics(c fiber.Ctx) error {
 	a, err := h.store.ProjectAnalytics(c.Context(), c.Params("id"), 40)
 	if err != nil {

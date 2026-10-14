@@ -4,6 +4,7 @@ import type { DeployProject, DeployRun, ListResponse, Server } from "@/lib/types
 import CopyButton from "@/components/CopyButton";
 import { IconChevronLeft } from "@/components/icons";
 import { RedeployButton } from "@/components/deploys/RedeployButton";
+import { BranchUpdateBanner } from "@/components/deploys/BranchUpdateBanner";
 import { HostThisApp } from "@/components/deploys/HostThisApp";
 import { ProjectActions } from "@/components/deploys/ProjectActions";
 import { ProjectEnvPanel } from "@/components/deploys/ProjectEnvPanel";
@@ -80,6 +81,8 @@ export default async function DeployDetailPage({ params }: { params: Promise<{ i
         </div>
       </div>
 
+      <BranchUpdateBanner projectId={p.id} branch={p.default_branch} />
+
       <div className="deploy-summary">
         <div className="panel deploy-summary-main">
           <div className="deploy-summary-meta">
@@ -117,6 +120,8 @@ export default async function DeployDetailPage({ params }: { params: Promise<{ i
           <div className="card-title">Redeploy</div>
           <p className="subtle" style={{ margin: "6px 0 12px" }}>
             Pick a branch, tag, or release, then start a new run on the agent.
+            When the connected branch moves ahead of the live deploy, an Update
+            option appears above.
           </p>
           <RedeployButton
             projectId={p.id}
