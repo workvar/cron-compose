@@ -254,4 +254,40 @@ run: done (in /opt/apps/proxy)
   assert.ok(view.lines.some((l) => l.pane === proxy?.id && l.text.includes("listening")));
 }
 
+{
+  // Flow waves emit install/build halves separately. The planned build step must
+  // stay and become done — not disappear and show as Skipped on the wave board.
+  const apps: ProgressApp[] = [
+    {
+      name: "Proxy",
+      root: "proxy",
+      language: "go",
+      install: "go mod download && go build -o proxy .",
+      run: "./proxy",
+      processManager: "pm2",
+    },
+  ];
+  const view = buildDeployLive({
+    status: "running",
+    apps,
+    logs: lines(`clone: tmp clone ready (abc1234)
+install: flow wave 1/4: Proxy·install
+install: go mod download (in /opt/releases/r1/proxy)
+install: done (in /opt/releases/r1/proxy)
+install: flow wave 2/4: Proxy·build
+install: go build -o proxy . (in /opt/releases/r1/proxy)
+install: done (in /opt/releases/r1/proxy)
+release: current -> r1
+`),
+  });
+  const proc = view.processes[0];
+  assert.equal(proc.steps.find((s) => s.kind === "install")?.state, "done");
+  assert.equal(proc.steps.find((s) => s.kind === "build")?.state, "done");
+  assert.equal(
+    proc.steps.filter((s) => s.kind === "install" || s.kind === "build").length,
+    2,
+    "both install and build steps must remain on the rail",
+  );
+}
+
 console.log("deploy-progress: ok");

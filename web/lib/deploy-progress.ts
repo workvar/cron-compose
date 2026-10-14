@@ -336,16 +336,15 @@ export function buildDeployLive(input: LiveInput): LiveView {
   }
 
   /** Mark install/build command steps done for one process.
-   * force=true when this process emitted install:done or install:cleanup — even
-   * if we never saw the start line (common when pane routing missed it). Without
-   * force, skip processes that never started so a sibling's release does not
-   * mark every later app done. */
+   * force=true (cleanup / release) finishes every remaining command step, even if
+   * we never saw a start line. Without force, only the active step is closed so a
+   * later flow wave can still own a pending build. */
   function completeCommands(p: Proc, force = false) {
     if (failed) return;
     const started = p.commandSteps.some((s) => s.state === "active" || s.state === "done");
     if (!started && !force) return;
     for (const s of p.commandSteps) {
-      if (s.state === "active" || s.state === "pending") s.state = "done";
+      if (s.state === "active" || (force && s.state === "pending")) s.state = "done";
     }
     if (cur.step && p.commandSteps.includes(cur.step)) cur.step = null;
   }
@@ -396,8 +395,20 @@ export function buildDeployLive(input: LiveInput): LiveView {
   function setCommands(p: Proc, script: string) {
     const trimmed = script.trim();
     if (!trimmed) return;
-    if (p.plannedScript === trimmed && p.commandSteps.length > 0) return;
-    if (p.commandSteps.some((s) => s.state !== "pending")) return;
+    // Flow waves log install/build halves separately. Match that half to the
+    // planned step instead of replacing the whole list (which dropped "build"
+    // after "go mod download" and made the UI show Build: Skipped).
+    if (p.commandSteps.length > 0) {
+      const exact = p.commandSteps.findIndex((s) => (s.detail || "").trim() === trimmed);
+      if (exact >= 0) {
+        activate(p.commandSteps[exact]);
+        return;
+      }
+      if (p.plannedScript === trimmed) return; // caller activates the first step
+      const plannedParts = splitInstallCommands(p.plannedScript);
+      if (plannedParts.length > 1 && plannedParts.includes(trimmed)) return;
+      if (p.commandSteps.some((s) => s.state !== "pending")) return;
+    }
     p.plannedScript = trimmed;
     p.commandSteps = commandsFromScript(trimmed, p.language, p.name, p.id);
     refresh(p);
@@ -531,11 +542,13 @@ export function buildDeployLive(input: LiveInput): LiveView {
             }
             activate(proc.cleanup);
           } else if (script === "done") {
-            completeCommands(proc, true);
+            // Only close the active half; pending build waits for its own wave.
+            completeCommands(proc, false);
           } else {
             // Do not complete sibling apps: installs run in parallel.
             setCommands(proc, script);
-            if (proc.commandSteps[0]) activate(proc.commandSteps[0]);
+            const active = proc.commandSteps.find((s) => s.state === "active");
+            if (!active && proc.commandSteps[0]) activate(proc.commandSteps[0]);
           }
           pane = proc.id;
         } else {
@@ -544,14 +557,14 @@ export function buildDeployLive(input: LiveInput): LiveView {
       } else if (kind === "release") {
         pane = "shared";
         if (msg.startsWith("current ->")) {
-          for (const p of processes) completeCommands(p);
+          for (const p of processes) completeCommands(p, true);
           if (shared.release.state !== "done") {
             activate(shared.release);
             shared.release.state = "done";
             if (cur.step === shared.release) cur.step = null;
           }
         } else if (!msg.startsWith("pruned") && shared.release.state !== "done") {
-          for (const p of processes) completeCommands(p);
+          for (const p of processes) completeCommands(p, true);
           activate(shared.release);
           shared.release.ticks++;
         }

@@ -44,4 +44,42 @@ const flow = [
   assert.ok(activeWaveIndex(waves) >= 0);
 }
 
+{
+  // Split install/build waves must not report Build: Skipped after a real go build.
+  const goApps: ProgressApp[] = [
+    {
+      name: "Proxy",
+      root: "proxy",
+      language: "go",
+      install: "go mod download && go build -o proxy .",
+      run: "./proxy",
+      processManager: "pm2",
+    },
+  ];
+  const goFlow = [
+    [{ app: "Proxy", phase: "install" }],
+    [{ app: "Proxy", phase: "build" }],
+    [{ app: "Proxy", phase: "run" }],
+  ];
+  const logs = [
+    { chunk: "clone: tmp clone ready (abc)\n" },
+    { chunk: "install: flow wave 1/3: Proxy·install\n" },
+    { chunk: "install: go mod download (in /opt/releases/r1/proxy)\n" },
+    { chunk: "install: done (in /opt/releases/r1/proxy)\n" },
+    { chunk: "install: flow wave 2/3: Proxy·build\n" },
+    { chunk: "install: go build -o proxy . (in /opt/releases/r1/proxy)\n" },
+    { chunk: "install: done (in /opt/releases/r1/proxy)\n" },
+    { chunk: "release: current -> r1\n" },
+    { chunk: "install: flow wave 3/3: Proxy·run\n" },
+  ];
+  const view = buildDeployLive({
+    status: "running",
+    apps: goApps,
+    logs: logs.map((l, i) => ({ seq: i + 1, chunk: l.chunk })),
+  });
+  const waves = buildDeployWaves({ flow: goFlow, view, logs, status: "running" });
+  assert.equal(waves[0].tasks[0].state, "done", "install wave");
+  assert.equal(waves[1].tasks[0].state, "done", "build wave must not be skipped");
+}
+
 console.log("deploy-waves: ok");
