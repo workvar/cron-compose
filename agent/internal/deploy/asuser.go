@@ -37,6 +37,8 @@ var credEnvKeysDropped = []string{
 }
 
 // credEnv merges identity overrides and optional TMPDIR for the target account.
+// Extra keys replace any prior value: appending duplicates left getenv() seeing
+// the agent's stale FRONTEND_PORT / PATH ahead of the deploy overlay.
 func credEnv(cred *osuser.Credential, tmpDir string, extra map[string]string) []string {
 	env := append([]string(nil), os.Environ()...)
 	if cred != nil {
@@ -47,8 +49,15 @@ func credEnv(cred *osuser.Credential, tmpDir string, extra map[string]string) []
 		env = stripEnvKeys(env, "TMPDIR", "TMP", "TEMP")
 		env = append(env, "TMPDIR="+tmpDir, "TMP="+tmpDir, "TEMP="+tmpDir)
 	}
-	for k, v := range extra {
-		env = append(env, k+"="+v)
+	if len(extra) > 0 {
+		keys := make([]string, 0, len(extra))
+		for k := range extra {
+			keys = append(keys, k)
+		}
+		env = stripEnvKeys(env, keys...)
+		for k, v := range extra {
+			env = append(env, k+"="+v)
+		}
 	}
 	return env
 }

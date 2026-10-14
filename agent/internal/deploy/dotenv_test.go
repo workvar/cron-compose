@@ -42,14 +42,40 @@ func TestMergeDotEnvAroundPrefersExisting(t *testing.T) {
 
 func TestApplyListenPortSyncsAliases(t *testing.T) {
 	env := map[string]string{
-		"PROXY_PORT":    "80",
-		"FRONTEND_PORT": "3002",
+		"PROXY_PORT": "80",
 	}
 	applyListenPort(env, 3004)
 	if env["PORT"] != "3004" || env["PROXY_PORT"] != "3004" {
-		t.Fatalf("%+v", env)
+		t.Fatalf("single-listen alias should sync: %+v", env)
 	}
-	if env["FRONTEND_PORT"] != "3002" {
-		t.Fatalf("must not touch FRONTEND_PORT: %+v", env)
+}
+
+func TestApplyListenPortKeepsMonorepoPorts(t *testing.T) {
+	env := map[string]string{
+		"PROXY_PORT":    "80",
+		"FRONTEND_PORT": "3002",
+	}
+	applyListenPort(env, 3002)
+	if env["PORT"] != "3002" {
+		t.Fatalf("PORT: %+v", env)
+	}
+	if env["PROXY_PORT"] != "80" || env["FRONTEND_PORT"] != "3002" {
+		t.Fatalf("monorepo ports must stay authored: %+v", env)
+	}
+}
+
+func TestWriteDotEnvFileRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	if err := writeDotEnvFile(path, map[string]string{
+		"FRONTEND_PORT": "3002",
+		"PROXY_PORT":    "80",
+		"NOTE":          "hello world",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := readDotEnvFile(path)
+	if got["FRONTEND_PORT"] != "3002" || got["PROXY_PORT"] != "80" || got["NOTE"] != "hello world" {
+		t.Fatalf("%+v", got)
 	}
 }

@@ -28,6 +28,29 @@ func TestStripEnvKeys(t *testing.T) {
 	}
 }
 
+func TestCredEnvExtraOverridesAgent(t *testing.T) {
+	t.Setenv("FRONTEND_PORT", "stale")
+	t.Setenv("PATH", "/usr/bin")
+	env := credEnv(nil, "", map[string]string{"FRONTEND_PORT": "3002", "PATH": "/opt/bin:/usr/bin"})
+	got := map[string]string{}
+	for _, e := range env {
+		k, v, ok := strings.Cut(e, "=")
+		if !ok {
+			continue
+		}
+		if _, exists := got[k]; exists {
+			t.Fatalf("duplicate key %s in env (getenv would see the wrong value)", k)
+		}
+		got[k] = v
+	}
+	if got["FRONTEND_PORT"] != "3002" {
+		t.Fatalf("FRONTEND_PORT=%q, want deploy overlay", got["FRONTEND_PORT"])
+	}
+	if got["PATH"] != "/opt/bin:/usr/bin" {
+		t.Fatalf("PATH=%q", got["PATH"])
+	}
+}
+
 func TestCredEnvRewritesRootGoCacheForDeployUser(t *testing.T) {
 	// Simulate a root agent unit: GOCACHE under /root must not reach run_as=pi.
 	t.Setenv("HOME", "/root")

@@ -172,16 +172,16 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, name
 		if waitName != "" {
 			aliases = append([]string{waitName}, aliases...)
 		}
-		// Start wave after Run: process may already be online — don't restart
-		// and re-enter a long wait when jlist is slow.
+		// A process still online from a previous deploy keeps pm_cwd on that
+		// release directory (often pruned after keepReleases). Skipping start
+		// left MODULE_NOT_FOUND / stale code running under the old path.
+		// Same-deploy Start-after-Run is skipped earlier via wasLaunched, so
+		// reaching here means we must (re)start into current/.
 		if real, ok := m.pm2AlreadyOnline(ctx, work, waitName, aliases, cred, tmpDir); ok {
-			m.phaseLine(runID, token, phase, "pm2 already online: "+real+" (in "+work+")")
-			go m.followLogs(ctx, runID, token, work, "pm2", real, cred, tmpDir)
-			if err := m.waitReady(ctx, runID, token, phase, work, port); err != nil {
-				return err
+			m.phaseLine(runID, token, phase, "pm2 delete "+real+" (restart into new release) (in "+work+")")
+			if err := m.runCmdStream(ctx, runID, token, work, env, cred, tmpDir, "pm2", "delete", real); err != nil {
+				m.phaseLine(runID, token, phase, "pm2 delete "+real+": "+err.Error()+" (continuing with start)")
 			}
-			m.phaseLine(runID, token, phase, "done (in "+work+")")
-			return nil
 		}
 		args := pm2StartArgs(waitName, language, eco, runScript)
 		if len(args) == 0 {
@@ -253,6 +253,10 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, name
 			return fmt.Errorf("systemd reload: %w", err)
 		}
 		if err := m.runCmdStream(ctx, runID, token, work, env, cred, tmpDir, "systemctl", "--user", "enable", "--now", unit+".service"); err != nil {
+			return err
+		}
+		// enable --now is a no-op when already active; restart so the new release runs.
+		if err := m.runCmdStream(ctx, runID, token, work, env, cred, tmpDir, "systemctl", "--user", "restart", unit+".service"); err != nil {
 			return err
 		}
 		go m.followLogs(ctx, runID, token, work, "systemd", name, cred, tmpDir)

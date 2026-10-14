@@ -96,6 +96,16 @@ func (l Layout) Migrate(ctx context.Context) (string, error) {
 	if err := l.Swap(dest); err != nil {
 		return "", err
 	}
+	// Keep a stable project-level .env across releases. The in-place checkout's
+	// .env moved into this first release; without promoting it, the next deploy
+	// (fresh clone, gitignored .env) starts with FRONTEND_PORT etc. missing.
+	promote := filepath.Join(dest, ".env")
+	stable := filepath.Join(l.Base, ".env")
+	if _, err := os.Lstat(stable); err != nil {
+		if b, err := os.ReadFile(promote); err == nil && len(b) > 0 {
+			_ = os.WriteFile(stable, b, 0o600)
+		}
+	}
 	return dest, nil
 }
 

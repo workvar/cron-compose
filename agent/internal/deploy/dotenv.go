@@ -3,6 +3,7 @@ package deploy
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -100,18 +101,71 @@ func unquoteEnv(v string) string {
 	return v
 }
 
-// applyListenPort sets PORT and overwrites listen aliases already present in env
-// so a UI port of 3004 updates PROXY_PORT=80 from .env rather than leaving the
-// process bound to a privileged port.
+// applyListenPort sets PORT from the UI/app port. For a single-listen app that
+// only has PROXY_PORT (etc.) in .env, those aliases are synced so a UI port
+// change moves the process off a stale privileged port. Monorepos that also
+// define FRONTEND_PORT / BACKEND_PORT keep those values — rewriting PROXY_PORT
+// to the frontend's 3002 while starting peepal-frontend corrupted shared env.
 func applyListenPort(env map[string]string, port int32) {
 	if env == nil || port <= 0 {
 		return
 	}
 	p := strconv.Itoa(int(port))
 	env["PORT"] = p
+	if _, ok := env["FRONTEND_PORT"]; ok {
+		return
+	}
+	if _, ok := env["BACKEND_PORT"]; ok {
+		return
+	}
 	for _, k := range listenPortAliases {
 		if _, ok := env[k]; ok {
 			env[k] = p
 		}
 	}
 }
+
+// writeDotEnvFile writes KEY=value lines for a release or project base. Empty
+// keys are skipped. Values are quoted when they need it.
+func writeDotEnvFile(path string, env map[string]string) error {
+	if len(env) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	b.WriteString("# Written by CronCompose deploy — do not edit during a run\n")
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.WriteString(quoteDotEnv(env[k]))
+		b.WriteByte('\n')
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o600)
+}
+
+func quoteDotEnv(v string) string {
+	if v == "" {
+		return ""
+	}
+	if strings.ContainsAny(v, " \t\n\r\"'#") || strings.Contains(v, "=") {
+		esc := strings.ReplaceAll(v, `\`, `\\`)
+		esc = strings.ReplaceAll(esc, `"`, `\"`)
+		return `"` + esc + `"`
+	}
+	return v
+}
+

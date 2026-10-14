@@ -371,8 +371,9 @@ func (m *Manager) pm2PidOnline(ctx context.Context, work string, cred *osuser.Cr
 	return "", false
 }
 
-// pm2AlreadyOnline is a cheap pre-start check so the Start wave after Run does
-// not call `pm2 start` again when the process is already up.
+// pm2AlreadyOnline reports whether pm2 already has this app online (by name or
+// cwd). Callers delete+restart it on deploy so the new release under current/
+// is what runs; wasLaunched skips a second start in the same deploy.
 func (m *Manager) pm2AlreadyOnline(ctx context.Context, work, want string, aliases []string, cred *osuser.Credential, tmpDir string) (string, bool) {
 	procs, err := m.pm2Jlist(ctx, work, cred, tmpDir)
 	if err == nil {

@@ -349,7 +349,11 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 		return phaseError{phaseClone, err}
 	}
 	_ = writeSpec(release, cmd)
+	if err := writeDeployDotEnvs(layout.Base, release, cmd); err != nil {
+		return phaseError{phaseClone, fmt.Errorf("write release .env: %w", err)}
+	}
 	_ = chownTree(release, cred)
+	_ = chownTree(filepath.Join(layout.Base, ".env"), cred)
 
 	if len(cmd.GetFlow()) > 0 {
 		if err := m.runDeployFlow(ctx, cmd, layout, cred, tmpDir, release); err != nil {
@@ -1156,6 +1160,56 @@ func writeSpec(dest string, cmd *agentv1.DeployCommand) error {
 		b.WriteString("process_manager: " + cmd.GetProcessManager() + "\n")
 	}
 	return os.WriteFile(filepath.Join(dest, "croncompose.yml"), []byte(b.String()), 0o644)
+}
+
+// writeDeployDotEnvs persists project + per-app env into the release and project
+// base. .env is usually gitignored, so after the releases layout migrate it was
+// stranded in an old release and pruned — FRONTEND_PORT then went missing.
+func writeDeployDotEnvs(base, release string, cmd *agentv1.DeployCommand) error {
+	global := map[string]string{}
+	for k, v := range cmd.GetEnv() {
+		global[k] = v
+	}
+	apps := appsOf(cmd, release)
+	if len(apps) <= 1 {
+		if len(apps) == 1 {
+			for k, v := range apps[0].GetEnv() {
+				global[k] = v
+			}
+		}
+		if err := writeDotEnvFile(filepath.Join(release, ".env"), global); err != nil {
+			return err
+		}
+		if base != "" && base != release {
+			return writeDotEnvFile(filepath.Join(base, ".env"), global)
+		}
+		return nil
+	}
+	if err := writeDotEnvFile(filepath.Join(release, ".env"), global); err != nil {
+		return err
+	}
+	if base != "" && base != release {
+		if err := writeDotEnvFile(filepath.Join(base, ".env"), global); err != nil {
+			return err
+		}
+	}
+	for _, app := range apps {
+		merged := map[string]string{}
+		for k, v := range global {
+			merged[k] = v
+		}
+		for k, v := range app.GetEnv() {
+			merged[k] = v
+		}
+		work := appWorkDir(release, cmd, app)
+		if work == release {
+			continue
+		}
+		if err := writeDotEnvFile(filepath.Join(work, ".env"), merged); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (m *Manager) fail(runID, token, phase, msg string) {
