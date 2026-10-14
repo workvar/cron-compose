@@ -27,6 +27,14 @@ const sourceSans = Source_Sans_3({
 export const metadata: Metadata = {
   title: "CronCompose",
   description: "Deploy apps and schedule jobs across remote Linux servers",
+  // Required for iOS Web Push: Home Screen installs only get push when the
+  // site is a standalone web app (Safari tabs cannot subscribe on iPhone/iPad).
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "CronCompose",
+    statusBarStyle: "default",
+  },
   icons: {
     icon: [
       { url: "/app/logo.svg", type: "image/svg+xml" },

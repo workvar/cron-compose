@@ -26,6 +26,69 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return out;
 }
 
+/** Safari rejects a Uint8Array whose .buffer is a SharedArrayBuffer view offset. */
+function applicationServerKey(base64String: string): BufferSource {
+  const bytes = urlBase64ToUint8Array(base64String);
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
+export type PushEnvironment = {
+  supported: boolean;
+  /** iPhone/iPad Safari tab — push only works after Add to Home Screen. */
+  needsHomeScreen: boolean;
+  /** Running as an installed Home Screen / standalone web app. */
+  standalone: boolean;
+  insecure: boolean;
+  detail?: string;
+};
+
+export function detectPushEnvironment(): PushEnvironment {
+  if (typeof window === "undefined") {
+    return { supported: false, needsHomeScreen: false, standalone: false, insecure: false };
+  }
+  const insecure = !window.isSecureContext;
+  const ua = navigator.userAgent || "";
+  const iOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const standalone =
+    window.matchMedia("(display-mode: standalone)").matches ||
+    // iOS legacy flag set when launched from Home Screen.
+    ("standalone" in navigator && Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
+  const hasAPIs =
+    "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+
+  if (insecure) {
+    return {
+      supported: false,
+      needsHomeScreen: false,
+      standalone,
+      insecure: true,
+      detail: "Web Push requires HTTPS (or localhost).",
+    };
+  }
+  // iOS: Notification / PushManager are missing in a normal Safari tab. They
+  // appear only after the site is opened from a Home Screen web app.
+  if (iOS && !standalone) {
+    return {
+      supported: false,
+      needsHomeScreen: true,
+      standalone: false,
+      insecure: false,
+      detail:
+        "On iPhone and iPad, Safari only allows Web Push for apps added to the Home Screen. Tap Share → Add to Home Screen, open CronCompose from that icon, then enable push.",
+    };
+  }
+  if (!hasAPIs) {
+    return {
+      supported: false,
+      needsHomeScreen: false,
+      standalone,
+      insecure: false,
+      detail: "This browser does not expose the Push API yet (Safari 16+ on macOS, or iOS 16.4+ Home Screen app).",
+    };
+  }
+  return { supported: true, needsHomeScreen: false, standalone, insecure: false };
+}
+
 function arrayBufferToBase64Url(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
   let s = "";
@@ -34,12 +97,7 @@ function arrayBufferToBase64Url(buf: ArrayBuffer): string {
 }
 
 export function pushSupported(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    "serviceWorker" in navigator &&
-    "PushManager" in window &&
-    "Notification" in window
-  );
+  return detectPushEnvironment().supported;
 }
 
 export async function ensurePushServiceWorker(): Promise<ServiceWorkerRegistration> {
@@ -64,8 +122,9 @@ export async function subscribeBrowserPush(events?: string[]): Promise<PushSubsc
   let sub = await reg.pushManager.getSubscription();
   if (!sub) {
     sub = await reg.pushManager.subscribe({
+      // Safari requires user-visible pushes; silent pushes revoke the subscription.
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(public_key),
+      applicationServerKey: applicationServerKey(public_key),
     });
   }
   const json = sub.toJSON();

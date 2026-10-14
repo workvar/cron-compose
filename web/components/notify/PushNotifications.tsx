@@ -5,11 +5,12 @@ import { IconBell } from "@/components/icons";
 import {
   PUSH_EVENT_LABELS,
   deletePushSubscription,
+  detectPushEnvironment,
   listPushSubscriptions,
-  pushSupported,
   subscribeBrowserPush,
   testPush,
   updatePushEvents,
+  type PushEnvironment,
   type PushSubscriptionRow,
 } from "@/lib/web-push";
 
@@ -18,9 +19,12 @@ const ALL_EVENTS = Object.keys(PUSH_EVENT_LABELS);
 /**
  * Per-device browser push: works with the tab closed via the service worker.
  * Independent of admin Slack/email notification targets.
+ *
+ * Safari notes: macOS Safari 16+ works in a normal tab. iPhone/iPad only allow
+ * push after Add to Home Screen (standalone web app) — see detectPushEnvironment.
  */
 export function PushNotifications() {
-  const [supported, setSupported] = useState(false);
+  const [env, setEnv] = useState<PushEnvironment | null>(null);
   const [perm, setPerm] = useState<NotificationPermission | "unknown">("unknown");
   const [items, setItems] = useState<PushSubscriptionRow[]>([]);
   const [busy, setBusy] = useState(false);
@@ -34,9 +38,9 @@ export function PushNotifications() {
   }, []);
 
   useEffect(() => {
-    const ok = pushSupported();
-    setSupported(ok);
-    if (!ok) return;
+    const next = detectPushEnvironment();
+    setEnv(next);
+    if (!next.supported) return;
     setPerm(Notification.permission);
     void refresh();
   }, [refresh]);
@@ -97,12 +101,35 @@ export function PushNotifications() {
     }
   }
 
-  if (!supported) {
+  if (!env) {
+    return <div className="panel"><div className="empty">Checking push support…</div></div>;
+  }
+
+  if (!env.supported) {
     return (
       <div className="panel">
-        <div className="empty">
-          This browser does not support Web Push (needs HTTPS or localhost, and a modern browser).
+        <div className="row">
+          <div className="cluster" style={{ flexWrap: "nowrap" }}>
+            <span className="mini-icon"><IconBell /></span>
+            <div>
+              <div style={{ fontWeight: 700, color: "var(--text)" }}>Browser push</div>
+              <div className="subtle" style={{ fontSize: 12 }}>
+                {env.needsHomeScreen ? "Safari on iPhone / iPad" : "Not available here"}
+              </div>
+            </div>
+          </div>
         </div>
+        <p className="subtle" style={{ marginTop: 12, marginBottom: 0, fontSize: 13.5, lineHeight: 1.45 }}>
+          {env.detail || "This browser does not support Web Push."}
+        </p>
+        {env.needsHomeScreen && (
+          <ol className="subtle" style={{ margin: "12px 0 0", paddingLeft: 18, fontSize: 13.5, lineHeight: 1.5 }}>
+            <li>Tap the Share button in Safari</li>
+            <li>Choose <strong>Add to Home Screen</strong></li>
+            <li>Open CronCompose from the new Home Screen icon</li>
+            <li>Return here and tap Enable</li>
+          </ol>
+        )}
       </div>
     );
   }
@@ -119,6 +146,7 @@ export function PushNotifications() {
             <div className="subtle" style={{ fontSize: 12 }}>
               Deploy start / success / fail, job failures, and updates — even with the tab closed.
               {perm !== "unknown" ? ` · Permission: ${perm}` : ""}
+              {env.standalone ? " · Home Screen app" : ""}
             </div>
           </div>
         </div>
