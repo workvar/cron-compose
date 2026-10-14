@@ -1,19 +1,22 @@
-# CronCompose v0.0.61
+# CronCompose v0.0.62
 
-When the connected branch moves ahead of the live deploy, the project page
-offers an Update action.
+Safari-friendly browser push: a Home Screen web app manifest for iPhone/iPad,
+plus clearer guidance when push is not available in a Safari tab.
 
 ## Highlights
 
-- **Update deploy** — The project detail page checks the remote tip of the
-  connected branch against the last successful deploy. If new commits landed,
-  an **Update available** banner shows how far ahead the branch is (when the
-  provider reports it) and an **Update deploy** button starts a manual run on
-  that branch. Rechecks about once a minute.
+- **PWA manifest** — `display: standalone` so Add to Home Screen installs a web
+  app (required for Web Push on iOS/iPadOS 16.4+). macOS Safari 16+ still works
+  in a normal tab.
+- **Safari subscribe hardening** — VAPID `applicationServerKey` is passed in a
+  form Mac Safari accepts more reliably.
+- **Settings UI** — When push cannot run (iPhone Safari tab, insecure origin,
+  old browser), Settings explains why and, on iOS, how to Add to Home Screen.
 
 ## Upgrade
 
-1. Restart the **control plane** and rebuild/restart the web UI.
-2. Open a project whose connected branch has new commits — the banner appears
-   when the tip differs from the live deploy SHA.
-3. Agent update is **not** required for this release.
+1. Rebuild/restart the **web UI** (and control plane if it is not already on
+   v0.0.60+ with web push).
+2. **Mac Safari:** Settings → Browser notifications → Enable → Test.
+3. **iPhone/iPad:** Share → Add to Home Screen → open that icon → Enable.
+4. Agent update is **not** required for this release.
