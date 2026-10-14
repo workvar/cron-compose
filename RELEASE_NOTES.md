@@ -1,21 +1,30 @@
-# CronCompose v0.0.63
+# CronCompose v0.0.64
 
-Deploy run progress no longer marks a real `go build` (or other build half) as
-**Skipped** when install and build run in separate flow waves.
+Redeploy restarts PM2/systemd into the new release, and deploy env (e.g.
+`FRONTEND_PORT`) survives the releases layout instead of going missing or
+getting overwritten.
 
 ## Highlights
 
-- **Flow install/build tracking** — When the agent logs only the install half
-  of a script (e.g. `go mod download`), the live rail keeps the planned build
-  step and activates it when the build wave runs, instead of replacing the
-  step list and leaving **Build: Skipped**.
-- **Wave completion** — `install: done` closes only the active half; pending
-  build waits for its own wave. Cleanup/release still finish any remaining
-  command steps.
+- **PM2 restart on deploy** — If a process is already online from a previous
+  release, the agent deletes it and starts fresh under `current/`. Skipping
+  start left `pm_cwd` on a pruned release and caused `MODULE_NOT_FOUND` /
+  crash loops with no app changes.
+- **systemd restart** — After `enable --now`, the unit is restarted so an
+  already-active service picks up the new release.
+- **Stable `.env` on disk** — Project and per-app env are written into the
+  release and project base `.env`. Gitignored env that only lived in an old
+  checkout is no longer lost after migrate/prune.
+- **Monorepo listen ports** — Starting the frontend no longer rewrites shared
+  `PROXY_PORT` when `FRONTEND_PORT` / `BACKEND_PORT` are present.
+- **Deploy env wins** — Child process env overlays replace agent keys instead
+  of appending duplicates that `getenv` could ignore.
 
 ## Upgrade
 
-1. Rebuild/restart the **web UI**.
-2. Redeploy a project whose flow has separate Install and Build waves — Build
-   should show **Done** when the compile command runs.
-3. Agent and control plane updates are **not** required for this release.
+1. Update/rebuild the **agent** on each deploy host (required).
+2. Rebuild/restart the control plane only if you pull this tag there too.
+3. Redeploy affected projects (or `pm2 delete` + start once) so processes run
+   from `current/` with the written `.env`.
+4. Confirm in CronCompose project Env (or `/opt/.../<project>/.env`) that
+   `FRONTEND_PORT` / `BACKEND_PORT` / `PROXY_PORT` are set as you expect.
