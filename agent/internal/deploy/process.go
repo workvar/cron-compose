@@ -140,7 +140,11 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, name
 	if language == "" {
 		language = detectLangHint(work)
 	}
+	// Workdir / release .env supplies PROXY_PORT, FRONTEND_PORT, etc. Deploy env
+	// and the UI PORT field overlay those values (and sync listen aliases).
+	env = mergeDotEnvAround(work, env)
 	port = portFrom(port, env)
+	applyListenPort(env, port)
 	switch pm {
 	case "", "none":
 		if strings.TrimSpace(runScript) == "" {

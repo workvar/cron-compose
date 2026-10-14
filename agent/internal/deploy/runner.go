@@ -869,9 +869,7 @@ func appEnv(cmd *agentv1.DeployCommand, app *agentv1.DeployApp) map[string]strin
 	if port == 0 {
 		port = cmd.GetPort()
 	}
-	if port > 0 {
-		env["PORT"] = fmt.Sprintf("%d", port)
-	}
+	applyListenPort(env, port)
 	return env
 }
 
@@ -953,6 +951,8 @@ func (m *Manager) runScript(ctx context.Context, runID, token, dir, script strin
 		"TERM":                "dumb",
 		"npm_config_progress": "false",
 	}
+	env = mergeDotEnvAround(dir, env)
+	applyListenPort(env, portFrom(0, env))
 	for k, v := range env {
 		merged[k] = v
 	}
