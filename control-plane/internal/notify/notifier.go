@@ -79,6 +79,13 @@ func (n *Notifier) FireRunFailed(serverID, jobID, runID, status string, exitCode
 	for i := 0; i < pending; i++ {
 		<-done
 	}
+	n.FirePushJobFailed(serverID, jobID, runID, status, exitCode, durationMs, errMsg)
+}
+
+// FireDeployStarted matches agentgw.DeployNotifyHook. Browser push only — Slack /
+// email stay failure-oriented unless the operator opts in via on_statuses later.
+func (n *Notifier) FireDeployStarted(serverID, projectID, runID, branch, trigger string) {
+	n.FirePushDeployStarted(serverID, projectID, runID, branch, trigger)
 }
 
 // FireDeployFailed matches agentgw.FailedRunHook's deploy half. Called whenever a
@@ -125,6 +132,19 @@ func (n *Notifier) FireDeployFailed(serverID, projectID, runID, status, branch, 
 	for i := 0; i < pending; i++ {
 		<-done
 	}
+	n.FirePushDeployFinished(serverID, projectID, runID, status, branch, trigger, phase, exitCode, errMsg, rolledBack)
+}
+
+// FireDeploySucceeded pushes a browser notification when a deploy finishes cleanly.
+// Channel targets (Slack/email) stay quiet on success unless they opted into that
+// status; browsers often want the "it's live" ping.
+func (n *Notifier) FireDeploySucceeded(serverID, projectID, runID, status, branch, trigger, phase string, exitCode int32, errMsg string, rolledBack bool) {
+	n.FirePushDeployFinished(serverID, projectID, runID, status, branch, trigger, phase, exitCode, errMsg, rolledBack)
+}
+
+// FireUpdateAvailable pushes when the catalog discovers a newer agent release.
+func (n *Notifier) FireUpdateAvailable(version, releaseURL string) {
+	n.FirePushUpdateAvailable(version, releaseURL)
 }
 
 // Test delivers a synthetic event to one target and returns the delivery error, so the

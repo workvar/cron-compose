@@ -131,6 +131,7 @@ func New(d Deps) *fiber.App {
 	auth.RegisterOAuthSettings(authed.Group("", auth.RequireRole("admin")), oauthSettings, writer)
 	secrets.Register(authed, d.Log, d.Pool, d.Crypto, writer)
 	notify.Register(authed, d.Log, d.Pool, writer, d.Notifier)
+	notify.RegisterPush(authed, d.Log, d.Pool)
 	updates.Register(authed, d.Log, d.Pool, d.Updates, d.ManualUpdatePolicy, d.Gateway, writer)
 	publicOrigin := strings.TrimSuffix(d.PublicHTTPURL, "/")
 	publicOrigin = strings.TrimSuffix(publicOrigin, "/api/v1")

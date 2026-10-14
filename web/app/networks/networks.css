@@ -100,6 +100,97 @@
   letter-spacing: 0.04em;
 }
 
+/* Interface address / MAC / gateway facts */
+.networks-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px 16px;
+  margin: 0 0 4px;
+}
+
+.networks-fact {
+  min-width: 0;
+}
+
+.networks-fact dt {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.networks-fact dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+  color: var(--text);
+}
+
+.networks-overview {
+  margin-bottom: 18px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.networks-overview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.networks-overview-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.networks-overview-head p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.networks-overview-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.networks-overview-item {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.networks-overview-item:last-child {
+  border-bottom: 0;
+}
+
+.networks-overview-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.networks-overview-item-head strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.networks-overview-item-head span {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
 /* Mode tabs reuse connector rhythm */
 .networks-tabs {
   display: flex;

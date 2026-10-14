@@ -18,6 +18,7 @@ type NetIface = {
   gateway?: string;
   dns?: string[];
   method?: string;
+  mac?: string;
   primary?: boolean;
 };
 type WifiNet = {
@@ -90,6 +91,49 @@ async function apiJSON<T = Record<string, unknown>>(
 
 function isVirtualIface(name: string): boolean {
   return /^(veth|br-|docker|virbr|cni|flannel|cali|tun|tap)/i.test(name);
+}
+
+function joinList(values?: string[]): string {
+  return (values || []).filter(Boolean).join(", ");
+}
+
+function ifaceFactRows(iface: NetIface, opts?: { gatewayFallback?: string }): { label: string; value: string }[] {
+  const rows: { label: string; value: string }[] = [];
+  const ipv4 = joinList(iface.ipv4);
+  const ipv6 = joinList(iface.ipv6);
+  const dns = joinList(iface.dns);
+  const gateway = iface.gateway || opts?.gatewayFallback || "";
+  if (ipv4) rows.push({ label: "IPv4", value: ipv4 });
+  if (ipv6) rows.push({ label: "IPv6", value: ipv6 });
+  if (gateway) rows.push({ label: "Gateway", value: gateway });
+  if (dns) rows.push({ label: "DNS", value: dns });
+  if (iface.mac) rows.push({ label: "MAC", value: iface.mac });
+  if (iface.method) rows.push({ label: "Method", value: iface.method === "manual" ? "static" : iface.method });
+  if (iface.connection) rows.push({ label: "Connection", value: iface.connection });
+  return rows;
+}
+
+function IfaceFacts({
+  iface,
+  gatewayFallback,
+}: {
+  iface: NetIface;
+  gatewayFallback?: string;
+}) {
+  const rows = ifaceFactRows(iface, { gatewayFallback });
+  if (rows.length === 0) {
+    return <p className="networks-drawer-note">No address details reported for this interface.</p>;
+  }
+  return (
+    <dl className="networks-facts">
+      {rows.map((r) => (
+        <div key={r.label} className="networks-fact">
+          <dt>{r.label}</dt>
+          <dd>{r.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
 
 function Chevron() {
@@ -369,25 +413,72 @@ export default function NetworksPage() {
   const ethernet = showVirtual ? ethernetAll : ethernetAll.filter((i) => !isVirtualIface(i.name));
   const virtualCount = ethernetAll.length - ethernetAll.filter((i) => !isVirtualIface(i.name)).length;
 
+  const primaryIface = useMemo(() => {
+    if (!status) return null;
+    const all = status.interfaces || [];
+    const byPrimary = all.find((i) => i.primary);
+    if (byPrimary) return byPrimary;
+    if (status.control_plane_iface) {
+      const byCp = all.find((i) => i.name === status.control_plane_iface);
+      if (byCp) return byCp;
+    }
+    if (status.wifi?.active) {
+      const wifiDev = status.wifi.active.device || status.wifi.device;
+      if (wifiDev) {
+        const byWifi = all.find((i) => i.name === wifiDev);
+        if (byWifi) return byWifi;
+      }
+      const wifiType = all.find((i) => i.type === "wifi" && i.state.includes("connected"));
+      if (wifiType) return wifiType;
+    }
+    return (
+      ethernetAll.find((i) => i.state.includes("connected") && !isVirtualIface(i.name)) ||
+      all.find((i) => i.state.includes("connected") && !isVirtualIface(i.name)) ||
+      null
+    );
+  }, [status, ethernetAll]);
+
+  const overviewIfaces = useMemo(() => {
+    const all = status?.interfaces || [];
+    return showVirtual ? all : all.filter((i) => !isVirtualIface(i.name));
+  }, [status, showVirtual]);
+
   const linkSummary = useMemo(() => {
     if (!status) return null;
+    const gw = status.default_route || primaryIface?.gateway || "";
+    const ip = (primaryIface?.ipv4 || [])[0] || "";
+    const mac = primaryIface?.mac || "";
+    const bits = (parts: (string | false | undefined | null)[]) => parts.filter(Boolean).join(" · ");
+
     if (status.wifi?.active?.ssid) {
       return {
         on: true,
         title: status.wifi.active.ssid,
-        detail: `Wi‑Fi${status.wifi.active.signal != null ? ` · ${status.wifi.active.signal}%` : ""}${
-          status.control_plane_iface ? ` · via ${status.control_plane_iface}` : ""
-        }`,
+        detail: bits([
+          `Wi‑Fi${status.wifi.active.signal != null ? ` ${status.wifi.active.signal}%` : ""}`,
+          ip || null,
+          gw ? `gw ${gw}` : null,
+          mac ? `mac ${mac}` : null,
+          status.control_plane_iface ? `via ${status.control_plane_iface}` : null,
+        ]),
         kind: "Wi‑Fi",
+        iface: primaryIface,
       };
     }
-    const eth = ethernetAll.find((i) => i.primary) || ethernetAll.find((i) => i.state.includes("connected") && !isVirtualIface(i.name));
+    const eth =
+      ethernetAll.find((i) => i.primary) ||
+      ethernetAll.find((i) => i.state.includes("connected") && !isVirtualIface(i.name));
     if (eth) {
       return {
         on: eth.state.includes("connected"),
         title: eth.name,
-        detail: `${(eth.ipv4 || [])[0] || "no IPv4"}${eth.gateway ? ` · gw ${eth.gateway}` : ""}`,
+        detail: bits([
+          (eth.ipv4 || [])[0] || "no IPv4",
+          (eth.gateway || status.default_route) ? `gw ${eth.gateway || status.default_route}` : null,
+          eth.mac ? `mac ${eth.mac}` : null,
+        ]),
         kind: "Ethernet",
+        iface: eth,
       };
     }
     const modem = status.cellular?.modems?.find((m) => m.connected);
@@ -395,8 +486,12 @@ export default function NetworksPage() {
       return {
         on: true,
         title: modem.operator || `Modem ${modem.id}`,
-        detail: modem.apn ? `Cellular · ${modem.apn}` : "Cellular",
+        detail: bits([
+          modem.apn ? `APN ${modem.apn}` : "Cellular",
+          (modem.ipv4 || [])[0] || null,
+        ]),
         kind: "Cellular",
+        iface: primaryIface,
       };
     }
     return {
@@ -404,8 +499,9 @@ export default function NetworksPage() {
       title: "No active link reported",
       detail: status.backend === "unavailable" ? "Network backend unavailable" : `Backend · ${status.backend}`,
       kind: "Offline",
+      iface: primaryIface,
     };
-  }, [status, ethernetAll]);
+  }, [status, ethernetAll, primaryIface]);
 
   const modes: { id: Mode; label: string; count?: number; hide?: boolean }[] = [
     { id: "wireless", label: "Wireless", count: status?.wifi?.saved?.length },
@@ -500,6 +596,52 @@ export default function NetworksPage() {
         </div>
       )}
 
+      {status && overviewIfaces.length > 0 && (
+        <section className="networks-overview panel">
+          <div className="networks-overview-head">
+            <div>
+              <h2>Interfaces</h2>
+              <p className="subtle">
+                Addresses, MAC, gateway, and DNS reported by the agent
+                {status.default_route ? ` · default route ${status.default_route}` : ""}.
+              </p>
+            </div>
+            {(status.interfaces || []).some((i) => isVirtualIface(i.name)) && (
+              <button
+                type="button"
+                className="button secondary sm"
+                onClick={() => setShowVirtual((v) => !v)}
+              >
+                {showVirtual ? "Hide virtual" : "Show virtual"}
+              </button>
+            )}
+          </div>
+          <ul className="networks-overview-list">
+            {overviewIfaces.map((iface) => (
+              <li key={iface.name} className="networks-overview-item">
+                <div className="networks-overview-item-head">
+                  <div>
+                    <strong>{iface.name}</strong>
+                    <span>
+                      {iface.type}
+                      {iface.state ? ` · ${iface.state}` : ""}
+                      {iface.primary ? " · primary" : ""}
+                    </span>
+                  </div>
+                  <Pill ok={iface.state.includes("connected") || iface.state === "up"}>
+                    {iface.method === "manual" ? "static" : iface.method || iface.type}
+                  </Pill>
+                </div>
+                <IfaceFacts
+                  iface={iface}
+                  gatewayFallback={iface.primary ? status.default_route : undefined}
+                />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {status && (
         <>
           <div className="networks-tabs" role="tablist">
@@ -563,7 +705,28 @@ export default function NetworksPage() {
                           >
                             <div className="networks-item-main">
                               <strong>{w.ssid || key}</strong>
-                              <span>{w.connection || "saved profile"}</span>
+                              <span>
+                                {(() => {
+                                  if (!w.active) return w.connection || "saved profile";
+                                  const wi =
+                                    (status.interfaces || []).find(
+                                      (i) =>
+                                        i.name === (w.device || status.wifi.device) ||
+                                        (i.type === "wifi" && i.state.includes("connected")),
+                                    ) || primaryIface;
+                                  if (!wi) return w.connection || "saved profile";
+                                  return [
+                                    w.connection || "saved profile",
+                                    (wi.ipv4 || [])[0],
+                                    (wi.gateway || (wi.primary ? status.default_route : ""))
+                                      ? `gw ${wi.gateway || status.default_route}`
+                                      : "",
+                                    wi.mac ? `mac ${wi.mac}` : "",
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ");
+                                })()}
+                              </span>
                             </div>
                             <div className="networks-item-side">
                               {w.active ? <Pill ok>active</Pill> : null}
@@ -619,6 +782,23 @@ export default function NetworksPage() {
                                       ? "This is the active association."
                                       : "Connect switches the radio to this profile unless you use Alongside."}
                                   </p>
+                                  {w.active &&
+                                    (() => {
+                                      const wifiIface =
+                                        (status.interfaces || []).find(
+                                          (i) =>
+                                            i.name === (w.device || status.wifi.device) ||
+                                            (i.type === "wifi" && i.state.includes("connected")),
+                                        ) || primaryIface;
+                                      return wifiIface ? (
+                                        <IfaceFacts
+                                          iface={wifiIface}
+                                          gatewayFallback={
+                                            wifiIface.primary ? status.default_route : undefined
+                                          }
+                                        />
+                                      ) : null;
+                                    })()}
                                   <div className="networks-drawer-actions">
                                     {canMutate && (
                                       <>
@@ -875,9 +1055,17 @@ export default function NetworksPage() {
                             <div className="networks-item-main">
                               <strong>{iface.name}</strong>
                               <span>
-                                {iface.state}
-                                {(iface.ipv4 || [])[0] ? ` · ${iface.ipv4![0]}` : ""}
-                                {iface.primary ? " · primary route" : ""}
+                                {[
+                                  iface.state,
+                                  (iface.ipv4 || [])[0],
+                                  (iface.gateway || (iface.primary ? status.default_route : ""))
+                                    ? `gw ${iface.gateway || status.default_route}`
+                                    : "",
+                                  iface.mac ? `mac ${iface.mac}` : "",
+                                  iface.primary ? "primary route" : "",
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
                               </span>
                             </div>
                             <div className="networks-item-side">
@@ -894,7 +1082,11 @@ export default function NetworksPage() {
                                   This interface carries the default route — changing it can drop the agent.
                                 </p>
                               )}
-                              <div style={{ marginBottom: 12 }}>
+                              <IfaceFacts
+                                iface={iface}
+                                gatewayFallback={iface.primary ? status.default_route : undefined}
+                              />
+                              <div style={{ marginBottom: 12, marginTop: 12 }}>
                                 <div className="networks-seg" role="group" aria-label="Address method">
                                   <button
                                     type="button"

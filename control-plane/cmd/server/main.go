@@ -147,6 +147,11 @@ func run(seedAndExit bool) error {
 
 	secretStore := secrets.NewStore(pool, box)
 	notifier := notify.NewNotifier(notify.NewStore(pool), pool, log, publicUIBase(cfg))
+	if _, err := notify.EnsureVAPID(ctx, pool); err != nil {
+		log.Warn("web push VAPID keys not ready", "err", err)
+	} else {
+		log.Info("web push VAPID keys ready")
+	}
 	gw := agentgw.New(cfg.GRPCAddr, log, pool, bundle, secretStore)
 	gw.SetFailedRunHook(notifier)
 	gw.SetRunLogMaxBytes(cfg.RunLogMaxBytes)
@@ -181,6 +186,7 @@ func run(seedAndExit bool) error {
 			Restart:  cfg.AgentUpdateRestart,
 			Interval: time.Duration(cfg.AgentUpdatePollMinutes) * time.Minute,
 		})
+		updateCatalog.SetNewReleaseHook(notifier.FireUpdateAvailable)
 		go updateCatalog.Run(ctx)
 		log.Info("watching github for agent releases", "repo", cfg.GitHubReleaseRepo)
 	}

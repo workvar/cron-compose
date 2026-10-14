@@ -22,11 +22,16 @@ type Release struct {
 	Checksums   map[string]string `json:"checksums"` // os/arch -> sha256 hex
 }
 
+// NewReleaseHook is called when GitHub reports a version newer than the last
+// cached release (not on every poll). Used for browser push.
+type NewReleaseHook func(version, releaseURL string)
+
 type Catalog struct {
 	log      *slog.Logger
 	repo     string
 	restart  bool
 	interval time.Duration
+	onNew    NewReleaseHook
 
 	mu      sync.RWMutex
 	latest  *Release
@@ -68,18 +73,34 @@ func (c *Catalog) Run(ctx context.Context) {
 	}
 }
 
+// SetNewReleaseHook registers a callback for newly discovered versions.
+func (c *Catalog) SetNewReleaseHook(fn NewReleaseHook) {
+	if c == nil {
+		return
+	}
+	c.onNew = fn
+}
+
 func (c *Catalog) refresh(ctx context.Context) {
 	rel, err := fetchLatestRelease(ctx, c.repo)
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	prev := c.latest
 	if err != nil {
 		c.lastErr = err.Error()
+		c.mu.Unlock()
 		c.log.Debug("github release check failed", "repo", c.repo, "err", err)
 		return
 	}
 	c.lastErr = ""
 	c.latest = rel
+	onNew := c.onNew
+	c.mu.Unlock()
 	c.log.Info("latest agent release", "version", rel.Version, "tag", rel.Tag)
+	// First boot should not spam every subscriber; only notify when we already
+	// knew an older version and GitHub moved forward.
+	if onNew != nil && prev != nil && agentgw.VersionNewer(prev.Version, rel.Version) {
+		go onNew(rel.Version, rel.ReleaseURL)
+	}
 }
 
 // Repo is the GitHub owner/repo this catalog polls.

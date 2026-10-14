@@ -343,6 +343,12 @@ func (s *service) onDeployEvent(ctx context.Context, serverID string, ev *agentv
 			update deploy_runs set status = 'running', started_at = coalesce(started_at, now())
 			where id = $1
 		`, runID)
+		if err == nil && s.onFailed != nil {
+			var projectID, branch, trigger string
+			_ = s.pool.QueryRow(ctx, `select project_id, branch, trigger from deploy_runs where id = $1`, runID).
+				Scan(&projectID, &branch, &trigger)
+			go s.onFailed.FireDeployStarted(serverID, projectID, runID, branch, trigger)
+		}
 		return err
 	case "finished", "error":
 		status := ev.GetStatus()
@@ -420,10 +426,12 @@ func (s *service) afterDeployRun(serverID, projectID, runID, status, branch, tri
 	}
 	isRollback := trigger == "rollback"
 	// Always report a rollback run's own outcome (recovered, or the rollback failed
-	// too); a forward deploy reports only on failure, matching the job-run behavior
-	// this package started with.
+	// too); a forward deploy reports only on failure to Slack/email, matching the
+	// job-run behavior this package started with. Browser push also gets successes.
 	if status != "succeeded" || isRollback {
 		s.onFailed.FireDeployFailed(serverID, projectID, runID, status, branch, trigger, phase, exitCode, errMsg, isRollback)
+	} else {
+		s.onFailed.FireDeploySucceeded(serverID, projectID, runID, status, branch, trigger, phase, exitCode, errMsg, false)
 	}
 }
 

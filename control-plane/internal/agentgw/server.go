@@ -20,13 +20,15 @@ import (
 	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
 )
 
-// FailedRunHook is invoked whenever a run terminates with a non-success status, for
-// both scheduled job runs (onRunFinished) and deploy runs (onDeployEvent). Implemented
-// by *notify.Notifier; injected to keep agentgw from depending on the notify package
-// directly.
+// FailedRunHook is invoked for run outcomes the notifier cares about: job/deploy
+// failures (Slack/email/webhook + browser push) and deploy start/success (browser
+// push). Implemented by *notify.Notifier; injected to keep agentgw from depending
+// on the notify package directly.
 type FailedRunHook interface {
 	FireRunFailed(serverID, jobID, runID, status string, exitCode, durationMs int32, errMsg string)
 	FireDeployFailed(serverID, projectID, runID, status, branch, trigger, phase string, exitCode int32, errMsg string, rolledBack bool)
+	FireDeployStarted(serverID, projectID, runID, branch, trigger string)
+	FireDeploySucceeded(serverID, projectID, runID, status, branch, trigger, phase string, exitCode int32, errMsg string, rolledBack bool)
 }
 
 // DeployFinishedHook is invoked whenever a deploy run finishes, successful or not, so

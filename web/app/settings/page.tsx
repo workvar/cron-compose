@@ -4,6 +4,7 @@ import type { DeploySettings, GitConnection, ListResponse, Me, NotificationTarge
 import { LogoutButton } from "@/components/LogoutButton";
 import { IconKey, IconShield } from "@/components/icons";
 import { PasskeyManager } from "@/components/PasskeyManager";
+import { PushNotifications } from "@/components/notify/PushNotifications";
 import { TargetManager } from "@/components/notify/TargetManager";
 import { UpdatesPanel } from "@/components/UpdatesPanel";
 import { GitConnections } from "@/components/deploys/GitConnections";
@@ -98,9 +99,16 @@ export default async function SettingsPage() {
         </>
       )}
 
-      <h2>Notifications</h2>
+      <h2>Browser notifications</h2>
       <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
-        Where CronCompose tells you a job failed. Nothing is sent if there are no enabled targets.
+        Push to this device when deploys start, succeed, or fail — and when updates are available —
+        even if CronCompose is not open. Requires HTTPS (or localhost).
+      </p>
+      {me ? <PushNotifications /> : null}
+
+      <h2>Notification channels</h2>
+      <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
+        Slack, email, and webhooks for job/deploy failures. Nothing is sent if there are no enabled targets.
       </p>
       {isAdmin
         ? <TargetManager initial={targets} />
