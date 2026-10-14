@@ -1,20 +1,25 @@
-# CronCompose v0.0.59
+# CronCompose v0.0.60
 
-Deploy start/install now honors workdir `.env` ports and keeps listen aliases in
-sync with the UI PORT field.
+Browser Web Push for deploys and updates, plus richer network interface details
+in the UI.
 
 ## Highlights
 
-- **Workdir `.env` on start** — Install and process start merge `.env` from the
-  app directory (and parents). Deploy/UI values still win over the file.
-- **Listen port aliases** — Setting PORT in the project UI also updates existing
-  `PROXY_PORT`, `HTTP_PORT`, `APP_PORT`, `LISTEN_PORT`, and `SERVER_PORT` in that
-  env. Fixes Peepal-style proxies that read `PROXY_PORT` and were still binding
-  `:80` (`bind: permission denied`) after the UI port was set to e.g. 3004.
+- **Browser Web Push** — In Settings, enable push on this device to get notified
+  when a deploy starts, succeeds, or fails; when a job fails; or when a newer
+  agent release appears — even if the CronCompose tab is closed. Requires HTTPS
+  (or localhost). VAPID keys are auto-generated and stored in Postgres; optional
+  `VAPID_*` env vars override them when you need stable keys across empty DBs.
+- **Networks interface details** — An Interfaces overview (and wired / active
+  Wi‑Fi drawers) shows IPv4/IPv6, gateway, DNS, MAC, method, and connection for
+  each reported link. The active-link summary includes IP, gateway, and MAC.
 
 ## Upgrade
 
-1. Update the **agent** on each target (restart or reinstall).
-2. Confirm the app’s UI PORT (and host `.env` if you keep one), then redeploy or
-   Stop → Start the process so pm2 picks up the new env.
-3. No control-plane or database migration required for this release.
+1. Restart the **control plane** so migration `0026_web_push.sql` applies and
+   VAPID keys are ready. Rebuild/restart the web UI so `/sw.js` and Settings
+   pick up the new push UI.
+2. Open **Settings → Browser notifications**, allow permission, and enable push
+   on each device you want woken.
+3. Agent update is **not** required for this release (Networks uses fields
+   agents already report).
