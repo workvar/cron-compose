@@ -4,7 +4,10 @@ package config
 import (
 	"fmt"
 	"os"
+	"runtime"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // buildVersion is set at link time by the release workflow (-ldflags -X ...).
@@ -27,6 +30,14 @@ type Config struct {
 	// the install paths all run the agent under a supervisor that restarts it. Set
 	// AGENT_SELF_UPDATE=0 on a hand-managed box where nothing would bring it back.
 	SelfUpdate bool
+	// AutoUpdate makes the agent poll GitHub for a newer release and install it on
+	// its own, through the same verified path as a UI-triggered update. Default on
+	// for Windows (prebuilt .exe releases), off elsewhere (source builds).
+	AutoUpdate bool
+	// AutoUpdateInterval is how often AutoUpdate checks. AGENT_AUTO_UPDATE_HOURS.
+	AutoUpdateInterval time.Duration
+	// UpdateRepo is the GitHub owner/repo releases come from. AGENT_UPDATE_REPO.
+	UpdateRepo string
 }
 
 // Load reads env vars with dev-friendly defaults.
@@ -43,6 +54,9 @@ func Load() (Config, error) {
 		DataDir:              env("DATA_DIR", defaultDataDir),
 		AgentVersion:         resolveAgentVersion(),
 		SelfUpdate:           envBool("AGENT_SELF_UPDATE", true),
+		AutoUpdate:           envBool("AGENT_AUTO_UPDATE", runtime.GOOS == "windows"),
+		AutoUpdateInterval:   time.Duration(envInt("AGENT_AUTO_UPDATE_HOURS", 6)) * time.Hour,
+		UpdateRepo:           env("AGENT_UPDATE_REPO", "workvar/cron-compose"),
 	}
 	for _, w := range []string{w1, w2, w3} {
 		if w != "" {
@@ -90,6 +104,14 @@ func Version() string {
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return def
+}
+
+// envInt reads a positive integer; anything else keeps the default.
+func envInt(key string, def int) int {
+	if n, err := strconv.Atoi(strings.TrimSpace(os.Getenv(key))); err == nil && n > 0 {
+		return n
 	}
 	return def
 }

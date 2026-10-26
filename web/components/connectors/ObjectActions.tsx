@@ -12,9 +12,10 @@ const ACTIONS: Record<string, string[]> = {
   docker: ["start", "stop", "restart", "pause", "unpause"],
   pm2: ["start", "stop", "restart", "pause", "unpause", "reload", "delete", "flush"],
   nginx: ["start", "stop", "restart", "reload"],
+  winservice: ["start", "stop", "restart", "pause", "unpause"],
 };
 
-const LOGS_KINDS = new Set(["pm2", "systemd", "docker"]);
+const LOGS_KINDS = new Set(["pm2", "systemd", "docker", "winservice"]);
 
 const DESTRUCTIVE = new Set(["stop", "disable", "delete", "flush"]);
 

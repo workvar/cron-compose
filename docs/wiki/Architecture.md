@@ -16,7 +16,6 @@
 
 ## Non-goals (for now)
 
-- Windows **agents**. Linux and macOS only for job execution. The Windows installer can stand up a control plane.
 - General CI/CD or container build orchestration.
 - Multi-step DAGs / job dependencies (tracked on the [Roadmap](Roadmap.md)).
 - Multi-tenant SaaS. Single-tenant self-host first.

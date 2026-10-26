@@ -43,12 +43,16 @@ func (m *Manager) runApps(ctx context.Context, cmd *agentv1.DeployCommand, layou
 		if port == 0 {
 			port = cmd.GetPort()
 		}
-		err := m.startProcess(ctx, runID, token, work, pm, name, app.GetLanguage(), app.GetRunScript(), appEnv(cmd, app), cred, tmpDir, phaseRun, port)
+		err := m.runGuarded(ctx, runID, token, appName, phaseRun, work, func(ctx context.Context) error {
+			if err := m.startProcess(ctx, runID, token, work, pm, name, app.GetLanguage(), app.GetRunScript(), appEnv(cmd, app), cred, tmpDir, phaseRun, port); err != nil {
+				return err
+			}
+			m.noteLaunched(runID, appName)
+			return nil
+		})
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", appName, err))
-			continue
 		}
-		m.noteLaunched(runID, appName)
 	}
 	return joinErrors(errs)
 }

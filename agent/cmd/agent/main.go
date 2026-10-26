@@ -7,6 +7,10 @@
 //	                               cert + CA + identity, then exits.
 //	agent run                      Starts the long-lived loop: mTLS dial, sync jobs,
 //	                               schedule them locally, execute, stream logs back.
+//	                               Under the Windows Service Control Manager it runs
+//	                               as the croncompose-agent service.
+//	agent service <verb>           Windows only: install | uninstall | start | stop
+//	                               the croncompose-agent service.
 package main
 
 import (
@@ -24,6 +28,7 @@ import (
 	"github.com/croncompose/croncompose/agent/internal/identity"
 	"github.com/croncompose/croncompose/agent/internal/mtls"
 	"github.com/croncompose/croncompose/agent/internal/outbox"
+	"github.com/croncompose/croncompose/agent/internal/platform"
 	agentruntime "github.com/croncompose/croncompose/agent/internal/runtime"
 	"github.com/croncompose/croncompose/agent/internal/store"
 )
@@ -33,7 +38,14 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+	// Settings file first, so enroll and run see the same values a systemd unit
+	// would inject (the Windows service has no environment of its own).
+	if err := config.LoadEnvFile(); err != nil {
+		fmt.Fprintln(os.Stderr, "agent env file:", err)
+	}
 	switch os.Args[1] {
+	case "service":
+		os.Exit(serviceCommand(os.Args[2:]))
 	case "enroll":
 		os.Exit(cmdEnroll(os.Args[2:]))
 	case "run":
@@ -47,7 +59,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: agent [enroll|run|version] [args...]")
+	fmt.Fprintln(os.Stderr, "usage: agent [enroll|run|version|service] [args...]")
 }
 
 func cmdEnroll(args []string) int {
@@ -75,11 +87,11 @@ func cmdEnroll(args []string) int {
 	resp, err := enroll.Post(cfg.ControlPlaneHTTPBase, enroll.Request{
 		Token:        *token,
 		Hostname:     hostname,
-		OS:           "linux",
+		OS:           runtime.GOOS,
 		Arch:         runtime.GOARCH,
 		AgentVersion: cfg.AgentVersion,
 		CSRPEM:       string(csr.CSRPEM),
-		RunAsRoot:    os.Geteuid() == 0,
+		RunAsRoot:    platform.IsElevated(),
 	})
 	if err != nil {
 		log.Error("enroll failed", "err", err)
@@ -110,10 +122,31 @@ func cmdRun(_ []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	if runningAsService() {
+		return runService(cfg)
+	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		log.Info("shutdown signal received")
+		cancel()
+	}()
+	return runAgent(ctx, cfg, log)
+}
+
+// runAgent is the agent's main loop, shared by the foreground command and the
+// Windows service. It returns when ctx is cancelled or the runtime fails.
+func runAgent(ctx context.Context, cfg config.Config, log *slog.Logger) int {
 	for _, w := range cfg.Warnings {
 		log.Warn("conflicting endpoint settings", "detail", w)
 	}
+	bootHooks(ctx, log)
 
 	id, err := identity.Load(cfg.DataDir)
 	if err != nil {
@@ -139,17 +172,6 @@ func cmdRun(_ []string) int {
 		return 1
 	}
 	defer ob.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		log.Info("shutdown signal received")
-		cancel()
-	}()
 
 	rt := agentruntime.New(cfg, log, st, id, tlsCfg, ob)
 	if err := rt.Run(ctx); err != nil && ctx.Err() == nil {

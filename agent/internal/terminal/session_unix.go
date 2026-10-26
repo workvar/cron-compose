@@ -1,3 +1,5 @@
+//go:build !windows
+
 package terminal
 
 import (
@@ -95,4 +97,44 @@ func winsize(cols, rows uint32) *pty.Winsize {
 		rows = 24
 	}
 	return &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)}
+}
+
+// read returns PTY output; it fails once the process has exited and the PTY closed.
+func (s *session) read(buf []byte) (int, error) { return s.ptmx.Read(buf) }
+
+// wait blocks until the process exits and returns its exit code and a message.
+func (s *session) wait() (int, string) { return waitResult(s.cmd) }
+
+// shellArgv is the argv for a login-style interactive shell or a one-shot command.
+func shellArgv(_ string, command bool, line string) []string {
+	if command {
+		return []string{"-c", line}
+	}
+	return []string{"-i"} // interactive shell; the PTY supplies the tty
+}
+
+func waitResult(cmd *exec.Cmd) (int, string) {
+	err := cmd.Wait()
+	if err == nil {
+		return 0, ""
+	}
+	if ee, ok := err.(*exec.ExitError); ok {
+		if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+			return -int(ws.Signal()), ws.Signal().String()
+		}
+		return ee.ExitCode(), ""
+	}
+	return -1, err.Error()
+}
+
+func detectShell() string {
+	if s := os.Getenv("SHELL"); s != "" {
+		return s
+	}
+	for _, c := range []string{"/bin/bash", "/usr/bin/bash", "/bin/sh"} {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return "/bin/sh"
 }

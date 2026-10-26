@@ -227,22 +227,6 @@ func lsofListen(ctx context.Context, privileged bool) []listenSock {
 	return parseLsofListen(out)
 }
 
-// listeningSockets enumerates TCP listen sockets on the host. Unprivileged `ss -p`
-// often omits process columns, so we fall back to lsof and then privileged retries
-// when the agent has a sudo grant for ss or lsof.
-func listeningSockets(ctx context.Context) []listenSock {
-	if socks := ssListen(ctx, false); len(socks) > 0 {
-		return socks
-	}
-	if socks := lsofListen(ctx, false); len(socks) > 0 {
-		return socks
-	}
-	if socks := ssListen(ctx, true); len(socks) > 0 {
-		return socks
-	}
-	return lsofListen(ctx, true)
-}
-
 func unitForPID(pid int) string {
 	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/cgroup")
 	if err != nil {
@@ -281,27 +265,12 @@ func pidsInCgroup(controlGroup string) []int {
 	return nil
 }
 
-func readChildPIDs(pid int) []int {
-	path := filepath.Join("/proc", strconv.Itoa(pid), "task", strconv.Itoa(pid), "children")
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	var out []int
-	for _, field := range strings.Fields(string(b)) {
-		child, err := strconv.Atoi(field)
-		if err == nil && child > 1 {
-			out = append(out, child)
-		}
-	}
-	return out
-}
-
 // descendantPIDs returns root and every descendant process, best-effort.
 func descendantPIDs(root int) []int {
 	if root <= 1 {
 		return nil
 	}
+	children := childLister()
 	seen := map[int]bool{root: true}
 	queue := []int{root}
 	var out []int
@@ -309,7 +278,7 @@ func descendantPIDs(root int) []int {
 		pid := queue[0]
 		queue = queue[1:]
 		out = append(out, pid)
-		for _, child := range readChildPIDs(pid) {
+		for _, child := range children(pid) {
 			if !seen[child] {
 				seen[child] = true
 				queue = append(queue, child)

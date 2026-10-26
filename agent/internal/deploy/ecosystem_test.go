@@ -73,6 +73,37 @@ func TestSyncEcosystemProcessName(t *testing.T) {
 	}
 }
 
+func TestIsolateEcosystemApp(t *testing.T) {
+	dir := t.TempDir()
+	eco := filepath.Join(dir, "ecosystem.config.js")
+	body := `module.exports = { apps: [
+  { name: 'peepal-proxy', script: './proxy', cwd: 'proxy' },
+  { name: 'peepal-api', script: './api', cwd: 'api', env: { PORT: 3003 } },
+  { name: 'peepal-web', script: './web', cwd: 'web' },
+]}`
+	if err := os.WriteFile(eco, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := isolateEcosystemApp(eco, "peepal-api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out == eco {
+		t.Fatal("multi-app file was returned unchanged")
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := parseEcosystemApps(string(got))
+	if len(names) != 1 || names[0].Name != "peepal-api" {
+		t.Fatalf("isolated apps = %+v\n%s", names, got)
+	}
+	if _, err := isolateEcosystemApp(eco, "missing"); err == nil {
+		t.Fatal("unknown app should refuse to start the whole file")
+	}
+}
+
 func TestPreferEcosystemNameLocalFile(t *testing.T) {
 	dir := t.TempDir()
 	eco := filepath.Join(dir, "ecosystem.config.js")

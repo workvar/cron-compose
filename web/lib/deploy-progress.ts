@@ -537,13 +537,30 @@ export function buildDeployLive(input: LiveInput): LiveView {
           if (isCleanup) {
             completeCommands(proc, true);
             if (!proc.cleanup) {
-              proc.cleanup = makeStep(`${proc.id}-cleanup`, `Cleaning ${proc.name}`, "cleanup", script);
+              proc.cleanup = makeStep(`${proc.id}-cleanup`, `Cleaning ${proc.name}`, "cleanup", script === "skipped" || script === "stopped" ? undefined : script);
               refresh(proc);
             }
-            activate(proc.cleanup);
-          } else if (script === "done") {
-            // Only close the active half; pending build waits for its own wave.
-            completeCommands(proc, false);
+            if (script === "skipped") proc.cleanup.state = "skipped";
+            else if (script === "stopped") proc.cleanup.state = "failed";
+            else activate(proc.cleanup);
+          } else if (script === "skipped" || script === "stopped") {
+            const step =
+              proc.commandSteps.find((s) => s.state === "active") ||
+              proc.commandSteps.find((s) => s.state === "pending");
+            if (step) {
+              step.state = script === "stopped" ? "failed" : "skipped";
+              if (cur.step === step) cur.step = null;
+            }
+          } else if (script === "done" || script === "cache hit" || script === "cache hit all") {
+            // "done" closes the active half; a pending build waits for its own wave.
+            // "cache hit all" closes every command in one combined script.
+            if (script !== "done") {
+              const step =
+                proc.commandSteps.find((s) => s.state === "active") ||
+                proc.commandSteps.find((s) => s.state === "pending");
+              if (step) activate(step);
+            }
+            completeCommands(proc, script === "cache hit all");
           } else {
             // Do not complete sibling apps: installs run in parallel.
             setCommands(proc, script);
@@ -584,6 +601,11 @@ export function buildDeployLive(input: LiveInput): LiveView {
           }
           if (script === "done") {
             completePreStart(proc);
+          } else if (script === "skipped" || script === "stopped") {
+            if (proc.preStart) {
+              proc.preStart.state = script === "stopped" ? "failed" : "skipped";
+              if (cur.step === proc.preStart) cur.step = null;
+            }
           } else {
             activate(proc.preStart);
             proc.preStart.ticks++;
@@ -601,8 +623,9 @@ export function buildDeployLive(input: LiveInput): LiveView {
           if (cur.step === open) cur.step = null;
           const owner = processes.find((p) => p.health === open);
           pane = owner?.id || "shared";
-        } else if (/^skipped:/.test(msg) && open) {
-          open.state = "skipped";
+        } else if ((/^skipped:/.test(msg) || /^stopped:/.test(msg)) && open) {
+          open.state = /^stopped:/.test(msg) ? "failed" : "skipped";
+          if (cur.step === open) cur.step = null;
           pane = "shared";
         } else if (open) {
           activate(open);
@@ -631,6 +654,9 @@ export function buildDeployLive(input: LiveInput): LiveView {
           const step = proc[slot]!;
           if (script === "done") {
             if (step.state === "pending" || step.state === "active") step.state = "done";
+            if (cur.step === step) cur.step = null;
+          } else if (script === "skipped" || script === "stopped") {
+            step.state = script === "stopped" ? "failed" : "skipped";
             if (cur.step === step) cur.step = null;
           } else {
             activate(step);

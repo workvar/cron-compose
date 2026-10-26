@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/croncompose/croncompose/agent/internal/osuser"
+	"github.com/croncompose/croncompose/agent/internal/platform"
 	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
 )
 
@@ -90,21 +91,31 @@ type Manager struct {
 	// procs are foreground Run processes (no process manager). Cancel kills them;
 	// a successful deploy leaves them running.
 	procs map[string][]*os.Process
+	// Step controls are per app. skip is one phase; halt "stopped" drops the rest
+	// of that app; halt "skipped" swallows the in-flight command only.
+	stepSkip  map[string]map[string]bool
+	appHalt   map[string]map[string]string
+	appCancel map[string]map[string]context.CancelFunc
+	taskPhase map[string]map[string]string
 }
 
 // NewManager wires a Manager.
 func NewManager(log *slog.Logger, send Sender) *Manager {
 	return &Manager{
-		log:      log,
-		send:     send,
-		stdin:    map[string]*os.File{},
-		cancel:   map[string]context.CancelFunc{},
-		seq:      map[string]*atomic.Int32{},
-		logged:   map[string]*atomic.Int64{},
-		capNoted: map[string]bool{},
-		metrics:  map[string]*runMetrics{},
-		launched: map[string]map[string]bool{},
-		procs:    map[string][]*os.Process{},
+		log:       log,
+		send:      send,
+		stdin:     map[string]*os.File{},
+		cancel:    map[string]context.CancelFunc{},
+		seq:       map[string]*atomic.Int32{},
+		logged:    map[string]*atomic.Int64{},
+		capNoted:  map[string]bool{},
+		metrics:   map[string]*runMetrics{},
+		launched:  map[string]map[string]bool{},
+		procs:     map[string][]*os.Process{},
+		stepSkip:  map[string]map[string]bool{},
+		appHalt:   map[string]map[string]string{},
+		appCancel: map[string]map[string]context.CancelFunc{},
+		taskPhase: map[string]map[string]string{},
 	}
 }
 
@@ -122,8 +133,16 @@ func (m *Manager) Handle(_ context.Context, cmd *agentv1.DeployCommand) {
 		m.writeStdin(cmd.GetRunId(), cmd.GetStdin())
 	case "cancel":
 		m.cancelRun(cmd.GetRunId())
-	default:
+	case "skip-step":
+		m.skipStep(cmd)
+	case "stop-step":
+		m.stopStep(cmd)
+	case "", "start", "rerun":
 		go m.start(cmd)
+	default:
+		if m.log != nil {
+			m.log.Warn("ignored deploy op", "op", cmd.GetOp(), "run_id", cmd.GetRunId())
+		}
 	}
 }
 
@@ -238,6 +257,10 @@ func (m *Manager) start(cmd *agentv1.DeployCommand) {
 		delete(m.metrics, runID)
 		delete(m.launched, runID)
 		delete(m.procs, runID)
+		delete(m.stepSkip, runID)
+		delete(m.appHalt, runID)
+		delete(m.appCancel, runID)
+		delete(m.taskPhase, runID)
 		if f := m.stdin[runID]; f != nil {
 			_ = f.Close()
 			delete(m.stdin, runID)
@@ -280,7 +303,7 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 	runID := cmd.GetRunId()
 	token := cmd.GetCloneToken()
 
-	base := filepath.Clean(cmd.GetDestPath())
+	base := filepath.Clean(platform.LocalPath(cmd.GetDestPath()))
 	if base == "" || base == "." || !filepath.IsAbs(base) {
 		return errors.New("dest_path must be an absolute path")
 	}
@@ -308,6 +331,25 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 		}
 		_ = chownTree(moved, cred)
 		m.phaseLine(runID, token, phaseRelease, "existing checkout is now "+filepath.Base(moved))
+	}
+
+	// A single post-release step (run, start, health, pre-start) stays on the
+	// release that is already live. Cloning and swapping current would move
+	// every app's files out from under processes we were told not to touch.
+	if cmd.GetOp() == "rerun" {
+		for _, wave := range cmd.GetFlow() {
+			for _, t := range wave.GetTasks() {
+				ph := strings.ToLower(strings.TrimSpace(t.GetPhase()))
+				if preReleasePhases[ph] {
+					return phaseError{phaseInstall, fmt.Errorf("phase %s changes the release; restart that app's chain instead of one step", ph)}
+				}
+			}
+		}
+		if st, err := os.Stat(layout.Current); err != nil || !st.IsDir() {
+			return phaseError{phaseRelease, errors.New("no current release to re-run a step against")}
+		}
+		m.phaseLine(runID, token, phaseRelease, "re-running steps on the current release; other apps stay up")
+		return m.runDeployFlow(ctx, cmd, layout, cred, tmpDir, layout.Current)
 	}
 
 	// Rollback to a release already on disk: no network, no tmp clone.
@@ -558,12 +600,15 @@ func (m *Manager) materializeRelease(_ context.Context, cmd *agentv1.DeployComma
 
 // appScript is one install or cleanup job scoped to an app work directory.
 type appScript struct {
-	label  string // shown on failure ("npm ci…" or "cleanup")
-	work   string
-	script string
-	env    map[string]string
-	phase  string // phase line body before " (in …)"; empty skips the start line
-	done   string // phase line body on success; empty skips the done line
+	app       string // empty disables per-app skip/stop
+	flowPhase string // install | build | cleanup | pre_start
+	label     string // shown on failure ("npm ci…" or "cleanup")
+	work      string
+	script    string
+	env       map[string]string
+	language  string
+	phase     string // phase line body before " (in …)"; empty skips the start line
+	done      string // phase line body on success; empty skips the done line
 }
 
 // installApps runs each app's install script inside the new release directory.
@@ -581,12 +626,15 @@ func (m *Manager) installApps(ctx context.Context, cmd *agentv1.DeployCommand, r
 		}
 		work := appWorkDir(release, cmd, app)
 		jobs = append(jobs, appScript{
-			label:  script,
-			work:   work,
-			script: script,
-			env:    appEnv(cmd, app),
-			phase:  script,
-			done:   "done",
+			app:       app.GetName(),
+			flowPhase: "install",
+			label:     script,
+			work:      work,
+			script:    script,
+			env:       appEnv(cmd, app),
+			language:  app.GetLanguage(),
+			phase:     script,
+			done:      "done",
 		})
 	}
 	return m.runAppScripts(ctx, cmd.GetRunId(), cmd.GetCloneToken(), cred, tmpDir, phaseInstall, jobs)
@@ -603,11 +651,13 @@ func (m *Manager) cleanupApps(ctx context.Context, cmd *agentv1.DeployCommand, r
 		}
 		work := appWorkDir(release, cmd, app)
 		jobs = append(jobs, appScript{
-			label:  "cleanup",
-			work:   work,
-			script: script,
-			env:    appEnv(cmd, app),
-			phase:  "cleanup: " + script,
+			app:       app.GetName(),
+			flowPhase: "cleanup",
+			label:     "cleanup",
+			work:      work,
+			script:    script,
+			env:       appEnv(cmd, app),
+			phase:     "cleanup: " + script,
 		})
 	}
 	return m.runAppScripts(ctx, cmd.GetRunId(), cmd.GetCloneToken(), cred, tmpDir, phaseInstall, jobs)
@@ -626,20 +676,59 @@ func (m *Manager) runAppScripts(ctx context.Context, runID, token string, cred *
 	if logPhase == "" {
 		logPhase = phaseInstall
 	}
-	if len(jobs) == 1 {
-		j := jobs[0]
+	tag := len(jobs) > 1
+	var execJob func(jobCtx context.Context, j appScript) error
+	execJob = func(jobCtx context.Context, j appScript) error {
+		// A single install script often chains "npm ci && npm run build". Split
+		// those so an unchanged lockfile can skip install while a source change
+		// still compiles. Mixed scripts (a build plus a copy) stay one command.
+		if inst, build, ok := splitCacheable(j.script, j.language); ok && (j.flowPhase == "install" || j.flowPhase == "build") {
+			first := j
+			first.script, first.phase, first.label = inst, inst, inst
+			first.flowPhase, first.done = "install", "done"
+			if err := execJob(jobCtx, first); err != nil {
+				return err
+			}
+			second := j
+			second.script, second.phase, second.label = build, build, build
+			second.flowPhase, second.done = "build", "done"
+			return execJob(jobCtx, second)
+		}
 		if j.phase != "" {
 			m.phaseLine(runID, token, logPhase, j.phase+" (in "+j.work+")")
 		}
-		if err := m.runScript(ctx, runID, token, j.work, j.script, j.env, cred, tmpDir, false); err != nil {
+		plan, cacheable := planStepCache(j)
+		if cacheable && m.replayCachedStep(runID, token, logPhase, j.work, plan, cred) {
+			return nil
+		}
+		if cacheable {
+			m.warmCachedStep(runID, token, j.work, plan)
+		}
+		if j.flowPhase == "install" || j.flowPhase == "build" {
+			j.env = mergeToolchainEnv(j.env, j.work)
+		}
+		if err := m.runScript(jobCtx, runID, token, j.work, j.script, j.env, cred, tmpDir, tag); err != nil {
 			return fmt.Errorf("%s: %w", j.label, err)
+		}
+		if cacheable {
+			m.storeCachedStep(j.work, j.language, j.script, plan)
 		}
 		if j.done != "" {
 			m.phaseLine(runID, token, logPhase, j.done+" (in "+j.work+")")
 		}
 		return nil
 	}
-
+	runJob := func(j appScript) error {
+		if j.app != "" && j.flowPhase != "" {
+			return m.runGuarded(ctx, runID, token, j.app, j.flowPhase, j.work, func(jobCtx context.Context) error {
+				return execJob(jobCtx, j)
+			})
+		}
+		return execJob(ctx, j)
+	}
+	if !tag {
+		return runJob(jobs[0])
+	}
 	var (
 		wg   sync.WaitGroup
 		mu   sync.Mutex
@@ -649,17 +738,10 @@ func (m *Manager) runAppScripts(ctx context.Context, runID, token string, cred *
 		wg.Add(1)
 		go func(j appScript) {
 			defer wg.Done()
-			if j.phase != "" {
-				m.phaseLine(runID, token, logPhase, j.phase+" (in "+j.work+")")
-			}
-			if err := m.runScript(ctx, runID, token, j.work, j.script, j.env, cred, tmpDir, true); err != nil {
+			if err := runJob(j); err != nil {
 				mu.Lock()
-				errs = append(errs, fmt.Errorf("%s: %w", j.label, err))
+				errs = append(errs, err)
 				mu.Unlock()
-				return
-			}
-			if j.done != "" {
-				m.phaseLine(runID, token, logPhase, j.done+" (in "+j.work+")")
 			}
 		}(j)
 	}
@@ -698,12 +780,14 @@ func (m *Manager) preStartApps(ctx context.Context, cmd *agentv1.DeployCommand, 
 		}
 		work := appWorkDir(layout.Current, cmd, app)
 		jobs = append(jobs, appScript{
-			label:  "pre-start",
-			work:   work,
-			script: script,
-			env:    appEnv(cmd, app),
-			phase:  script,
-			done:   "done",
+			app:       app.GetName(),
+			flowPhase: "pre_start",
+			label:     "pre-start",
+			work:      work,
+			script:    script,
+			env:       appEnv(cmd, app),
+			phase:     script,
+			done:      "done",
 		})
 	}
 	return m.runAppScripts(ctx, cmd.GetRunId(), cmd.GetCloneToken(), cred, tmpDir, phasePreStart, jobs)
@@ -741,7 +825,9 @@ func (m *Manager) startApps(ctx context.Context, cmd *agentv1.DeployCommand, lay
 		if port == 0 {
 			port = cmd.GetPort()
 		}
-		if err := m.startProcess(ctx, runID, token, work, pm, name, app.GetLanguage(), app.GetRunScript(), appEnv(cmd, app), cred, tmpDir, phaseStart, port); err != nil {
+		if err := m.runGuarded(ctx, runID, token, appName, phaseStart, work, func(ctx context.Context) error {
+			return m.startProcess(ctx, runID, token, work, pm, name, app.GetLanguage(), app.GetRunScript(), appEnv(cmd, app), cred, tmpDir, phaseStart, port)
+		}); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -799,7 +885,10 @@ func (m *Manager) checkHealth(ctx context.Context, cmd *agentv1.DeployCommand, o
 			continue
 		}
 		checked = true
-		if err := m.waitHealthy(ctx, runID, token, cfg); err != nil {
+		name := app.GetName()
+		if err := m.runGuarded(ctx, runID, token, name, phaseHealth, "", func(ctx context.Context) error {
+			return m.waitHealthy(ctx, runID, token, cfg)
+		}); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -944,7 +1033,7 @@ func isGitDir(dir string) bool {
 func (m *Manager) runScript(ctx context.Context, runID, token, dir, script string, env map[string]string, cred *osuser.Credential, tmpDir string, tagLogs bool) error {
 	// Wrap so nvm/fnm under the deploy user are on PATH (non-interactive bash -lc
 	// otherwise skips ~/.bashrc and npm "disappears").
-	cmd := exec.CommandContext(ctx, "/bin/bash", "-lc", osuser.WrapScript(script))
+	cmd := exec.CommandContext(ctx, platform.Bash(), "-lc", osuser.WrapScript(script))
 	cmd.Dir = dir
 	// Quiet installer chrome: CI/NO_COLOR/progress=false cut spinner spam;
 	// scrubPTYLog still strips whatever ANSI remains.

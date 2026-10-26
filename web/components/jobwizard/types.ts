@@ -73,7 +73,8 @@ export const CRON_PRESETS: { label: string; cron: string }[] = [
   { label: "Monthly · 1st", cron: "0 0 1 * *" },
 ];
 
-export const INTERPRETERS = ["bash", "sh", "python3", "node"];
+// powershell, pwsh and cmd run on Windows agents; bash/sh run there under Git Bash.
+export const INTERPRETERS = ["bash", "sh", "python3", "node", "powershell", "pwsh", "cmd"];
 
 export const COMMON_TZ = [
   "UTC", "America/New_York", "America/Los_Angeles", "America/Chicago",

@@ -172,7 +172,7 @@ export default function DeployRunPage({ params }: Props) {
 
       <DeployResultBanner run={run} project={project} />
 
-      <DeployRunBoard logs={logs} project={project} status={run.status} live={live} />
+      <DeployRunBoard logs={logs} project={project} status={run.status} live={live} runId={run.id} />
 
       {live && (
         <form onSubmit={sendStdin} className="cluster" style={{ marginTop: 12 }}>

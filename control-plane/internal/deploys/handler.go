@@ -346,7 +346,7 @@ func (h *handler) create(c fiber.Ctx) error {
 	}
 	h.audit.Write(c.Context(), auth.CurrentUserID(c), "deploy.create", "deploy", p.ID, map[string]any{"repo": p.RepoFullName, "from_spec": in.SpecFromRepo})
 	warnings := h.provisionRemote(c.Context(), p, in.SpecFromRepo)
-	run, err := h.startRun(c.Context(), p, "manual", p.DefaultBranch, "", nil)
+	run, err := h.startRun(c.Context(), p, "manual", p.DefaultBranch, "", runScope{})
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "run_failed", err)
 	}
@@ -380,7 +380,7 @@ func (h *handler) patch(c fiber.Ctx) error {
 	out := fiber.Map{"project": RedactProject(p)}
 	pmChanged := in.ProcessManager != nil && p.ProcessManager != before.ProcessManager
 	if pmChanged && p.ProcessManager != "" && p.ProcessManager != "none" {
-		run, err := h.startRun(c.Context(), p, "manual", p.DefaultBranch, "", nil)
+		run, err := h.startRun(c.Context(), p, "manual", p.DefaultBranch, "", runScope{})
 		if err != nil {
 			return jsonError(c, fiber.StatusInternalServerError, "run_failed", err)
 		}
@@ -466,10 +466,11 @@ func (h *handler) createRun(c fiber.Ctx) error {
 		trigger = "api"
 	}
 	var body struct {
-		Trigger string   `json:"trigger"`
-		Branch  string   `json:"branch"`
-		Commit  string   `json:"commit"`
-		Apps    []string `json:"apps"`
+		Trigger   string   `json:"trigger"`
+		Branch    string   `json:"branch"`
+		Commit    string   `json:"commit"`
+		Apps      []string `json:"apps"`
+		OnlyPhase string   `json:"only_phase"`
 	}
 	_ = c.Bind().Body(&body)
 	// "rollback" is reserved for runs this control plane starts itself: a caller able
@@ -490,9 +491,9 @@ func (h *handler) createRun(c fiber.Ctx) error {
 			return c.JSON(fiber.Map{"skipped": reason})
 		}
 	}
-	run, err := h.startRun(c.Context(), p, trigger, branch, "", body.Apps)
+	run, err := h.startRun(c.Context(), p, trigger, branch, "", runScope{apps: body.Apps, onlyPhase: body.OnlyPhase})
 	if err != nil {
-		if strings.Contains(err.Error(), "no matching apps") {
+		if strings.Contains(err.Error(), "no matching apps") || strings.Contains(err.Error(), "unknown phase") {
 			return jsonError(c, fiber.StatusBadRequest, "bad_request", err)
 		}
 		return jsonError(c, fiber.StatusInternalServerError, "run_failed", err)
@@ -854,9 +855,14 @@ func (h *handler) gitlabWebhook(c fiber.Ctx) error {
 // the agent prefers a release already on disk carrying that commit over refetching
 // it, because the commit may be gone from the remote by then.
 //
-// onlyApps, when non-empty, limits the command to those app names (and flow tasks
-// that mention them). Used by Restart on a process card to redeploy one chain.
-func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinSHA string, onlyApps []string) (Run, error) {
+// limit.apps, when non-empty, keeps the command to those apps (and their flow
+// tasks). limit.onlyPhase, when set, keeps a single deployment step. A post-release
+// step reuses the current release so sibling processes are not swapped out.
+func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinSHA string, limit runScope) (Run, error) {
+	onlyPhase, err := normalizePhase(limit.onlyPhase)
+	if err != nil {
+		return Run{}, err
+	}
 	// A rollback already knows its commit; a push or CI trigger reported one, and it
 	// reached us through duplicateTrigger. Recording it now rather than waiting for the
 	// agent lets the commit status go pending immediately and makes the de-duplication
@@ -870,17 +876,15 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 	if p.CreatedBy != nil {
 		token, _ = h.conns.Token(ctx, *p.CreatedBy, p.Provider)
 	}
-	allow := map[string]bool{}
-	for _, name := range onlyApps {
-		name = strings.TrimSpace(name)
-		if name != "" {
-			allow[name] = true
-		}
-	}
+	allow := allowSet(limit.apps)
 	filterApps := len(allow) > 0
+	op := "start"
+	if postReleasePhase(onlyPhase) {
+		op = "rerun"
+	}
 
 	cmd := &agentv1.DeployCommand{
-		RunId: run.ID, Op: "start",
+		RunId: run.ID, Op: op,
 		CloneUrl: p.CloneURL, CloneToken: token,
 		DestPath: p.ClonePath, Branch: branch,
 		InstallScript: p.InstallScript, RootDirectory: p.RootDirectory,
@@ -893,7 +897,7 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 		OnWaveFailure:  NormalizeOnWaveFailure(p.OnWaveFailure),
 	}
 	for _, a := range p.Apps {
-		if filterApps && !allow[a.Name] {
+		if filterApps && !appAllowed(allow, a.Name, a.Root) {
 			continue
 		}
 		lang, pm := a.Language, a.ProcessManager
@@ -938,16 +942,22 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 			Language:      p.Language, Port: int32(p.Port), ProcessManager: p.ProcessManager, Env: p.Env,
 		}}
 	}
-	for _, wave := range p.Flow {
+	for _, wave := range filterFlow(p.Flow, allow, onlyPhase) {
 		fw := &agentv1.DeployFlowWave{}
 		for _, t := range wave {
-			if filterApps && !allow[t.App] {
-				continue
-			}
 			fw.Tasks = append(fw.Tasks, &agentv1.DeployFlowTask{App: t.App, Phase: t.Phase})
 		}
 		if len(fw.Tasks) > 0 {
 			cmd.Flow = append(cmd.Flow, fw)
+		}
+	}
+	// A single step that isn't in the saved flow still has to reach the agent,
+	// or the default pipeline would run every phase of every app.
+	if onlyPhase != "" && len(cmd.Flow) == 0 {
+		for _, a := range cmd.Apps {
+			cmd.Flow = append(cmd.Flow, &agentv1.DeployFlowWave{
+				Tasks: []*agentv1.DeployFlowTask{{App: a.GetName(), Phase: onlyPhase}},
+			})
 		}
 	}
 	if err := h.gateway.SendDeploy(p.ServerID, cmd); err != nil {
@@ -959,6 +969,61 @@ func (h *handler) startRun(ctx context.Context, p Project, trigger, branch, pinS
 	_ = h.store.MarkRun(ctx, run.ID, "running", 0, "")
 	run.Status = "running"
 	return run, nil
+}
+
+// stepAction: POST /deploy-runs/:runId/steps. Skip or stop one app's deployment
+// step. It does not send a process-manager command, and it does not touch the
+// other apps in the run.
+func (h *handler) stepAction(c fiber.Ctx) error {
+	run, err := h.store.GetRun(c.Context(), c.Params("runId"))
+	if errors.Is(err, ErrNotFound) {
+		return jsonError(c, fiber.StatusNotFound, "not_found", err)
+	}
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "get_failed", err)
+	}
+	if run.Status != "pending" && run.Status != "running" {
+		return jsonError(c, fiber.StatusConflict, "not_running", errors.New("this deploy is already "+run.Status))
+	}
+	var body struct {
+		App    string `json:"app"`
+		Phase  string `json:"phase"`
+		Action string `json:"action"`
+	}
+	if err := c.Bind().Body(&body); err != nil {
+		return jsonError(c, fiber.StatusBadRequest, "bad_request", err)
+	}
+	phase, err := normalizePhase(body.Phase)
+	if err != nil || phase == "" {
+		if err == nil {
+			err = errors.New("phase is required")
+		}
+		return jsonError(c, fiber.StatusBadRequest, "bad_request", err)
+	}
+	app := strings.TrimSpace(body.App)
+	if app == "" {
+		return jsonError(c, fiber.StatusBadRequest, "bad_request", errors.New("app is required"))
+	}
+	op := ""
+	switch strings.ToLower(strings.TrimSpace(body.Action)) {
+	case "skip":
+		op = "skip-step"
+	case "stop":
+		op = "stop-step"
+	default:
+		return jsonError(c, fiber.StatusBadRequest, "bad_request", errors.New("action must be skip or stop"))
+	}
+	if err := h.gateway.SendDeploy(run.ServerID, &agentv1.DeployCommand{
+		RunId: run.ID,
+		Op:    op,
+		Apps:  []*agentv1.DeployApp{{Name: app}},
+		Flow: []*agentv1.DeployFlowWave{{
+			Tasks: []*agentv1.DeployFlowTask{{App: app, Phase: phase}},
+		}},
+	}); err != nil {
+		return jsonError(c, fiber.StatusServiceUnavailable, "agent_offline", err)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 func bearerToken(c fiber.Ctx) string {

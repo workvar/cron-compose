@@ -23,6 +23,10 @@ import (
 //
 // Process managers are pointed at <base>/current, never at a release directory, so
 // their working directory stays valid across deploys.
+//
+// <base>/.cc-cache sits beside releases/ and is not pruned. It holds the last
+// install and build outputs so the next release can skip an unchanged
+// npm install or compile.
 const (
 	releasesDir   = "releases"
 	currentLink   = "current"
@@ -145,23 +149,6 @@ func (l Layout) Promote(tmp, sha string) (string, error) {
 		return "", err
 	}
 	return dest, nil
-}
-
-// Swap points current at release atomically: a symlink is written next to the real
-// one and renamed over it, so no reader ever sees the link missing.
-func (l Layout) Swap(release string) error {
-	rel, err := filepath.Rel(l.Base, release)
-	if err != nil {
-		rel = release // absolute target still works, just less tidy
-	}
-	tmp := l.Current + ".swapping"
-	if err := os.RemoveAll(tmp); err != nil {
-		return err
-	}
-	if err := os.Symlink(rel, tmp); err != nil {
-		return err
-	}
-	return os.Rename(tmp, l.Current)
 }
 
 // CurrentRelease returns the release directory current points at, or "" if there is

@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/croncompose/croncompose/agent/internal/osuser"
-	"golang.org/x/sys/unix"
+	"github.com/croncompose/croncompose/agent/internal/platform"
 )
 
 // Preflight catches the failures that are cheap to predict and expensive to hit
@@ -36,7 +36,7 @@ func (m *Manager) preflight(runID, token, base, installScript, processManager st
 		return fmt.Errorf("clone path not usable: %w", err)
 	}
 	m.phaseLine(runID, token, phasePreflight, "clone path writable: ok")
-	if tmpDir != "" && tmpDir != "/tmp" {
+	if tmpDir != "" && tmpDir != platform.TempDir() {
 		m.phaseLine(runID, token, phasePreflight, "tmp: "+tmpDir)
 	}
 
@@ -57,6 +57,10 @@ func (m *Manager) preflight(runID, token, base, installScript, processManager st
 		if _, err2 := exec.LookPath("git"); err2 != nil {
 			return fmt.Errorf("git is not installed on this server")
 		}
+	}
+	// Install and run scripts are bash on every platform; on Windows that is Git Bash.
+	if !platform.HasBash() {
+		return fmt.Errorf("bash is not available: %s", platform.BashHint)
 	}
 	m.phaseLine(runID, token, phasePreflight, "git: ok")
 
@@ -92,13 +96,7 @@ func ensureWritableDir(dir string) error {
 	return os.Remove(probe)
 }
 
-func freeBytes(dir string) (uint64, error) {
-	var st unix.Statfs_t
-	if err := unix.Statfs(dir, &st); err != nil {
-		return 0, err
-	}
-	return st.Bavail * uint64(st.Bsize), nil
-}
+func freeBytes(dir string) (uint64, error) { return platform.FreeBytes(dir) }
 
 // knownBinaries maps a token that may appear at the head of an install command to
 // the executable it needs. Only well-known build tools are listed: guessing wider

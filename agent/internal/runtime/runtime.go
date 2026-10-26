@@ -23,6 +23,7 @@ import (
 	"github.com/croncompose/croncompose/agent/internal/identity"
 	"github.com/croncompose/croncompose/agent/internal/network"
 	"github.com/croncompose/croncompose/agent/internal/outbox"
+	"github.com/croncompose/croncompose/agent/internal/platform"
 	"github.com/croncompose/croncompose/agent/internal/scheduler"
 	"github.com/croncompose/croncompose/agent/internal/store"
 	"github.com/croncompose/croncompose/agent/internal/terminal"
@@ -110,6 +111,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 	}
 	r.sched.Start()
 	defer r.sched.Stop()
+	go r.autoUpdateLoop(ctx)
 	// Deploys outlive a dropped stream and stop when the process does.
 	defer func() {
 		if r.deploys != nil {
@@ -259,7 +261,7 @@ func (r *Runtime) newHello() *agentv1.Hello {
 		Os:           runtime.GOOS,
 		Arch:         runtime.GOARCH,
 		Capabilities: caps,
-		EuidRoot:     os.Geteuid() == 0,
+		EuidRoot:     platform.IsElevated(),
 		ServiceUser:  serviceUser(r.cfg.DataDir),
 	}
 }
@@ -276,7 +278,7 @@ func serviceUser(dataDir string) string {
 			}
 		}
 	}
-	return os.Getenv("USER")
+	return platform.CurrentUser()
 }
 
 // heartbeatInterval keeps the AgentStream warm for proxies with short idle

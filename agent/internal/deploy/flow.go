@@ -32,6 +32,7 @@ func (m *Manager) runDeployFlow(
 	runID := cmd.GetRunId()
 	token := cmd.GetCloneToken()
 	continueOnFail := strings.EqualFold(strings.TrimSpace(cmd.GetOnWaveFailure()), "continue")
+	released := cmd.GetOp() == "rerun"
 	apps := appsOf(cmd, release)
 	byName := map[string]*agentv1.DeployApp{}
 	for _, a := range apps {
@@ -39,7 +40,6 @@ func (m *Manager) runDeployFlow(
 	}
 
 	waves := cmd.GetFlow()
-	released := false
 	var waveErrs []error
 
 	for i, wave := range waves {
@@ -112,6 +112,9 @@ func (m *Manager) runDeployFlow(
 	if err := joinErrors(waveErrs); err != nil {
 		return phaseError{phaseStart, err}
 	}
+	if stopped := m.stoppedApps(runID); len(stopped) > 0 {
+		return phaseError{phaseStart, fmt.Errorf("stopped: %s", strings.Join(stopped, ", "))}
+	}
 	return nil
 }
 
@@ -156,12 +159,15 @@ func (m *Manager) runFlowWave(
 				continue
 			}
 			scriptJobs = append(scriptJobs, appScript{
-				label:  body,
-				work:   work,
-				script: body,
-				env:    appEnv(cmd, app),
-				phase:  body,
-				done:   "done",
+				app:       app.GetName(),
+				flowPhase: phase,
+				label:     body,
+				work:      work,
+				script:    body,
+				env:       appEnv(cmd, app),
+				language:  app.GetLanguage(),
+				phase:     body,
+				done:      "done",
 			})
 		case "cleanup":
 			script := cleanupScriptFor(app.GetCleanupScript(), app.GetLanguage())
@@ -169,11 +175,13 @@ func (m *Manager) runFlowWave(
 				continue
 			}
 			scriptJobs = append(scriptJobs, appScript{
-				label:  "cleanup",
-				work:   work,
-				script: script,
-				env:    appEnv(cmd, app),
-				phase:  "cleanup: " + script,
+				app:       app.GetName(),
+				flowPhase: "cleanup",
+				label:     "cleanup",
+				work:      work,
+				script:    script,
+				env:       appEnv(cmd, app),
+				phase:     "cleanup: " + script,
 			})
 		case "pre_start":
 			script := strings.TrimSpace(app.GetPreStartScript())
@@ -181,12 +189,14 @@ func (m *Manager) runFlowWave(
 				continue
 			}
 			scriptJobs = append(scriptJobs, appScript{
-				label:  "pre-start",
-				work:   work,
-				script: script,
-				env:    appEnv(cmd, app),
-				phase:  script,
-				done:   "done",
+				app:       app.GetName(),
+				flowPhase: "pre_start",
+				label:     "pre-start",
+				work:      work,
+				script:    script,
+				env:       appEnv(cmd, app),
+				phase:     script,
+				done:      "done",
 			})
 		case "run":
 			runApps = append(runApps, app)

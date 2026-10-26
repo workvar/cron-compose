@@ -290,4 +290,50 @@ release: current -> r1
   );
 }
 
+{
+  const apps: ProgressApp[] = [
+    { name: "Backend", root: "backend", language: "go", install: "go build -o api .", run: "./api", processManager: "pm2" },
+  ];
+  const view = buildDeployLive({
+    status: "running",
+    apps,
+    logs: lines(`run: skipped (in /opt/apps/backend)\n`),
+  });
+  assert.equal(view.processes[0].steps.find((s) => s.kind === "run")?.state, "skipped");
+}
+
+{
+  // A cached install closes that half and leaves the build pending.
+  const apps: ProgressApp[] = [
+    {
+      name: "Frontend",
+      root: "web",
+      language: "nextjs",
+      install: "npm ci && npm run build",
+      processManager: "pm2",
+    },
+  ];
+  const hit = buildDeployLive({
+    status: "running",
+    apps,
+    logs: lines(`install: npm ci (in /opt/apps/node/peepal-rp/releases/r1/web)
+install: cache hit (in /opt/apps/node/peepal-rp/releases/r1/web)
+`),
+  });
+  const proc = hit.processes[0];
+  assert.equal(proc.steps.find((s) => s.kind === "install")?.state, "done");
+  assert.equal(proc.steps.find((s) => s.kind === "build")?.state, "pending");
+
+  const both = buildDeployLive({
+    status: "running",
+    apps,
+    logs: lines(`install: npm ci && npm run build (in /opt/apps/web)
+install: cache hit all (in /opt/apps/web)
+`),
+  });
+  const all = both.processes[0];
+  assert.equal(all.steps.find((s) => s.kind === "install")?.state, "done");
+  assert.equal(all.steps.find((s) => s.kind === "build")?.state, "done");
+}
+
 console.log("deploy-progress: ok");

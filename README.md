@@ -1,9 +1,9 @@
 # CronCompose
 
-Deploy apps and schedule shell jobs across remote Linux machines (Raspberry Pi, EC2,
-bare-metal, or any Linux box). Define a project with `croncompose.yml` or the UI, pick a
-server, and CronCompose clones, builds, starts the process manager, and streams status
-back. Jobs keep their own agent-local schedules so work continues offline.
+Deploy apps and schedule shell jobs across remote machines: Raspberry Pi, EC2,
+bare-metal, any Linux box, macOS, and Windows 10/11 or Windows Server. Define a
+project with `croncompose.yml` or the UI, pick a server, and CronCompose clones,
+builds, starts the process manager, and streams status back. Jobs keep their own agent-local schedules so work continues offline.
 
 ## The shape of it
 
@@ -66,7 +66,8 @@ Runtime diagram (signed-in): **Architecture** in the sidebar, or
 - Frontend: Next.js 16 (App Router), React, light/dark theme
 - Control-plane API: Go 1.25, Fiber v3 (REST), gRPC for the agent channel
 - Database: PostgreSQL
-- Agent: Go binary, local job cache, local cron evaluation
+- Agent: Go binary, local job cache, local cron evaluation; Linux, macOS, and Windows
+  ([Windows agent](docs/wiki/Windows-Agent.md))
 
 ## Status
 

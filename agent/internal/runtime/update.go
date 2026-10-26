@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/croncompose/croncompose/agent/internal/platform"
 	"github.com/croncompose/croncompose/agent/internal/selfupdate"
 	"github.com/croncompose/croncompose/agent/internal/sourceupdate"
 	agentv1 "github.com/croncompose/croncompose/proto/agent/v1"
@@ -44,6 +45,22 @@ func (r *Runtime) handleUpdate(ctx context.Context, u *agentv1.UpdateAgent) {
 		r.reportUpdate(req.TargetVersion, phase, detail, percent)
 	}
 
+	// Windows installs never compile from source: the same offer is answered with
+	// the release's prebuilt, checksum-pinned .exe.
+	if platform.IsWindows() && sourceupdate.IsSource(req.DownloadURL, req.SHA256) {
+		r.log.Info("release binary update starting",
+			"from", r.cfg.AgentVersion, "to", req.TargetVersion)
+		report("offered", "Starting the update", 6)
+		path, err := sourceupdate.ApplyReleaseBinary(ctx, r.log, req.DownloadURL, req.TargetVersion, r.cfg.AgentVersion, report)
+		if err != nil {
+			r.log.Error("release binary update failed", "err", err)
+			report("failed", err.Error(), 0)
+			return
+		}
+		r.finishBinaryUpdate(u, path, req.TargetVersion, report)
+		return
+	}
+
 	if sourceupdate.IsSource(req.DownloadURL, req.SHA256) {
 		r.log.Info("source update starting",
 			"from", r.cfg.AgentVersion, "to", req.TargetVersion, "url", req.DownloadURL)
@@ -79,7 +96,14 @@ func (r *Runtime) handleUpdate(ctx context.Context, u *agentv1.UpdateAgent) {
 		report("failed", err.Error(), 0)
 		return
 	}
-	r.log.Info("self-update installed", "path", path, "version", req.TargetVersion)
+	r.finishBinaryUpdate(u, path, req.TargetVersion, report)
+}
+
+// finishBinaryUpdate reports the swap and, when asked, exits so the supervisor
+// (systemd, launchd, or the Windows Service Control Manager) restarts the agent on
+// the new binary.
+func (r *Runtime) finishBinaryUpdate(u *agentv1.UpdateAgent, path, version string, report func(string, string, int)) {
+	r.log.Info("self-update installed", "path", path, "version", version)
 	report("installing", "Installed the new agent binary", 80)
 
 	if !u.GetRestart() {

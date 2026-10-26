@@ -6,9 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 
 	"github.com/croncompose/croncompose/agent/internal/osuser"
+	"github.com/croncompose/croncompose/agent/internal/platform"
 )
 
 // splitRunAs pulls an optional "run_as:<user>" prefix out of a lifecycle payload.
@@ -141,7 +141,7 @@ func runAs(ctx context.Context, username, name string, args ...string) (string, 
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.CommandContext(ctx, "/bin/bash", "-lc", osuser.WrapScript(shellJoin(name, args...)))
+	cmd := exec.CommandContext(ctx, platform.Bash(), "-lc", osuser.WrapScript(shellJoin(name, args...)))
 	applyUser(cmd, cred)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
@@ -154,12 +154,7 @@ func applyUser(cmd *exec.Cmd, cred *osuser.Credential) {
 	if cred == nil {
 		return
 	}
-	if cmd.SysProcAttr == nil {
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
-	}
-	cmd.SysProcAttr.Credential = &syscall.Credential{
-		Uid: cred.UID, Gid: cred.GID, Groups: cred.Groups,
-	}
+	osuser.Apply(cmd, cred)
 	cmd.Env = append(os.Environ(),
 		"HOME="+cred.Home,
 		"USER="+cred.Username,

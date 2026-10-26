@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/croncompose/croncompose/agent/internal/platform"
 	"github.com/croncompose/croncompose/agent/internal/selfupdate"
 )
 
@@ -219,7 +220,7 @@ func applyAgent(ctx context.Context, log *slog.Logger, repo, tag string, report 
 		return "", fmt.Errorf("git clone: %w", err)
 	}
 
-	out := filepath.Join(src, "agent", "bin", "agent")
+	out := filepath.Join(src, "agent", "bin", "agent"+exeSuffix())
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		return "", err
 	}
@@ -246,7 +247,7 @@ func applyAgent(ctx context.Context, log *slog.Logger, repo, tag string, report 
 // installed Go. Mirrors scripts/install-agent.sh's find_go so a self-triggered
 // update finds Go in the same places a fresh interactive install would.
 func findGo() (string, error) {
-	if p, err := exec.LookPath("go"); err == nil {
+	if p, err := platform.LookPath("go"); err == nil {
 		return p, nil
 	}
 	if v := strings.TrimSpace(os.Getenv("AGENT_GO_BIN")); v != "" {
@@ -283,7 +284,16 @@ func isExecutableFile(path string) bool {
 	if err != nil || info.IsDir() {
 		return false
 	}
-	return info.Mode()&0o111 != 0
+	// Windows has no execute bit; any regular file named like a program will do.
+	return platform.IsWindows() || info.Mode()&0o111 != 0
+}
+
+// exeSuffix is ".exe" on Windows, where a program without it cannot be started.
+func exeSuffix() string {
+	if platform.IsWindows() {
+		return ".exe"
+	}
+	return ""
 }
 
 func run(ctx context.Context, dir string, name string, args ...string) error {
@@ -298,8 +308,9 @@ func runWithPATH(ctx context.Context, dir, bin string, args ...string) error {
 	env := os.Environ()
 	found := false
 	for i, e := range env {
-		if strings.HasPrefix(e, "PATH=") {
-			env[i] = "PATH=" + binDir + string(os.PathListSeparator) + strings.TrimPrefix(e, "PATH=")
+		// Windows spells it "Path"; environment keys are case-insensitive there.
+		if len(e) >= 5 && strings.EqualFold(e[:5], "PATH=") {
+			env[i] = e[:5] + binDir + string(os.PathListSeparator) + e[5:]
 			found = true
 			break
 		}

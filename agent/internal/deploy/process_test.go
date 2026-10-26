@@ -61,6 +61,17 @@ func TestStartCommandRunScript(t *testing.T) {
 	}
 }
 
+func TestPm2ArgsEcosystemIsOneApp(t *testing.T) {
+	args := pm2StartArgs("peepal-api", "node", "/opt/apps/ecosystem.config.js", "")
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--only") || !strings.Contains(joined, "peepal-api") {
+		t.Fatalf("missing --only: %v", args)
+	}
+	if pm2StartArgs("", "node", "/opt/apps/ecosystem.config.js", "") != nil {
+		t.Fatal("empty name must not start a shared ecosystem")
+	}
+}
+
 func TestPm2ArgsWithoutEcosystem(t *testing.T) {
 	args := pm2StartArgs("web", "node", "", "")
 	joined := strings.Join(args, " ")

@@ -21,15 +21,13 @@ type Registry struct {
 // NewRegistry returns the default Phase A provider set. Order is cosmetic. Additional
 // connectors (apache, caddy, traefik, haproxy, cron, ufw) plug in here as they land.
 func NewRegistry(log *slog.Logger) *Registry {
-	return &Registry{
-		log: log,
-		providers: []Provider{
-			&nginxProvider{},
-			&systemdProvider{},
-			&dockerProvider{},
-			&pm2Provider{},
-		},
+	providers := []Provider{
+		&nginxProvider{},
+		&systemdProvider{},
+		&dockerProvider{},
+		&pm2Provider{},
 	}
+	return &Registry{log: log, providers: append(providers, platformProviders()...)}
 }
 
 // Discover probes every provider and returns what is installed. Each provider gets a

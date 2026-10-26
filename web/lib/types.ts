@@ -76,6 +76,8 @@ export type CreateServerResponse = {
   enrollment: { token: string; expires_at: string };
   install_command: string;
   install_command_root: string;
+  // Administrator PowerShell one-liner for Windows 10/11 and Windows Server 2019+.
+  install_command_windows?: string;
 };
 
 // Returned by POST /servers/:id/enrollment-token: a fresh token for re-running the
@@ -84,6 +86,8 @@ export type IssueTokenResponse = {
   enrollment: { token: string; expires_at: string };
   install_command: string;
   install_command_root: string;
+  // Administrator PowerShell one-liner for Windows 10/11 and Windows Server 2019+.
+  install_command_windows?: string;
 };
 
 export type Job = {

@@ -3,9 +3,10 @@ package connectors
 import (
 	"context"
 	"errors"
-	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/croncompose/croncompose/agent/internal/platform"
 )
 
 // The agent stays unprivileged by default. Anything that needs root goes through
@@ -40,7 +41,7 @@ var privBinaries = map[string]bool{
 
 // needsPriv reports whether this process must escalate to touch root-owned state.
 // Running as root already means no escalation is needed.
-func needsPriv() bool { return os.Geteuid() != 0 }
+func needsPriv() bool { return !platform.IsElevated() }
 
 // canSudo reports whether passwordless sudo is usable for the given binary. `sudo -n`
 // fails immediately rather than prompting, which is what we want on a headless box.

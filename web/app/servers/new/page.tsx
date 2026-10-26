@@ -89,6 +89,30 @@ export default function NewServerPage() {
           />
         </div>
 
+        {result.install_command_windows && (
+          <div className="panel" style={{ maxWidth: 640, marginTop: 16 }}>
+            <label>Install on Windows</label>
+            <p className="subtle" style={{ margin: "4px 0 0" }}>
+              Run in PowerShell as Administrator on Windows 10/11 or Windows Server 2019 and later.
+            </p>
+            <div className="code-block" style={{ marginTop: 6 }}>
+              <pre className="review-script" style={{ marginTop: 0 }}>{result.install_command_windows}</pre>
+              <CopyButton value={result.install_command_windows} label="Copy" />
+            </div>
+            <TradeoffList
+              good={[
+                "Downloads a prebuilt, checksum-verified agent .exe; no Go or build tools needed",
+                "Runs as the croncompose-agent Windows service and restarts itself after crashes and updates",
+                "Updates itself automatically when a new release is published",
+              ]}
+              bad={[
+                "The service runs as LocalSystem, the Windows equivalent of root",
+                "bash jobs and deploy scripts need Git for Windows; powershell and cmd jobs do not",
+              ]}
+            />
+          </div>
+        )}
+
         <button className="button" style={{ marginTop: 16 }} onClick={() => router.push("/servers")}>
           <IconCheck /> Done
         </button>

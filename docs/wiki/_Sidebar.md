@@ -10,6 +10,7 @@
 **Get started**
 * [Installation](Installation.md)
 * [Agent installation](Agent-Installation.md)
+* [Windows agent](Windows-Agent.md)
 * [Deployment](Deployment.md)
 * [Development](Development.md)
 

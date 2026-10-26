@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/croncompose/croncompose/agent/internal/platform"
 )
 
 // run executes a command and returns its trimmed combined output. A non-nil error means
@@ -23,7 +25,7 @@ func run(ctx context.Context, name string, args ...string) (string, error) {
 
 // has reports whether a binary is on PATH.
 func has(name string) bool {
-	_, err := exec.LookPath(name)
+	_, err := platform.LookPath(name)
 	return err == nil
 }
 

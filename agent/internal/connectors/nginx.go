@@ -2,8 +2,9 @@ package connectors
 
 import (
 	"context"
-	"os"
 	"path/filepath"
+
+	"github.com/croncompose/croncompose/agent/internal/platform"
 )
 
 type nginxProvider struct{}
@@ -23,7 +24,7 @@ func (p *nginxProvider) Detect(ctx context.Context) []Instance {
 
 	// Editing needs write access to the config tree; an unknown prefix means there is
 	// nothing this connector is allowed to touch, whatever privileges the agent holds.
-	canEdit := prefix != "" && (writable(main) || os.Geteuid() == 0 || canSudo(ctx, "install"))
+	canEdit := prefix != "" && (writable(main) || platform.IsElevated() || canSudo(ctx, "install"))
 	// Reloading is a separate privilege from writing the files: an agent can easily
 	// have one and not the other.
 	canReload := canReloadNginx(ctx)
@@ -66,7 +67,7 @@ func (p *nginxProvider) Detect(ctx context.Context) []Instance {
 // either route. systemctl is not required: `nginx -s reload` works on any host where
 // the agent is root or has the sudoers grant for the nginx binary.
 func canReloadNginx(ctx context.Context) bool {
-	if os.Geteuid() == 0 {
+	if platform.IsElevated() {
 		return true
 	}
 	return canSudo(ctx, "systemctl") || canSudo(ctx, "nginx")

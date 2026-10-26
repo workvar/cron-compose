@@ -61,5 +61,6 @@ func Register(r fiber.Router, log *slog.Logger, pool *pgxpool.Pool, gw *agentgw.
 	r.Get("/deploy-runs/:runId/logs/stream", h.stream)
 	r.Post("/deploy-runs/:runId/stdin", auth.RequireRole("operator"), h.stdin)
 	r.Post("/deploy-runs/:runId/cancel", auth.RequireRole("operator"), h.cancel)
+	r.Post("/deploy-runs/:runId/steps", auth.RequireRole("operator"), h.stepAction)
 	return h
 }

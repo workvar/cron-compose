@@ -113,6 +113,9 @@ export const IconPause = (p: P) => (
 export const IconStop = (p: P) => (
   <svg {...base(p)}><rect x="6" y="6" width="12" height="12" rx="1.5" /></svg>
 );
+export const IconSkip = (p: P) => (
+  <svg {...base(p)}><path d="M5 5.5v13l8.5-6.5L5 5.5Z" /><path d="M16 5.5v13" /></svg>
+);
 export const IconRestart = (p: P) => (
   <svg {...base(p)}><path d="M3.5 12a8.5 8.5 0 0 1 14.5-6M20.5 12A8.5 8.5 0 0 1 6 18.1" /><path d="M18 2.5v4.5h-4.5M6 21.5v-4.5h4.5" /></svg>
 );

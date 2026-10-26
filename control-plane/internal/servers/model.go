@@ -57,6 +57,8 @@ type IssueTokenResponse struct {
 	// InstallCommandRoot re-enrolls the existing server with the agent running as
 	// root (AGENT_RUN_AS_ROOT=1), skipping the "Agent root access" toggle entirely.
 	InstallCommandRoot string `json:"install_command_root"`
+	// InstallCommandWindows re-enrolls the server from an Administrator PowerShell.
+	InstallCommandWindows string `json:"install_command_windows"`
 }
 
 // CreateResponse is the wrapper returned by POST /servers.
@@ -67,4 +69,7 @@ type CreateResponse struct {
 	// InstallCommandRoot is the same install, but the agent runs as root from the
 	// start (AGENT_RUN_AS_ROOT=1) instead of the croncompose service user.
 	InstallCommandRoot string `json:"install_command_root"`
+	// InstallCommandWindows installs the agent as a Windows service, run from an
+	// Administrator PowerShell on Windows 10/11 or Windows Server 2019+.
+	InstallCommandWindows string `json:"install_command_windows"`
 }

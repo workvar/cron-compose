@@ -17,14 +17,9 @@ import {
   type StepState,
 } from "@/lib/deploy-progress";
 import { activeWaveIndex, buildDeployWaves } from "@/lib/deploy-waves";
-import type { Connector, DeployInventory, DeployProject, LogLine } from "@/lib/types";
-import {
-  buildProcessRows,
-  isProcessRunning,
-  type ProcessRow,
-} from "@/lib/project-processes";
+import type { DeployProject, LogLine } from "@/lib/types";
 import { TerminalFrame } from "@/components/terminal/TerminalFrame";
-import { ProcessTaskActions } from "@/components/deploys/ProcessTaskActions";
+import { DeployStepActions } from "@/components/deploys/DeployStepActions";
 import { WaveVisualizer } from "@/components/deploys/WaveVisualizer";
 
 type Props = {
@@ -32,6 +27,7 @@ type Props = {
   project: DeployProject | null;
   status: string;
   live: boolean;
+  runId: string;
 };
 
 const PHASE_ORDER = [
@@ -101,18 +97,7 @@ function activePhase(proc: LiveProcess): string {
   return lastDone?.kind || "all";
 }
 
-function rowForProcess(rows: ProcessRow[], name: string): ProcessRow | null {
-  return (
-    rows.find(
-      (r) =>
-        r.label === name ||
-        r.processName === name ||
-        r.processName.endsWith(`-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`),
-    ) ?? null
-  );
-}
-
-export function DeployRunBoard({ logs, project, status, live }: Props) {
+export function DeployRunBoard({ logs, project, status, live, runId }: Props) {
   const apps = useMemo(() => appsOf(project), [project]);
   const view = useMemo(
     () => buildDeployLive({
@@ -136,9 +121,6 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
 
   const [focusPane, setFocusPane] = useState<string>("shared");
   const [phaseByPane, setPhaseByPane] = useState<Record<string, string>>({});
-  const [inventory, setInventory] = useState<DeployInventory | null>(null);
-  const [connectors, setConnectors] = useState<Connector[]>([]);
-  const [controlsError, setControlsError] = useState<string | null>(null);
 
   useEffect(() => {
     const w = waves[waveIdx];
@@ -149,47 +131,6 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
     setPhaseByPane((prev) => ({ ...prev, [active.pane]: active.phase }));
   }, [waveIdx, waves]);
 
-  const refreshInventory = useCallback(async () => {
-    if (!project?.server_id) return;
-    const sid = encodeURIComponent(project.server_id);
-    try {
-      const [invRes, connRes] = await Promise.all([
-        fetch(`/api/servers/${sid}/deploy-inventory`),
-        fetch(`/api/servers/${sid}/connectors`),
-      ]);
-      if (invRes.ok) setInventory((await invRes.json()) as DeployInventory);
-      if (connRes.ok) {
-        const body = (await connRes.json()) as { items?: Connector[] };
-        setConnectors(Array.isArray(body.items) ? body.items : []);
-      }
-      if (!invRes.ok && !connRes.ok) {
-        setControlsError(`Could not load process controls (${invRes.status})`);
-      } else {
-        setControlsError(null);
-      }
-    } catch (e) {
-      setControlsError((e as Error).message || "Could not load process controls");
-    }
-  }, [project?.server_id]);
-
-  useEffect(() => {
-    void refreshInventory();
-  }, [refreshInventory, status]);
-
-  useEffect(() => {
-    if (!project?.server_id) return;
-    if (!live && status !== "failed" && status !== "canceled" && status !== "agent_offline") {
-      return;
-    }
-    const id = window.setInterval(() => void refreshInventory(), live ? 5000 : 15000);
-    return () => window.clearInterval(id);
-  }, [live, project?.server_id, refreshInventory, status]);
-
-  const processRows = useMemo(
-    () => (project ? buildProcessRows(project, inventory, connectors) : []),
-    [project, inventory, connectors],
-  );
-  const manageable = processRows.some((r) => r.pm !== "none");
   const runFailed = status === "failed" || status === "canceled" || status === "agent_offline";
 
   const selectTask = useCallback((pane: string, phase: string) => {
@@ -228,10 +169,6 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
         onSelectTask={selectTask}
       />
 
-      {controlsError && (
-        <p className="form-error" style={{ margin: 0 }}>{controlsError}</p>
-      )}
-
       <div className="deploy-server-term">
         <ProcessTerminal
           title="Server"
@@ -251,21 +188,6 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
         style={{ ["--deploy-term-cols" as string]: Math.min(Math.max(view.processes.length, 1), 3) }}
       >
         {view.processes.map((proc) => {
-          const row = manageable ? rowForProcess(processRows, proc.name) : null;
-          const showControls = Boolean(row && row.pm !== "none");
-          const startDone = proc.steps.some(
-            (s) =>
-              (s.kind === "start" || s.kind === "run") &&
-              (s.state === "done" || s.state === "active"),
-          );
-          const knownRunning = Boolean(row?.resource && isProcessRunning(row.resource.state));
-          const controlsEnabled =
-            !live ||
-            proc.state === "done" ||
-            proc.state === "failed" ||
-            knownRunning ||
-            startDone ||
-            Boolean(row?.resource);
           const phase = phaseByPane[proc.id] || activePhase(proc);
           return (
             <ProcessTerminal
@@ -281,19 +203,15 @@ export function DeployRunBoard({ logs, project, status, live }: Props) {
               live={live}
               state={proc.state}
               percent={proc.percent}
-              pmState={row?.resource?.state}
               actions={
-                showControls ? (
-                  <ProcessTaskActions
-                    row={row}
-                    projectId={project?.id}
-                    appName={proc.name}
-                    serverId={project?.server_id}
-                    runAsUser={project?.run_as_user}
-                    enabled={controlsEnabled}
-                    onChanged={() => void refreshInventory()}
-                  />
-                ) : null
+                <DeployStepActions
+                  runId={runId}
+                  projectId={project?.id}
+                  appName={proc.name}
+                  phase={phase}
+                  steps={proc.steps}
+                  live={live}
+                />
               }
             />
           );
@@ -315,7 +233,6 @@ function ProcessTerminal({
   live,
   state,
   percent,
-  pmState,
   actions,
 }: {
   title: string;
@@ -329,7 +246,6 @@ function ProcessTerminal({
   live: boolean;
   state?: StepState;
   percent?: number;
-  pmState?: string | null;
   actions?: ReactNode;
 }) {
   const tabs =
@@ -359,7 +275,6 @@ function ProcessTerminal({
           <div className="deploy-proc-name">{title}</div>
           <div className={`deploy-proc-state is-${state || "pending"}`}>
             {state ? stateLabel(state) : "Server"}
-            {pmState ? ` · pm2 ${pmState}` : ""}
           </div>
         </div>
         {typeof percent === "number" && (

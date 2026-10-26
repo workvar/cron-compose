@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/croncompose/croncompose/agent/internal/platform"
 )
 
 type systemdProvider struct{}
@@ -30,7 +32,7 @@ func (p *systemdProvider) Detect(ctx context.Context) []Instance {
 	}
 	// Lifecycle and unit-file edits need root, or a passwordless sudoers grant for
 	// systemctl. Report what this agent can actually do, not what it wishes it could.
-	manageable := os.Geteuid() == 0 || canSudo(ctx, "systemctl")
+	manageable := platform.IsElevated() || canSudo(ctx, "systemctl")
 	paths := existingPaths(systemdConfigRoot)
 	return []Instance{{
 		Kind:        "systemd",

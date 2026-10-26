@@ -1,7 +1,10 @@
 name: Release
 
-# Notes-only GitHub release: publish RELEASE_NOTES.md and a tag-baked install-agent
-# script. No Go/Node matrix builds — hosts clone the tag and build locally.
+# GitHub release for a tag: RELEASE_NOTES.md, tag-baked install-agent scripts, and
+# prebuilt Windows agents. Linux and macOS hosts still clone the tag and build
+# locally; Windows hosts download croncompose-agent-windows-<arch>.exe, verified
+# against checksums.json (which the control plane and the agent's auto-updater
+# both read to pin the sha256 before swapping the binary).
 
 on:
   push:
@@ -11,18 +14,95 @@ permissions:
   contents: write
 
 jobs:
+  windows-test:
+    name: Windows agent tests
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: Vet
+        run: go vet ./...
+      - name: Test Windows code paths
+        shell: pwsh
+        run: |
+          go test ./internal/platform ./internal/procgroup ./internal/executor ./internal/terminal `
+                  ./internal/config ./internal/autoupdate ./internal/osuser
+          go test -run 'Windows|Netstat|WinService|ServiceName' ./internal/connectors
+          go test -run 'AssetName|ResolveRelease' ./internal/sourceupdate
+          go test -run 'Windows' ./internal/selfupdate
+      - name: Installer parses
+        shell: pwsh
+        working-directory: .
+        run: |
+          $errs = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD\scripts\install-agent.ps1", [ref]$null, [ref]$errs) | Out-Null
+          if ($errs) { $errs | Format-List; exit 1 }
+          # Windows PowerShell 5.1 is what a fresh server has; parse there too.
+          powershell.exe -NoProfile -Command "`$e=`$null; [void][System.Management.Automation.Language.Parser]::ParseFile('$PWD\scripts\install-agent.ps1',[ref]`$null,[ref]`$e); if (`$e) { `$e; exit 1 }"
+      - name: Service install smoke test
+        shell: pwsh
+        run: |
+          go build -o $env:RUNNER_TEMP\croncompose-agent.exe ./cmd/agent
+          $exe = "$env:RUNNER_TEMP\croncompose-agent.exe"
+          & $exe version
+          & $exe service install; if ($LASTEXITCODE) { exit 1 }
+          sc.exe qc croncompose-agent
+          sc.exe qfailure croncompose-agent
+          & $exe service uninstall; if ($LASTEXITCODE) { exit 1 }
+
   release:
     name: Publish GitHub release
+    needs: windows-test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      - name: Build Windows agents
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          mkdir -p out
+          ver="${VERSION#v}"
+          ldflags="-s -w -X github.com/croncompose/croncompose/agent/internal/config.buildVersion=${ver}"
+          for arch in amd64 arm64; do
+            (cd agent && CGO_ENABLED=0 GOOS=windows GOARCH="$arch" \
+              go build -trimpath -ldflags "$ldflags" \
+              -o "../out/croncompose-agent-windows-${arch}.exe" ./cmd/agent)
+          done
+          ls -la out
+
+      - name: Write checksums
+        run: |
+          cd out
+          sha256sum croncompose-agent-windows-*.exe > SHA256SUMS
+          # checksums.json keys are os/arch, the shape the control plane's release
+          # catalog and the agent's release updater expect.
+          {
+            echo "{"
+            echo "  \"windows/amd64\": \"$(sha256sum croncompose-agent-windows-amd64.exe | cut -d' ' -f1)\","
+            echo "  \"windows/arm64\": \"$(sha256sum croncompose-agent-windows-arm64.exe | cut -d' ' -f1)\""
+            echo "}"
+          } > checksums.json
+          cat checksums.json
+          python3 -m json.tool checksums.json > /dev/null
 
       - name: Bake install scripts for this tag
         env:
           VERSION: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
         run: |
-          mkdir -p out
           sed -e "s|__VERSION__|${VERSION}|g" \
               -e "s|__REPO__|${REPO}|g" \
               scripts/install-agent.sh > out/install-agent.sh
@@ -30,8 +110,9 @@ jobs:
           sed -e "s|__VERSION__|${VERSION}|g" \
               -e "s|__REPO__|${REPO}|g" \
               scripts/install-agent.ps1 > out/install-agent.ps1
-          # Sanity: placeholders must be gone from the published shell installer.
+          # Sanity: placeholders must be gone from both published installers.
           ! grep -q '__VERSION__\|__REPO__' out/install-agent.sh
+          ! grep -q '__VERSION__\|__REPO__' out/install-agent.ps1
           head -n 40 out/install-agent.sh
 
       - uses: softprops/action-gh-release@v2
@@ -39,5 +120,9 @@ jobs:
           files: |
             out/install-agent.sh
             out/install-agent.ps1
+            out/croncompose-agent-windows-amd64.exe
+            out/croncompose-agent-windows-arm64.exe
+            out/checksums.json
+            out/SHA256SUMS
           body_path: RELEASE_NOTES.md
           generate_release_notes: false

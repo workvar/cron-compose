@@ -1,5 +1,6 @@
 // Package executor runs a job's script on the local machine with timeout, log capture,
-// optional resource limits (CPU, memory, tasks, IO weight) via systemd-run, and
+// optional resource limits (CPU, memory, tasks, IO weight) via systemd-run on Linux
+// or a Job Object on Windows, and
 // optional user switching.
 package executor
 
@@ -16,12 +17,23 @@ import (
 	"github.com/croncompose/croncompose/agent/internal/osuser"
 )
 
+// prepared is a ready-to-start command plus anything the run log should say about
+// how it will run, and a cleanup for temp files the platform created for it.
+type prepared struct {
+	cmd     *exec.Cmd
+	notes   []string
+	cleanup func()
+	// group is set by attach on platforms that track the process tree (Windows), so
+	// the command's Cancel can stop grandchildren, not just the interpreter.
+	group groupHandle
+}
+
 // LogSink receives chunked output as a job runs. seq increments per stream.
 type LogSink func(stream string, seq int, data []byte)
 
 // Job is the minimum the executor needs to run something.
 type Job struct {
-	Interpreter     string // bash | sh | python3 | node
+	Interpreter     string // bash | sh | python3 | node | powershell | pwsh | cmd
 	ScriptBody      string
 	Env             map[string]string
 	WorkingDir      string
@@ -70,24 +82,21 @@ func Run(ctx context.Context, j Job, sink LogSink) Result {
 		}
 	}
 
-	var notes []string
-	prog, args := buildCommand(interp, j)
-	if j.limited() && prog != "systemd-run" {
-		notes = append(notes, "resource limits requested but systemd-run is not available; running unlimited")
+	p, err := prepare(runCtx, interp, j, cred)
+	if err != nil {
+		return Result{
+			Status:     "failed",
+			DurationMs: int(time.Since(start).Milliseconds()),
+			Err:        err.Error(),
+		}
 	}
-	args = withUser(prog, args, cred)
-
-	cmd := exec.CommandContext(runCtx, prog, args...)
+	defer p.cleanup()
+	cmd, notes := p.cmd, p.notes
 	cmd.Dir = j.WorkingDir
 	if cmd.Dir == "" && cred != nil {
 		cmd.Dir = cred.Home
 	}
 	cmd.Env = buildEnv(j.Env, cred)
-	// systemd-run does its own user switching via --uid; putting a credential on the
-	// systemd-run process itself would stop it from being able to talk to systemd.
-	if prog != "systemd-run" {
-		cmd.SysProcAttr = cred.SysProcAttr()
-	}
 
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
@@ -104,6 +113,12 @@ func Run(ctx context.Context, j Job, sink LogSink) Result {
 			Notes:      notes,
 		}
 	}
+	release, late := p.attach(j)
+	defer release()
+	for i, n := range late {
+		sink("stderr", len(notes)+i, []byte("croncompose: "+n))
+	}
+	notes = append(notes, late...)
 
 	// Both pumps must finish before Wait returns, or trailing output is lost: Wait
 	// closes the pipes, and a scanner mid-read then sees EOF and drops the line.

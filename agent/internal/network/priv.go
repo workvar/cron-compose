@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/croncompose/croncompose/agent/internal/platform"
 )
 
 // Network ops use the same passwordless-sudo pattern as connectors. Binaries absent
@@ -20,7 +21,7 @@ var privBinaries = map[string]bool{
 	"ip":           true,
 }
 
-func needsPriv() bool { return os.Geteuid() != 0 }
+func needsPriv() bool { return !platform.IsElevated() }
 
 func has(name string) bool {
 	_, err := exec.LookPath(name)

@@ -197,12 +197,11 @@ server cert.
 
 ## Agent
 
-The per-server agent runs scheduled jobs through a Unix shell and uses Unix process
-APIs, so it builds and runs on **Linux and macOS only**. The Linux/macOS installer can
+The per-server agent runs on Linux, macOS, and Windows. The Linux/macOS installer can
 enroll and start a local agent for you (it logs in with the seeded admin, mints a
 one-time token, enrolls, and starts the agent). On Windows the installer sets up the
-control plane only; run agents on Linux/macOS hosts and point them at this control
-plane (see `scripts/install-agent.sh`).
+control plane only; add the agent with the portal's **Install on Windows** command
+(`scripts/install-agent.ps1`, see `docs/wiki/Windows-Agent.md`).
 
 On Linux, installers also write `/etc/sudoers.d/croncompose-agent` so the agent can
 inspect listen sockets (Ports page), drive connectors (`systemctl`, `nginx`, …), manage

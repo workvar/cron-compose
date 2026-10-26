@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -205,6 +206,78 @@ var (
 	ecoNameRe = regexp.MustCompile(`(?i)\bname\s*:\s*['"]([^'"]+)['"]`)
 	ecoCwdRe  = regexp.MustCompile(`(?i)\bcwd\s*:\s*['"]([^'"]+)['"]`)
 )
+
+// isolateEcosystemApp returns a pm2 file that contains only onlyName.
+// A shared ecosystem.config.js lists every app in the repo; starting that file
+// brings the other processes back up. One app in the file is returned as-is.
+func isolateEcosystemApp(ecoPath, onlyName string) (string, error) {
+	onlyName = strings.TrimSpace(onlyName)
+	body, err := os.ReadFile(ecoPath)
+	if err != nil {
+		return "", err
+	}
+	apps := parseEcosystemApps(string(body))
+	if len(apps) <= 1 {
+		return ecoPath, nil
+	}
+	if onlyName == "" {
+		return "", fmt.Errorf("ecosystem %s lists %d apps; refusing to start all of them", filepath.Base(ecoPath), len(apps))
+	}
+	obj, ok := extractAppObject(string(body), onlyName)
+	if !ok {
+		return "", fmt.Errorf("ecosystem %s lists %d apps and %q is not one of them; refusing to start all of them", filepath.Base(ecoPath), len(apps), onlyName)
+	}
+	token := processNameRe.ReplaceAllString(onlyName, "-")
+	if token == "" {
+		token = "app"
+	}
+	out := filepath.Join(filepath.Dir(ecoPath), ".croncompose-"+token+".config.cjs")
+	content := "module.exports = { apps: [" + obj + "] }\n"
+	if err := os.WriteFile(out, []byte(content), 0o644); err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
+// extractAppObject returns the source of the apps[] object whose name is onlyName.
+func extractAppObject(body, onlyName string) (string, bool) {
+	re := regexp.MustCompile(`(?i)(?:name|"name")\s*:\s*(['"])` + regexp.QuoteMeta(onlyName) + `['"]`)
+	loc := re.FindStringIndex(body)
+	if loc == nil {
+		return "", false
+	}
+	start := -1
+	depth := 0
+	for i := loc[0]; i >= 0; i-- {
+		switch body[i] {
+		case '}':
+			depth++
+		case '{':
+			if depth == 0 {
+				start = i
+				i = -1
+				break
+			}
+			depth--
+		}
+	}
+	if start < 0 {
+		return "", false
+	}
+	depth = 0
+	for i := start; i < len(body); i++ {
+		switch body[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return body[start : i+1], true
+			}
+		}
+	}
+	return "", false
+}
 
 func parseEcoRegex(body string) []ecoApp {
 	names := ecoNameRe.FindAllStringSubmatch(body, -1)

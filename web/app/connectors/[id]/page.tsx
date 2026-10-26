@@ -71,7 +71,7 @@ export default async function ConnectorDetailPage({ params }: Props) {
   const canAct = isOperator && Boolean(caps.can_lifecycle);
   const canEdit = isAdmin && Boolean(caps.can_edit);
   const capLabels = Object.entries(caps).filter(([, v]) => v).map(([k]) => k.replace(/_/g, " "));
-  const showPorts = c.kind === "systemd" || c.kind === "pm2";
+  const showPorts = c.kind === "systemd" || c.kind === "pm2" || c.kind === "winservice";
 
   const tabs = [
     {

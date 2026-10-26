@@ -6,17 +6,17 @@
 |-----------|-------|-------|---------|
 | Control plane (from-source installer) | Yes | Yes | Yes (`install.ps1`) — control plane only |
 | Control plane (Docker Compose) | Yes | Yes (Docker Desktop) | Yes (Docker Desktop) |
-| Agent (run jobs, connectors, terminal) | Yes | Yes | **No** — Unix shell and process APIs |
+| Agent (run jobs, connectors, terminal) | Yes | Yes | Yes: Windows 10/11, Server 2019+ ([Windows agent](Windows-Agent.md)) |
 | `cc` CLI | Yes | Yes | Should build; not a first-class target |
 | Web UI (browser) | Any modern browser | Any modern browser | Any modern browser |
 
-Agents are the job runners. A Windows box can host the control plane; the machines that execute cron jobs must be Linux or macOS.
+Agents are the job runners. Linux, macOS, and Windows machines can all run them; see [Windows agent](Windows-Agent.md) for what differs there.
 
 ## CPU architectures
 
 | Artifact | Architectures |
 |----------|----------------|
-| Agent static binaries (GitHub Releases) | `linux/amd64`, `linux/arm64` |
+| Agent static binaries (GitHub Releases) | `windows/amd64`, `windows/arm64` (`.exe` plus `checksums.json`); Linux and macOS build from the tag |
 | Agent `.deb` / `.apk` | amd64, arm64 |
 | Control plane / CLI from source | Whatever Go 1.25 supports on the build host (amd64, arm64, including Raspberry Pi) |
 
@@ -42,6 +42,7 @@ Jobs run through the interpreter configured on the job (default `bash`):
 - `sh`
 - `python3`
 - `node`
+- `powershell`, `pwsh`, `cmd` (Windows agents; `bash`/`sh` run there under Git Bash)
 
 The binary must exist on the **agent** host. CronCompose does not install runtimes on targets.
 
@@ -67,6 +68,7 @@ Typical production split: browsers hit `https://cc.example.com` (TLS terminated 
 | systemd | Implemented |
 | Docker | Implemented |
 | pm2 | Implemented |
+| Windows services | Implemented (Windows agents) |
 | Apache, Caddy, Traefik, HAProxy | Designed, not implemented |
 | System cron, ufw | Designed, not implemented |
 
@@ -74,7 +76,7 @@ Connectors manage software **already installed** on the target. They do not inst
 
 ## Resource limits
 
-CPU quota, memory, max processes, and IO weight use `systemd-run`. The agent checks that systemd is **running**, not merely installed. On hosts without a running systemd (some containers, macOS), the job still runs unlimited, with a note in the log.
+CPU quota, memory, max processes, and IO weight use `systemd-run` on Linux and a Job Object on Windows (no IO weight there). The agent checks that systemd is **running**, not merely installed. On hosts without a running systemd (some containers, macOS), the job still runs unlimited, with a note in the log.
 
 ## Browser
 
@@ -85,7 +87,6 @@ The UI is a Next.js App Router app at `/app`. Use a current Chromium, Firefox, o
 - **Single control-plane replica.** A second replica would not see the first one’s agent streams.
 - **Log storage in Postgres**, capped per run (default 5 MiB). Object storage is not built.
 - **Single tenant.** No `org_id`; one deployment is one team.
-- **Windows installer parity** for the agent is not implemented.
 
 ## Versioning
 

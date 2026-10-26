@@ -8,9 +8,9 @@
 
       ./install/install.ps1
 
-  The per-server agent is NOT installed on Windows: it relies on a Unix shell and
-  Unix process APIs. Run the agent on a Linux/macOS host (see scripts/install-agent.sh)
-  and point it at this control plane.
+  This sets up the control plane only. To run jobs on this or any other Windows
+  machine, install the agent with the "Install on Windows" command the portal
+  prints for a new server (scripts/install-agent.ps1, see docs/wiki/Windows-Agent.md).
 
 .PARAMETER NonInteractive
   Accept defaults / CC_* environment variables without prompting.

@@ -6,25 +6,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/croncompose/croncompose/agent/internal/osuser"
+	"github.com/croncompose/croncompose/agent/internal/platform"
 )
 
 // applyCredential puts a child process under run_as_user when the agent is allowed
 // to switch. Nil cred is a no-op (run as the agent).
 func applyCredential(cmd *exec.Cmd, cred *osuser.Credential) {
-	if cred == nil {
-		return
-	}
-	if cmd.SysProcAttr == nil {
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
-	}
-	cmd.SysProcAttr.Credential = &syscall.Credential{
-		Uid:    cred.UID,
-		Gid:    cred.GID,
-		Groups: cred.Groups,
-	}
+	osuser.Apply(cmd, cred)
 }
 
 // credEnvKeysDropped are inherited from the agent process but must not survive a
@@ -83,26 +73,6 @@ func stripEnvKeys(env []string, keys ...string) []string {
 	return out
 }
 
-// lookPathAs asks a login shell of the target user whether bin is on PATH. This is
-// what makes nvm/fnm installs under ~pi visible to preflight even though the agent
-// process itself has a minimal systemd PATH. Uses osuser.WrapScript because plain
-// `bash -lc` is non-interactive and skips the nvm block in ~/.bashrc.
-func lookPathAs(cred *osuser.Credential, bin string) (string, error) {
-	if bin == "" || strings.ContainsAny(bin, " \t\n`$\\\"'") {
-		return "", fmt.Errorf("invalid binary name")
-	}
-	script := osuser.WrapScript("command -v " + bin)
-	cmd := exec.Command("/bin/bash", "-lc", script)
-	cmd.Env = credEnv(cred, "", nil)
-	applyCredential(cmd, cred)
-	out, err := cmd.Output()
-	path := strings.TrimSpace(string(out))
-	if err != nil || path == "" {
-		return "", fmt.Errorf("%s not found", bin)
-	}
-	return path, nil
-}
-
 // resolveBin finds name on the deploy user's login PATH (nvm/fnm/etc.), then falls
 // back to the agent process PATH. Absolute paths are returned unchanged. Callers
 // that exec the result should also pass pathWithBinDir so siblings like npm next
@@ -114,7 +84,7 @@ func resolveBin(cred *osuser.Credential, name string) string {
 	if path, err := lookPathAs(cred, name); err == nil {
 		return path
 	}
-	if path, err := exec.LookPath(name); err == nil {
+	if path, err := platform.LookPath(name); err == nil {
 		return path
 	}
 	return name
@@ -188,7 +158,7 @@ func chownTree(path string, cred *osuser.Credential) error {
 // userTmpDir mirrors control-plane ClonePathForUser's tmp rule on the agent.
 func userTmpDir(cred *osuser.Credential) string {
 	if cred == nil || cred.Username == "" || cred.Username == "root" || cred.Home == "" {
-		return "/tmp"
+		return platform.TempDir()
 	}
 	return filepath.Join(cred.Home, "tmp")
 }

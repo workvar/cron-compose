@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/croncompose/croncompose/agent/internal/osuser"
+	"github.com/croncompose/croncompose/agent/internal/platform"
 )
 
 type pm2Provider struct{}
@@ -66,7 +67,7 @@ func pm2Bin(ctx context.Context) string {
 	if has("pm2") {
 		return "pm2"
 	}
-	out, err := run(ctx, "/bin/bash", "-lc", osuser.WrapScript("command -v pm2"))
+	out, err := run(ctx, platform.Bash(), "-lc", osuser.WrapScript("command -v pm2"))
 	if err != nil {
 		return ""
 	}
@@ -85,7 +86,7 @@ func runPM2(ctx context.Context, args ...string) (string, error) {
 	if pm2Bin(ctx) == "" {
 		return "", os.ErrNotExist
 	}
-	return run(ctx, "/bin/bash", "-lc", osuser.WrapScript(shellJoin("pm2", args...)))
+	return run(ctx, platform.Bash(), "-lc", osuser.WrapScript(shellJoin("pm2", args...)))
 }
 
 func (p *pm2Provider) Detect(ctx context.Context) []Instance {
@@ -101,7 +102,7 @@ func (p *pm2Provider) Detect(ctx context.Context) []Instance {
 		status = "running"
 	}
 	procs := p.list(ctx)
-	user := os.Getenv("USER")
+	user := platform.CurrentUser()
 	dump := pm2DumpPath()
 	paths := existingPaths(dump)
 	canEdit := false

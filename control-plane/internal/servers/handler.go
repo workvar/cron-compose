@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -68,8 +69,9 @@ func (h *handler) create(c fiber.Ctx) error {
 			Token:     token,
 			ExpiresAt: expiresAt,
 		},
-		InstallCommand:     h.installCommand(token, false),
-		InstallCommandRoot: h.installCommand(token, true),
+		InstallCommand:        h.installCommand(token, false),
+		InstallCommandRoot:    h.installCommand(token, true),
+		InstallCommandWindows: h.installCommandWindows(token),
 	}
 	h.audit.Write(c.Context(), auth.CurrentUserID(c), "server.create", "server", srv.ID, map[string]any{"name": srv.Name})
 	return c.Status(fiber.StatusCreated).JSON(resp)
@@ -86,6 +88,27 @@ func (h *handler) installCommand(token string, asRoot bool) string {
 	}
 	return fmt.Sprintf("curl -sSL %s | sudo %s bash", h.endpoints.InstallScriptURL, vars)
 }
+
+// installCommandWindows is the Windows equivalent: run from an Administrator
+// PowerShell, it downloads the prebuilt agent .exe, enrolls, and registers the
+// croncompose-agent service (LocalSystem, auto-start, auto-update).
+func (h *handler) installCommandWindows(token string) string {
+	return fmt.Sprintf("$env:TOKEN='%s'; $env:AGENT_ENROLL_HTTP='%s'; $env:AGENT_GRPC_ADDR='%s'; irm %s | iex",
+		psQuote(token), psQuote(h.endpoints.PublicHTTPURL), psQuote(h.endpoints.PublicGRPCAddr),
+		windowsInstallScriptURL(h.endpoints.InstallScriptURL))
+}
+
+// windowsInstallScriptURL derives install-agent.ps1 from the configured
+// install-agent.sh URL, so a self-hosted INSTALL_SCRIPT_URL mirror serves both.
+func windowsInstallScriptURL(shURL string) string {
+	if strings.HasSuffix(shURL, ".sh") {
+		return strings.TrimSuffix(shURL, ".sh") + ".ps1"
+	}
+	return "https://github.com/workvar/cron-compose/releases/latest/download/install-agent.ps1"
+}
+
+// psQuote escapes a value for a single-quoted PowerShell string.
+func psQuote(s string) string { return strings.ReplaceAll(s, "'", "''") }
 
 func (h *handler) get(c fiber.Ctx) error {
 	srv, err := h.store.Get(c.Context(), c.Params("id"))
@@ -152,9 +175,10 @@ func (h *handler) issueToken(c fiber.Ctx) error {
 	}
 	h.audit.Write(c.Context(), auth.CurrentUserID(c), "server.enrollment_token.issue", "server", srv.ID, nil)
 	return c.JSON(IssueTokenResponse{
-		Enrollment:         EnrollmentTokenResponse{Token: token, ExpiresAt: expiresAt},
-		InstallCommand:     h.installCommand(token, false),
-		InstallCommandRoot: h.installCommand(token, true),
+		Enrollment:            EnrollmentTokenResponse{Token: token, ExpiresAt: expiresAt},
+		InstallCommand:        h.installCommand(token, false),
+		InstallCommandRoot:    h.installCommand(token, true),
+		InstallCommandWindows: h.installCommandWindows(token),
 	})
 }
 

@@ -65,9 +65,21 @@ alongside SSO.
 
 ## Agent packaging
 
-GitHub Releases for CronCompose are **notes-only**: tagging `v*` publishes
-`RELEASE_NOTES.md` plus a baked `install-agent.sh` (and a Windows stub). No agent
-binaries or `.deb`/`.apk` packages are built in CI.
+Tagging `v*` publishes `RELEASE_NOTES.md`, baked `install-agent.sh` and
+`install-agent.ps1` scripts, and prebuilt Windows agents
+(`croncompose-agent-windows-amd64.exe`, `croncompose-agent-windows-arm64.exe`) with
+`checksums.json` / `SHA256SUMS`. A Windows test job (vet, Windows code-path tests, a
+service install smoke test) must pass first. Linux and macOS agents still build from the
+tag on the host; no `.deb`/`.apk` packages are built in CI.
+
+Install an agent on Windows from an Administrator PowerShell (no Go needed):
+
+```powershell
+$env:TOKEN='<token>'; $env:AGENT_ENROLL_HTTP='https://<host>/api'; $env:AGENT_GRPC_ADDR='<host>:9090'; irm https://github.com/workvar/cron-compose/releases/latest/download/install-agent.ps1 | iex
+```
+
+Windows agents update themselves from these release binaries, verified against
+`checksums.json`. See `docs/wiki/Windows-Agent.md`.
 
 Install an agent on Linux or macOS (needs `git` and Go 1.25+):
 

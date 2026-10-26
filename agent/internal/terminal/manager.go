@@ -1,8 +1,8 @@
 // Package terminal runs interactive shells and one-shot commands on behalf of the
 // control plane's web terminal, streaming output back as TerminalOutput messages.
 //
-// It is Unix-only: it relies on a pseudo-terminal (creack/pty), consistent with the
-// rest of the agent. Output is sent through a Sender that the runtime wires to its
+// Sessions run under a pseudo-terminal: creack/pty on Unix, ConPTY on Windows (see
+// session_unix.go and session_windows.go). Output is sent through a Sender that the runtime wires to its
 // EPHEMERAL direct-send path (never the durable outbox), so terminal bytes are real-time
 // and never persisted or replayed on reconnect.
 package terminal
@@ -10,7 +10,6 @@ package terminal
 import (
 	"log/slog"
 	"os"
-	"os/exec"
 	"sync"
 	"syscall"
 
@@ -38,7 +37,7 @@ func NewManager(log *slog.Logger, send Sender) *Manager {
 		log:   log,
 		send:  send,
 		shell: detectShell(),
-		home:  os.Getenv("HOME"),
+		home:  homeDir(),
 		sess:  map[string]*session{},
 	}
 }
@@ -76,12 +75,7 @@ func (m *Manager) CloseAll() {
 
 func (m *Manager) open(in *agentv1.TerminalInput) {
 	id := in.GetSessionId()
-	var argv []string
-	if in.GetKind() == "command" {
-		argv = []string{"-c", in.GetCommand()}
-	} else {
-		argv = []string{"-i"} // interactive shell; the PTY supplies the tty
-	}
+	argv := shellArgv(m.shell, in.GetKind() == "command", in.GetCommand())
 
 	// Resolve the requested user before starting anything: a session that cannot run
 	// as who it claims to must fail loudly rather than fall back to the agent's user.
@@ -109,7 +103,7 @@ func (m *Manager) open(in *agentv1.TerminalInput) {
 func (m *Manager) pump(s *session) {
 	buf := make([]byte, 32*1024)
 	for {
-		n, err := s.ptmx.Read(buf)
+		n, err := s.read(buf)
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
@@ -119,7 +113,7 @@ func (m *Manager) pump(s *session) {
 			break
 		}
 	}
-	code, msg := waitResult(s.cmd)
+	code, msg := s.wait()
 	m.remove(s.id)
 	m.emit(s.id, "exit", nil, int32(code), msg)
 }
@@ -159,32 +153,6 @@ func (m *Manager) emit(id, kind string, data []byte, code int32, msg string) {
 	})
 }
 
-func waitResult(cmd *exec.Cmd) (int, string) {
-	err := cmd.Wait()
-	if err == nil {
-		return 0, ""
-	}
-	if ee, ok := err.(*exec.ExitError); ok {
-		if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
-			return -int(ws.Signal()), ws.Signal().String()
-		}
-		return ee.ExitCode(), ""
-	}
-	return -1, err.Error()
-}
-
-func detectShell() string {
-	if s := os.Getenv("SHELL"); s != "" {
-		return s
-	}
-	for _, c := range []string{"/bin/bash", "/usr/bin/bash", "/bin/sh"} {
-		if _, err := os.Stat(c); err == nil {
-			return c
-		}
-	}
-	return "/bin/sh"
-}
-
 func signalFor(name string) syscall.Signal {
 	switch name {
 	case "TERM":
@@ -198,4 +166,12 @@ func signalFor(name string) syscall.Signal {
 	default:
 		return syscall.SIGINT
 	}
+}
+
+// homeDir is where new sessions start: $HOME on Unix, the profile folder on Windows.
+func homeDir() string {
+	if h, err := os.UserHomeDir(); err == nil {
+		return h
+	}
+	return ""
 }

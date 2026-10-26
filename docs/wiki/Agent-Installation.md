@@ -1,6 +1,6 @@
 # Agent installation
 
-How to put a CronCompose agent on a server from the portal, check it connected, and remove it cleanly. For control-plane setup see [Installation](Installation.md).
+How to put a CronCompose agent on a server from the portal, check it connected, and remove it cleanly. For control-plane setup see [Installation](Installation.md). For Windows 10/11 and Windows Server, see [Windows agent](Windows-Agent.md).
 
 ## Before you start: the gRPC address
 

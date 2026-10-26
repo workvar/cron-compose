@@ -70,6 +70,11 @@ func (p UpdatePolicy) For(agentVersion, os, arch string) *agentv1.UpdateAgent {
 		return nil
 	}
 	if p.source() {
+		// Windows agents install the release's prebuilt .exe rather than compiling:
+		// offer it pinned to the published checksum when the release has one.
+		if up := p.releaseBinary(os, arch); up != nil {
+			return up
+		}
 		return &agentv1.UpdateAgent{
 			TargetVersion: p.Version,
 			DownloadUrl:   "https://github.com/" + strings.TrimSpace(p.Repo),
@@ -86,6 +91,36 @@ func (p UpdatePolicy) For(agentVersion, os, arch string) *agentv1.UpdateAgent {
 		Sha256:        sum,
 		Restart:       p.Restart,
 	}
+}
+
+// releaseBinary builds a pinned binary offer for platforms that ship prebuilt in the
+// GitHub release instead of building from source (Windows). It needs an exact
+// os/arch checksum; the "*" wildcard is for manual single-platform policies only.
+func (p UpdatePolicy) releaseBinary(os, arch string) *agentv1.UpdateAgent {
+	if os != "windows" || strings.TrimSpace(p.Repo) == "" {
+		return nil
+	}
+	sum := strings.TrimSpace(p.Checksums[os+"/"+arch])
+	if sum == "" {
+		return nil
+	}
+	return &agentv1.UpdateAgent{
+		TargetVersion: p.Version,
+		DownloadUrl: "https://github.com/" + strings.TrimSpace(p.Repo) + "/releases/download/" +
+			p.Version + "/" + AssetName(os, arch),
+		Sha256:  sum,
+		Restart: p.Restart,
+	}
+}
+
+// AssetName is the release asset for one platform, matching .github/workflows/
+// release.yml and the agent's sourceupdate.AssetName.
+func AssetName(os, arch string) string {
+	name := "croncompose-agent-" + PlatformTarget(os, arch)
+	if os == "windows" {
+		name += ".exe"
+	}
+	return name
 }
 
 func (p UpdatePolicy) checksumFor(os, arch string) string {
@@ -120,6 +155,10 @@ func PlatformTarget(os, arch string) string {
 		return "darwin-arm64"
 	case os == "darwin" && arch == "amd64":
 		return "darwin-amd64"
+	case os == "windows" && arch == "amd64":
+		return "windows-amd64"
+	case os == "windows" && arch == "arm64":
+		return "windows-arm64"
 	default:
 		return os + "-" + arch
 	}

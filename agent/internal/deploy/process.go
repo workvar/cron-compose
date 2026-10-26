@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,7 +10,13 @@ import (
 	"strings"
 
 	"github.com/croncompose/croncompose/agent/internal/osuser"
+	"github.com/croncompose/croncompose/agent/internal/platform"
 )
+
+// errSystemdOnWindows explains why a systemd deploy cannot run on a Windows server
+// and what to pick instead, rather than failing on a missing systemctl.
+var errSystemdOnWindows = errors.New("process manager systemd is not available on Windows; " +
+	"choose pm2 (npm install -g pm2) or docker for this server")
 
 func findCompose(dir string) string {
 	for _, name := range []string{"docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"} {
@@ -63,7 +70,7 @@ func startCommand(language, runScript, _ string) (string, []string) {
 	case "python":
 		return "python3", []string{"-m", "app"}
 	case "dotnet":
-		return "bash", []string{"-lc", "dotnet out/*.dll --urls http://0.0.0.0:8080"}
+		return platform.Bash(), []string{"-lc", "dotnet out/*.dll --urls http://0.0.0.0:8080"}
 	default:
 		return "", nil
 	}
@@ -77,7 +84,7 @@ func parseRunScript(runScript string) (string, []string, bool) {
 		return "", nil, false
 	}
 	if strings.ContainsAny(script, "|&;<>") || strings.Contains(script, "&&") || strings.Contains(script, "||") {
-		return "bash", []string{"-lc", script}, true
+		return platform.Bash(), []string{"-lc", script}, true
 	}
 	fields := strings.Fields(script)
 	if len(fields) == 0 {
@@ -88,12 +95,14 @@ func parseRunScript(runScript string) (string, []string, bool) {
 
 func pm2StartArgs(name, language, eco, runScript string) []string {
 	if eco != "" {
-		args := []string{"start", eco, "--update-env"}
-		// Monorepo ecosystems list every app; start only the one for this wave.
-		if strings.TrimSpace(name) != "" {
-			args = append(args, "--only", name)
+		// Never `pm2 start <shared ecosystem>` without --only. A monorepo file
+		// lists every app, and --update-env on that file restarts all of them.
+		// Callers pass an isolated one-app file plus the exact process name.
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return nil
 		}
-		return args
+		return []string{"start", eco, "--only", name, "--update-env"}
 	}
 	bin, extra := startCommand(language, runScript, name)
 	if bin == "" {
@@ -172,11 +181,25 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, name
 		if waitName != "" {
 			aliases = append([]string{waitName}, aliases...)
 		}
+		// A shared ecosystem lists every app. Starting that file (especially
+		// with --update-env) restarts sibling processes. Keep one app in the
+		// file we hand to pm2.
+		if eco != "" {
+			if strings.TrimSpace(waitName) == "" {
+				return fmt.Errorf("pm2 ecosystem %s has no process name for this app; refusing to start every app", filepath.Base(eco))
+			}
+			isolated, err := isolateEcosystemApp(eco, waitName)
+			if err != nil {
+				return err
+			}
+			eco = isolated
+		}
 		// A process still online from a previous deploy keeps pm_cwd on that
 		// release directory (often pruned after keepReleases). Skipping start
 		// left MODULE_NOT_FOUND / stale code running under the old path.
 		// Same-deploy Start-after-Run is skipped earlier via wasLaunched, so
 		// reaching here means we must (re)start into current/.
+		// Delete only this process — never the rest of the pm2 list.
 		if real, ok := m.pm2AlreadyOnline(ctx, work, waitName, aliases, cred, tmpDir); ok {
 			m.phaseLine(runID, token, phase, "pm2 delete "+real+" (restart into new release) (in "+work+")")
 			if err := m.runCmdStream(ctx, runID, token, work, env, cred, tmpDir, "pm2", "delete", real); err != nil {
@@ -223,6 +246,9 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, name
 		m.phaseLine(runID, token, phase, "done (in "+work+")")
 		return nil
 	case "systemd":
+		if platform.IsWindows() {
+			return errSystemdOnWindows
+		}
 		bin, args := startCommand(language, runScript, name)
 		if bin == "" {
 			m.logLine(runID, token, "systemd: no ExecStart guessed; set a run script or attach the unit from Connectors")

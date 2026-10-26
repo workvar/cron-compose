@@ -162,6 +162,8 @@ func hashRemoteFile(ctx context.Context, url string) (string, error) {
 }
 
 func targetToPlatform(target string) string {
+	// Windows assets carry .exe; the platform key does not.
+	target = strings.TrimSuffix(target, ".exe")
 	switch target {
 	case "linux-amd64":
 		return "linux/amd64"
