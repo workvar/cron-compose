@@ -19,6 +19,11 @@ import (
 
 const readyBudget = 90 * time.Second
 
+// readyPollInterval is how often a port is dialed while waiting for an app.
+// A refused local dial costs microseconds, so polling quickly is cheap and
+// shaves idle time off every start step.
+const readyPollInterval = 200 * time.Millisecond
+
 // runApps executes the Run phase: launch each app and do not return until it is
 // accepting connections (or, with no port, until it has stayed up). The next
 // flow wave waits on this, which is how Proxy can be running before Backend
@@ -216,7 +221,7 @@ func (m *Manager) waitReadyExit(ctx context.Context, runID, token, phase, work s
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(readyPollInterval):
 		}
 	}
 }

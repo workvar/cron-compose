@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useCallback, useEffect, useState, use } from "react";
 import Link from "next/link";
-import type { DeployProject, DeployRun, LogLine } from "@/lib/types";
+import type { DeployProject, DeployRun } from "@/lib/types";
+import { useDeployRunLogs, type DeployDone } from "@/lib/useDeployRunLogs";
 import { BrandLoaderBlock } from "@/components/BrandLoader";
 import { IconChevronLeft } from "@/components/icons";
 import { HostThisApp } from "@/components/deploys/HostThisApp";
@@ -27,19 +28,10 @@ const terminalStatus = new Set<DeployRun["status"]>([
   "agent_offline",
 ]);
 
-function mergeLogs(prev: LogLine[], next: LogLine[]): LogLine[] {
-  if (next.length === 0) return prev;
-  const seen = new Set(prev.map((l) => `${l.stream}:${l.seq}`));
-  const extra = next.filter((l) => !seen.has(`${l.stream}:${l.seq}`));
-  if (extra.length === 0) return prev;
-  return [...prev, ...extra].sort((a, b) => a.seq - b.seq);
-}
-
 export default function DeployRunPage({ params }: Props) {
   const { runId } = use(params);
   const [run, setRun] = useState<DeployRun | null>(null);
   const [project, setProject] = useState<DeployProject | null>(null);
-  const [logs, setLogs] = useState<LogLine[]>([]);
   const [stdin, setStdin] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -62,64 +54,38 @@ export default function DeployRunPage({ params }: Props) {
     return () => { cancelled = true; };
   }, [run?.project_id]);
 
-  // Snapshot fetch: works even when EventSource fails (proxy buffering, brief blip).
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      fetch(`/api/deploy-runs/${runId}/logs`)
-        .then((r) => r.json() as Promise<{ items: LogLine[] }>)
-        .then((d) => {
-          if (!cancelled && Array.isArray(d.items)) {
-            setLogs((prev) => mergeLogs(prev, d.items));
-          }
-        })
-        .catch(() => { /* ignore */ });
-    };
-    load();
-    const live = !run || run.status === "pending" || run.status === "running";
-    if (!live) return () => { cancelled = true; };
-    const id = window.setInterval(load, 4000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [runId, run?.status]);
-
-  useEffect(() => {
-    const es = new EventSource(`/api/deploy-runs/${runId}/logs/stream`);
-    es.addEventListener("log", (ev) => {
-      try {
-        const line = JSON.parse((ev as MessageEvent).data) as LogLine;
-        setLogs((prev) => mergeLogs(prev, [line]));
-      } catch { /* ignore */ }
-    });
-    es.addEventListener("done", (ev) => {
-      try {
-        const data = JSON.parse((ev as MessageEvent).data) as {
-          status: DeployRun["status"];
-          exit_code?: number;
-          error?: string;
-        };
-        setRun((prev) => (prev ? {
-          ...prev,
-          status: data.status,
-          exit_code: data.exit_code,
-          // Success messages must not land in error (older agents sent "deploy finished").
-          error: data.status === "succeeded" ? undefined : (data.error || prev.error),
-        } : prev));
-      } catch { /* ignore */ }
-      // Refetch so error/exit_code match the DB even if the done payload was sparse.
-      fetch(`/api/deploy-runs/${runId}`)
-        .then((r) => r.json() as Promise<DeployRun>)
-        .then((r) => setRun(r))
-        .catch(() => { /* ignore */ });
-      es.close();
-    });
-    // Do not close permanently on the first error — EventSource reconnects by default
-    // unless we close it. Closing here left the page stuck on "(no output yet)".
-    es.onerror = () => { /* allow browser reconnect */ };
-    return () => es.close();
+  const refreshRun = useCallback(() => {
+    fetch(`/api/deploy-runs/${runId}`)
+      .then((r) => r.json() as Promise<DeployRun>)
+      .then((r) => setRun(r))
+      .catch(() => { /* ignore */ });
   }, [runId]);
+
+  const onDone = useCallback((data: DeployDone) => {
+    if (data.status) {
+      const status = data.status as DeployRun["status"];
+      setRun((prev) => (prev ? {
+        ...prev,
+        status,
+        exit_code: data.exit_code,
+        // Success messages must not land in error (older agents sent "deploy finished").
+        error: status === "succeeded" ? undefined : (data.error || prev.error),
+      } : prev));
+    }
+    // Refetch so error/exit_code match the DB even if the done payload was sparse.
+    refreshRun();
+  }, [refreshRun]);
+
+  const live = !run || run.status === "pending" || run.status === "running";
+  const logs = useDeployRunLogs(runId, live, onDone);
+
+  // Status safety net: if the live "done" event never arrives (proxy cut, tab
+  // asleep), the page still notices the run finished.
+  useEffect(() => {
+    if (!live) return;
+    const id = window.setInterval(refreshRun, 5000);
+    return () => window.clearInterval(id);
+  }, [live, refreshRun]);
 
   async function cancelDeploy() {
     const ok = window.confirm("Cancel this deploy? The command running on the server will be stopped.");
@@ -147,7 +113,6 @@ export default function DeployRunPage({ params }: Props) {
   }
   if (!run) return <BrandLoaderBlock caption="Loading deploy…" />;
 
-  const live = run.status === "pending" || run.status === "running";
   const showExit = run.exit_code !== undefined && terminalStatus.has(run.status);
 
   return (

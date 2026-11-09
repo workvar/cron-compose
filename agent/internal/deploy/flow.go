@@ -65,7 +65,7 @@ func (m *Manager) runDeployFlow(
 			if err := layout.Swap(release); err != nil {
 				return phaseError{phaseRelease, fmt.Errorf("activate release: %w", err)}
 			}
-			_ = chownTree(layout.Base, cred)
+			chownLayout(layout, cred)
 			m.phaseLine(runID, token, phaseRelease, "current -> "+filepath.Base(release))
 			released = true
 			apps = appsOf(cmd, layout.Current)
@@ -102,7 +102,7 @@ func (m *Manager) runDeployFlow(
 		if err := layout.Swap(release); err != nil {
 			return phaseError{phaseRelease, fmt.Errorf("activate release: %w", err)}
 		}
-		_ = chownTree(layout.Base, cred)
+		chownLayout(layout, cred)
 		m.phaseLine(runID, token, phaseRelease, "current -> "+filepath.Base(release))
 	}
 

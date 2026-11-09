@@ -268,12 +268,14 @@ func (m *Manager) startProcess(ctx context.Context, runID, token, work, pm, name
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
-		_ = chownTree(filepath.Join(home, ".config"), cred)
+		for _, d := range []string{".config", ".config/systemd", ".config/systemd/user"} {
+			_ = chownShallow(filepath.Join(home, d), cred)
+		}
 		path := filepath.Join(dir, unit+".service")
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			return err
 		}
-		_ = chownTree(path, cred)
+		_ = chownShallow(path, cred)
 		m.phaseLine(runID, token, phase, "systemd --user enable --now "+unit+".service (in "+work+")")
 		if err := m.runCmdStream(ctx, runID, token, work, env, cred, tmpDir, "systemctl", "--user", "daemon-reload"); err != nil {
 			return fmt.Errorf("systemd reload: %w", err)

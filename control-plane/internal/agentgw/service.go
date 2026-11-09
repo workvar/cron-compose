@@ -35,6 +35,7 @@ type service struct {
 	onDeployFin DeployFinishedHook
 	progress    *UpdateProgressTracker
 	rootSent    *rootDelivery
+	deployLogs  *deployLogWriter
 
 	offlineMu     sync.Mutex
 	offlineTimers map[string]*time.Timer
@@ -47,5 +48,6 @@ func newService(log *slog.Logger, pool *pgxpool.Pool, reg *Registry, broker *Log
 		logCap: newLogCap(logMaxBytes), update: update, resolver: resolver,
 		onFailed: onFailed, onDeployFin: onDeployFin, progress: progress,
 		offlineTimers: map[string]*time.Timer{},
+		deployLogs:    newDeployLogWriter(pool, log),
 	}
 }

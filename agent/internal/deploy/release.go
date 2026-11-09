@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -33,6 +34,7 @@ const (
 	shaFile       = ".croncompose-release"
 	keepReleases  = 5
 	tmpDirPattern = ".incoming-"
+	trashDirName  = ".cc-trash"
 )
 
 // Layout resolves the paths for one project base directory.
@@ -193,8 +195,10 @@ func (l Layout) FindRelease(sha string) string {
 	return ""
 }
 
-// Prune deletes all but the newest keepReleases directories, never touching the live
-// one. Errors are returned for logging but are not fatal to a deploy.
+// Prune drops all but the newest keepReleases directories, never touching the live
+// one. Each pruned release is renamed into <base>/.cc-trash first, which is
+// instant, and deleted in the background: removing several node_modules trees on
+// an SD card used to hold the run open for many seconds after the app was up.
 func (l Layout) Prune() []string {
 	entries, err := os.ReadDir(l.Releases)
 	if err != nil {
@@ -207,21 +211,50 @@ func (l Layout) Prune() []string {
 		}
 	}
 	if len(names) <= keepReleases {
+		l.emptyTrash()
 		return nil
 	}
 	sort.Sort(sort.Reverse(sort.StringSlice(names)))
 	live := l.CurrentRelease()
+	trash := l.trashDir()
+	_ = os.MkdirAll(trash, 0o755)
 	var removed []string
 	for _, name := range names[keepReleases:] {
 		dir := filepath.Join(l.Releases, name)
 		if dir == live {
 			continue
 		}
-		if err := os.RemoveAll(dir); err == nil {
-			removed = append(removed, name)
+		dest := filepath.Join(trash, name+"-"+strconv.FormatInt(time.Now().UnixNano(), 36))
+		if err := os.Rename(dir, dest); err != nil {
+			// Different filesystem or a permissions oddity: delete in place.
+			if err := os.RemoveAll(dir); err != nil {
+				continue
+			}
 		}
+		removed = append(removed, name)
 	}
+	l.emptyTrash()
 	return removed
+}
+
+// trashDir holds pruned releases until the background delete finishes.
+func (l Layout) trashDir() string {
+	return filepath.Join(l.Base, trashDirName)
+}
+
+// emptyTrash deletes the trash directory's contents in the background. It also
+// clears anything left behind when the agent stopped mid-delete.
+func (l Layout) emptyTrash() {
+	trash := l.trashDir()
+	entries, err := os.ReadDir(trash)
+	if err != nil || len(entries) == 0 {
+		return
+	}
+	go func() {
+		for _, e := range entries {
+			_ = os.RemoveAll(filepath.Join(trash, e.Name()))
+		}
+	}()
 }
 
 func writeReleaseSHA(dir, sha string) error {

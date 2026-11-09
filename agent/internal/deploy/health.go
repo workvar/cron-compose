@@ -17,7 +17,11 @@ import (
 // request. With one configured, a failed probe fails the run, which is what lets
 // auto-rollback catch that case.
 const (
+	// healthInterval is the slowest gap between probes. Early probes come sooner
+	// (see healthDelay) because most apps answer within a second or two of start,
+	// and a flat 3s wait was pure idle time on every healthy deploy.
 	healthInterval      = 3 * time.Second
+	healthFirstDelay    = 250 * time.Millisecond
 	healthDefaultBudget = 60 * time.Second
 	healthRequestTO     = 5 * time.Second
 )
@@ -92,9 +96,21 @@ func (m *Manager) waitHealthy(ctx context.Context, runID, token string, cfg heal
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(healthInterval):
+		case <-time.After(healthDelay(attempt)):
 		}
 	}
+}
+
+// healthDelay doubles from healthFirstDelay up to healthInterval.
+func healthDelay(attempt int) time.Duration {
+	d := healthFirstDelay
+	for i := 1; i < attempt && d < healthInterval; i++ {
+		d *= 2
+	}
+	if d > healthInterval {
+		d = healthInterval
+	}
+	return d
 }
 
 func probe(ctx context.Context, client *http.Client, url string) (int, error) {

@@ -405,9 +405,15 @@ func (s *Store) AppendLog(ctx context.Context, runID, stream string, seq int, ch
 
 // Logs returns stored chunks.
 func (s *Store) Logs(ctx context.Context, runID string) ([]LogLine, error) {
+	return s.LogsAfter(ctx, runID, -1)
+}
+
+// LogsAfter returns stored chunks with seq greater than after, so a page that
+// already holds the start of the log only fetches what is new.
+func (s *Store) LogsAfter(ctx context.Context, runID string, after int) ([]LogLine, error) {
 	rows, err := s.pool.Query(ctx, `
-		select stream, seq, chunk, ts from deploy_run_logs where run_id = $1 order by seq
-	`, runID)
+		select stream, seq, chunk, ts from deploy_run_logs where run_id = $1 and seq > $2 order by seq
+	`, runID, after)
 	if err != nil {
 		return nil, err
 	}

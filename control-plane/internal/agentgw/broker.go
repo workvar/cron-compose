@@ -14,6 +14,11 @@ type LogEvent struct {
 	Finished *agentv1.RunFinished // non-nil for run-finished events
 }
 
+// subscriberBuffer is how many events a subscriber may fall behind before chunks
+// are dropped. 64 was easy to overrun during a parallel build, which showed up as
+// gaps in the live terminal until the next snapshot poll filled them in.
+const subscriberBuffer = 1024
+
 // LogBroker fans out incoming log chunks (and the terminal RunFinished) to any number
 // of subscribers keyed by run_id. Used by the SSE endpoint in the REST API.
 type LogBroker struct {
@@ -28,7 +33,7 @@ func NewLogBroker() *LogBroker {
 
 // Subscribe returns a channel of log events for the run. Caller must Unsubscribe.
 func (b *LogBroker) Subscribe(runID string) chan LogEvent {
-	ch := make(chan LogEvent, 64)
+	ch := make(chan LogEvent, subscriberBuffer)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.subs[runID] == nil {
@@ -61,9 +66,28 @@ func (b *LogBroker) Publish(runID string, c *agentv1.LogChunk) {
 	b.fanout(runID, LogEvent{Chunk: c})
 }
 
-// PublishFinished signals that the run is done so SSE clients can close.
+// PublishFinished signals that the run is done so SSE clients can close. It is
+// never dropped: when a subscriber's buffer is full, the oldest queued chunk is
+// discarded to make room (it is already stored and the page refetches the log).
+// Losing this event instead left the run page saying "running" indefinitely.
 func (b *LogBroker) PublishFinished(runID string, r *agentv1.RunFinished) {
-	b.fanout(runID, LogEvent{Finished: r})
+	ev := LogEvent{Finished: r}
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for ch := range b.subs[runID] {
+		for {
+			select {
+			case ch <- ev:
+			default:
+				select {
+				case <-ch:
+				default:
+				}
+				continue
+			}
+			break
+		}
+	}
 }
 
 func (b *LogBroker) fanout(runID string, ev LogEvent) {

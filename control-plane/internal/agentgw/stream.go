@@ -331,11 +331,7 @@ func (s *service) onDeployEvent(ctx context.Context, serverID string, ev *agentv
 			chunk.Data = []byte(msg)
 		}
 		s.broker.Publish(runID, chunk)
-		_, _ = s.pool.Exec(ctx, `
-			insert into deploy_run_logs (run_id, stream, seq, chunk)
-			values ($1, 'stdout', $2, $3)
-			on conflict (run_id, stream, seq) do nothing
-		`, runID, ev.GetSeq(), string(chunk.GetData()))
+		s.deployLogs.Add(ctx, s.pool, deployLogRow{runID: runID, seq: ev.GetSeq(), chunk: string(chunk.GetData())})
 	}
 	switch kind {
 	case "started":
@@ -351,6 +347,9 @@ func (s *service) onDeployEvent(ctx context.Context, serverID string, ev *agentv
 		}
 		return err
 	case "finished", "error":
+		// Store every queued log line before the run is marked finished, so a page
+		// that loads the run right after sees the whole log.
+		s.deployLogs.Flush(ctx)
 		status := ev.GetStatus()
 		if status == "" {
 			if kind == "error" || ev.GetExitCode() != 0 {

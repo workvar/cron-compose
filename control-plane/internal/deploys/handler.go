@@ -1,14 +1,12 @@
 package deploys
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v3"
 
@@ -614,14 +612,6 @@ func (h *handler) getRun(c fiber.Ctx) error {
 	return c.JSON(r)
 }
 
-func (h *handler) logs(c fiber.Ctx) error {
-	lines, err := h.store.Logs(c.Context(), c.Params("runId"))
-	if err != nil {
-		return jsonError(c, fiber.StatusInternalServerError, "list_failed", err)
-	}
-	return c.JSON(fiber.Map{"items": lines})
-}
-
 func (h *handler) stdin(c fiber.Ctx) error {
 	run, err := h.store.GetRun(c.Context(), c.Params("runId"))
 	if errors.Is(err, ErrNotFound) {
@@ -662,79 +652,6 @@ func (h *handler) cancel(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusServiceUnavailable, "agent_offline", err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
-}
-
-func (h *handler) stream(c fiber.Ctx) error {
-	runID := c.Params("runId")
-	run, err := h.store.GetRun(c.Context(), runID)
-	if errors.Is(err, ErrNotFound) {
-		return jsonError(c, fiber.StatusNotFound, "not_found", err)
-	}
-	if err != nil {
-		return jsonError(c, fiber.StatusInternalServerError, "get_failed", err)
-	}
-	sub := h.gateway.Broker().Subscribe(runID)
-	snapshot, _ := h.store.Logs(c.Context(), runID)
-	c.Set("Content-Type", "text/event-stream")
-	c.Set("Cache-Control", "no-cache")
-	c.Set("Connection", "keep-alive")
-	c.Set("X-Accel-Buffering", "no")
-	done := run.Status != "pending" && run.Status != "running"
-	c.Response().SetBodyStreamWriter(func(w *bufio.Writer) {
-		defer h.gateway.Broker().Unsubscribe(runID, sub)
-		// Flush immediately even when the snapshot is empty. Otherwise proxies and
-		// EventSource see no body bytes until the first live chunk, and the UI stays
-		// on "(no output yet)" for the whole run.
-		_, _ = w.WriteString(": connected\n\n")
-		_ = w.Flush()
-		for _, l := range snapshot {
-			writeEvent(w, "log", fmt.Sprintf(`{"stream":%q,"seq":%d,"chunk":%q}`, l.Stream, l.Seq, l.Chunk))
-		}
-		if done {
-			writeDone(w, run.Status, run.ExitCode, run.Error)
-			return
-		}
-		ticker := time.NewTicker(15 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case ev, ok := <-sub:
-				if !ok {
-					return
-				}
-				if ev.Chunk != nil {
-					writeEvent(w, "log", fmt.Sprintf(`{"stream":%q,"seq":%d,"chunk":%q}`,
-						ev.Chunk.GetStream(), ev.Chunk.GetSeq(), string(ev.Chunk.GetData())))
-				}
-				if ev.Finished != nil {
-					code := int(ev.Finished.GetExitCode())
-					writeDone(w, ev.Finished.GetStatus(), &code, ev.Finished.GetError())
-					return
-				}
-			case <-ticker.C:
-				_, _ = w.WriteString(": keepalive\n\n")
-				if err := w.Flush(); err != nil {
-					return
-				}
-			}
-		}
-	})
-	return nil
-}
-
-func writeEvent(w *bufio.Writer, event, data string) {
-	_, _ = w.WriteString("event: " + event + "\ndata: " + data + "\n\n")
-	_ = w.Flush()
-}
-
-// writeDone ends an SSE log stream. error must travel with status — otherwise the
-// UI flips to "failed" with no message when watching a live run.
-func writeDone(w *bufio.Writer, status string, exitCode *int, errMsg string) {
-	if exitCode != nil {
-		writeEvent(w, "done", fmt.Sprintf(`{"status":%q,"exit_code":%d,"error":%q}`, status, *exitCode, errMsg))
-		return
-	}
-	writeEvent(w, "done", fmt.Sprintf(`{"status":%q,"error":%q}`, status, errMsg))
 }
 
 func (h *handler) githubWebhook(c fiber.Ctx) error {

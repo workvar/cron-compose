@@ -1,7 +1,6 @@
 package deploy
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -125,8 +124,12 @@ func pathWithBinDir(env map[string]string, binPath string) map[string]string {
 	return out
 }
 
-// ensureUserDirs creates the deploy base and the account's ~/tmp (when set), then
-// chowns them to the target user so later git/install steps can write as that user.
+// ensureUserDirs creates the deploy base and the account's ~/tmp (when set), and
+// hands the base directory itself to the target user.
+//
+// This used to chown the base recursively, which walked every kept release and
+// its node_modules before preflight printed a single line. Release trees are
+// chowned when they are created, so only the top-level directories need it here.
 func ensureUserDirs(base, tmpDir string, cred *osuser.Credential) error {
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		return err
@@ -136,23 +139,16 @@ func ensureUserDirs(base, tmpDir string, cred *osuser.Credential) error {
 			return err
 		}
 	}
-	return chownTree(base, cred)
+	return chownShallow(base, cred)
 }
 
-func chownTree(path string, cred *osuser.Credential) error {
-	if cred == nil {
-		return nil
+// chownLayout hands the layout's top-level entries to the deploy user after a
+// swap: the base, releases/, the current symlink itself, and the shared .env.
+// Release contents were chowned when the release was built.
+func chownLayout(layout Layout, cred *osuser.Credential) {
+	for _, p := range []string{layout.Base, layout.Releases, layout.Current, filepath.Join(layout.Base, ".env")} {
+		_ = chownShallow(p, cred)
 	}
-	// Absolute chown keeps us honest under ProtectSystem; -R covers nested releases.
-	cmd := exec.Command("chown", "-R", fmt.Sprintf("%d:%d", cred.UID, cred.GID), path)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		msg := strings.TrimSpace(string(out))
-		if msg == "" {
-			msg = err.Error()
-		}
-		return fmt.Errorf("chown %s: %s", path, msg)
-	}
-	return nil
 }
 
 // userTmpDir mirrors control-plane ClonePathForUser's tmp rule on the agent.

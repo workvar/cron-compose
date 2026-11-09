@@ -1,8 +1,6 @@
 package deploy
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -395,7 +393,7 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 		return phaseError{phaseClone, fmt.Errorf("write release .env: %w", err)}
 	}
 	_ = chownTree(release, cred)
-	_ = chownTree(filepath.Join(layout.Base, ".env"), cred)
+	_ = chownShallow(filepath.Join(layout.Base, ".env"), cred)
 
 	if len(cmd.GetFlow()) > 0 {
 		if err := m.runDeployFlow(ctx, cmd, layout, cred, tmpDir, release); err != nil {
@@ -409,26 +407,25 @@ func (m *Manager) deploy(ctx context.Context, cmd *agentv1.DeployCommand) error 
 			return phaseError{phaseInstall, err}
 		}
 
-		if size := dirSize(release); size > 0 {
-			m.setReleaseBytes(runID, size)
-			m.phaseLine(runID, token, phaseInstall, "release size: "+humanBytes(uint64(size)))
-		}
+		// Measuring a release walks every file (node_modules included), so it runs
+		// beside the swap and start instead of in front of them.
+		sizeCh := measureRelease(release)
 
 		// Nothing serves from the new release until this point, which is what makes a
 		// deploy atomic: a failed install leaves the previous release live.
 		if err := layout.Swap(release); err != nil {
 			return phaseError{phaseRelease, fmt.Errorf("activate release: %w", err)}
 		}
-		_ = chownTree(base, cred)
+		chownLayout(layout, cred)
 		m.phaseLine(runID, token, phaseRelease, "current -> "+filepath.Base(release))
 
 		if err := m.activateAppWaves(ctx, cmd, layout, cred, tmpDir); err != nil {
 			return err
 		}
+		m.noteReleaseSize(runID, token, <-sizeCh)
 	}
-	if size := dirSize(release); size > 0 && len(cmd.GetFlow()) > 0 {
-		m.setReleaseBytes(runID, size)
-		m.phaseLine(runID, token, phaseInstall, "release size: "+humanBytes(uint64(size)))
+	if len(cmd.GetFlow()) > 0 {
+		m.noteReleaseSize(runID, token, <-measureRelease(release))
 	}
 	if pruned := layout.Prune(); len(pruned) > 0 {
 		m.phaseLine(runID, token, phaseRelease, "pruned old releases: "+strings.Join(pruned, ", "))
@@ -535,7 +532,7 @@ func (m *Manager) cloneToTmp(ctx context.Context, cmd *agentv1.DeployCommand, br
 	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
 		return "", "", err
 	}
-	_ = chownTree(tmpDir, cred)
+	_ = chownShallow(tmpDir, cred)
 	cloneDir = filepath.Join(tmpDir, "croncompose-clone-"+sanitizeSegment(runID))
 	_ = os.RemoveAll(cloneDir)
 	if err := os.MkdirAll(cloneDir, 0o755); err != nil {
@@ -711,7 +708,7 @@ func (m *Manager) runAppScripts(ctx context.Context, runID, token string, cred *
 			return fmt.Errorf("%s: %w", j.label, err)
 		}
 		if cacheable {
-			m.storeCachedStep(j.work, j.language, j.script, plan)
+			m.storeCachedStep(runID, token, j.work, j.language, j.script, plan)
 		}
 		if j.done != "" {
 			m.phaseLine(runID, token, logPhase, j.done+" (in "+j.work+")")
@@ -1114,8 +1111,6 @@ func (m *Manager) runScript(ctx context.Context, runID, token, dir, script strin
 	}()
 	waitErr := cmd.Wait()
 	<-donePump
-	// Brief pause so the last emit flush is visible before FAILED.
-	time.Sleep(50 * time.Millisecond)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -1127,60 +1122,6 @@ func (m *Manager) runScript(ctx context.Context, runID, token, dir, script strin
 		return fmt.Errorf("script exited %d", ee.ExitCode())
 	}
 	return waitErr
-}
-
-// pumpOutput streams installer stdout/stderr into deploy log events. When tag
-// is set, complete lines are prefixed with `[in <dir>]` for multi-app panes.
-func (m *Manager) pumpOutput(runID, token, dir string, r interface{ Read([]byte) (int, error) }, tag bool) {
-	br := bufio.NewReader(r)
-	prefix := ""
-	if tag && dir != "" {
-		prefix = "[in " + dir + "] "
-	}
-	var pending []byte
-	buf := make([]byte, 4096)
-	emit := func(chunk []byte) {
-		if len(chunk) == 0 {
-			return
-		}
-		m.emit(runID, token, &agentv1.DeployEvent{
-			RunId: runID, Kind: "log", Phase: phaseInstall, Data: chunk,
-		})
-	}
-	for {
-		n, err := br.Read(buf)
-		if n > 0 {
-			if prefix == "" {
-				emit(append([]byte(nil), buf[:n]...))
-			} else {
-				pending = append(pending, buf[:n]...)
-				for {
-					i := bytes.IndexByte(pending, '\n')
-					if i < 0 {
-						break
-					}
-					line := pending[:i+1]
-					pending = pending[i+1:]
-					tagged := make([]byte, 0, len(prefix)+len(line))
-					tagged = append(tagged, prefix...)
-					tagged = append(tagged, line...)
-					emit(tagged)
-				}
-			}
-		}
-		if err != nil {
-			if prefix != "" && len(pending) > 0 {
-				tagged := make([]byte, 0, len(prefix)+len(pending)+1)
-				tagged = append(tagged, prefix...)
-				tagged = append(tagged, pending...)
-				if tagged[len(tagged)-1] != '\n' {
-					tagged = append(tagged, '\n')
-				}
-				emit(tagged)
-			}
-			return
-		}
-	}
 }
 
 func runCmd(ctx context.Context, dir string, env map[string]string, name string, args ...string) error {

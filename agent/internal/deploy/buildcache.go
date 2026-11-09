@@ -147,10 +147,20 @@ func (m *Manager) warmCachedStep(runID, token, work string, plan stepCachePlan) 
 	m.logLine(runID, token, "[in "+work+"] reusing compiler cache")
 }
 
-func (m *Manager) storeCachedStep(work, language, script string, plan stepCachePlan) {
-	if err := saveStepCache(plan, work, language, script); err != nil && m.log != nil {
-		m.log.Warn("deploy cache save failed", "err", err, "kind", plan.kind, "app", plan.appKey)
+// storeCachedStep saves this step's outputs for the next deploy. Linking a large
+// node_modules takes a while on slow disks, so it says what it is doing rather
+// than leaving a silent gap between the step's output and its "done" line.
+func (m *Manager) storeCachedStep(runID, token, work, language, script string, plan stepCachePlan) {
+	started := time.Now()
+	m.logLine(runID, token, "[in "+work+"] saving "+plan.kind+" cache")
+	if err := saveStepCache(plan, work, language, script); err != nil {
+		if m.log != nil {
+			m.log.Warn("deploy cache save failed", "err", err, "kind", plan.kind, "app", plan.appKey)
+		}
+		m.logLine(runID, token, "[in "+work+"] cache not saved: "+err.Error())
+		return
 	}
+	m.logLine(runID, token, fmt.Sprintf("[in %s] %s cache saved in %s", work, plan.kind, time.Since(started).Round(100*time.Millisecond)))
 }
 
 func projectBaseFromWork(work string) string {

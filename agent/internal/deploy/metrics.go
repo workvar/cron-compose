@@ -79,3 +79,25 @@ func dirSize(root string) int64 {
 	})
 	return total
 }
+
+// measureRelease sizes a release on a goroutine. The channel is buffered so an
+// early return never leaves the walk blocked.
+func measureRelease(dir string) <-chan int64 {
+	ch := make(chan int64, 1)
+	go func() { ch <- dirSize(dir) }()
+	return ch
+}
+
+// noteReleaseSize records and logs a measured release size.
+func (m *Manager) noteReleaseSize(runID, token string, size int64) {
+	if size <= 0 {
+		return
+	}
+	m.setReleaseBytes(runID, size)
+	// Logged without notePhase: the walk overlaps later phases, and switching the
+	// metrics phase here would bill their time to "release".
+	m.emit(runID, token, &agentv1.DeployEvent{
+		RunId: runID, Kind: "log", Phase: phaseRelease,
+		Data: []byte(phaseRelease + ": release size: " + humanBytes(uint64(size)) + "\n"),
+	})
+}
